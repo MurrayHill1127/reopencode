@@ -26,10 +26,10 @@ ROC 用 Rust 重写，目标：
 ## 项目结构
 
 ```
-~/ROC/
-├── reopencode/          # ROC 主项目 (Rust)
-├── opencode/            # 参考实现 (TS)
-└── oh-my-openagent/     # 插件系统参考
+.
+├── src/              # 源代码
+├── Cargo.toml        # 项目配置
+└── README.md         # 项目说明
 ```
 
 ## 开发进度
