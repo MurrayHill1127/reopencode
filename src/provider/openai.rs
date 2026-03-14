@@ -1,13 +1,15 @@
+use std::pin::Pin;
+
 use async_trait::async_trait;
-use futures::stream::{Stream, StreamExt};
+use futures::stream::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
 use crate::provider::config::ProviderConfig;
 use crate::provider::error::{ProviderError, Result};
-use crate::provider::message::{Message, MessageRole};
-use crate::provider::trait::{Provider, ProviderResponse, Usage};
+use crate::provider::message::Message;
+use crate::provider::provider_trait::{Provider, ProviderResponse, Usage};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -67,7 +69,6 @@ struct OpenAiStreamResponse {
 #[derive(Deserialize)]
 struct OpenAiStreamChoice {
     delta: OpenAiDelta,
-    finish_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -89,7 +90,7 @@ impl OpenAiProvider {
         self.config.base_url.as_deref().unwrap_or(DEFAULT_BASE_URL)
     }
 
-    fn convert_messages(&self, messages: Vec<Message>) -> Vec<OpenAiMessage> {
+    fn convert_messages(messages: Vec<Message>) -> Vec<OpenAiMessage> {
         messages
             .into_iter()
             .map(|m| OpenAiMessage {
@@ -99,7 +100,7 @@ impl OpenAiProvider {
             .collect()
     }
 
-    fn parse_stream_line(&self, line: &str) -> Option<String> {
+    fn parse_stream_line(line: &str) -> Option<String> {
         if line.starts_with("data: ") {
             let data = &line[6..];
             if data == "[DONE]" {
@@ -135,7 +136,7 @@ impl Provider for OpenAiProvider {
 
         let request = OpenAiRequest {
             model: model.to_string(),
-            messages: self.convert_messages(messages),
+            messages: Self::convert_messages(messages),
             temperature,
             max_tokens,
             stream: None,
@@ -197,21 +198,22 @@ impl Provider for OpenAiProvider {
         model: &str,
         temperature: f32,
         max_tokens: Option<u32>,
-    ) -> impl Stream<Item = Result<String>> + Send {
+    ) -> Pin<Box<dyn futures::Stream<Item = Result<String>> + Send>> {
         let url = format!("{}/chat/completions", self.get_base_url());
         let api_key = self.config.api_key.clone();
         let client = self.client.clone();
-        let openai_messages = self.convert_messages(messages);
+        let openai_messages = Self::convert_messages(messages);
+        let model = model.to_string();
 
         let request = OpenAiRequest {
-            model: model.to_string(),
+            model: model.clone(),
             messages: openai_messages,
             temperature,
             max_tokens,
             stream: Some(true),
         };
 
-        async_stream::stream! {
+        Box::pin(async_stream::stream! {
             info!("调用 OpenAI API (流式), 模型: {}", model);
 
             let response = match client
@@ -262,12 +264,12 @@ impl Provider for OpenAiProvider {
                         continue;
                     }
 
-                    if let Some(content) = Self { config: ProviderConfig::default(), client: client.clone() }.parse_stream_line(line) {
+                    if let Some(content) = Self::parse_stream_line(line) {
                         yield Ok(content);
                     }
                 }
             }
-        }
+        })
     }
 }
 

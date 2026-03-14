@@ -1,7 +1,9 @@
+use std::pin::Pin;
+
 use async_trait::async_trait;
 use futures::Stream;
 
-use crate::provider::error::{ProviderError, Result};
+use crate::provider::error::Result;
 use crate::provider::message::Message;
 
 #[derive(Debug, Clone)]
@@ -68,7 +70,7 @@ pub trait Provider: Send + Sync {
         model: &str,
         temperature: f32,
         max_tokens: Option<u32>,
-    ) -> impl Stream<Item = Result<String>> + Send;
+    ) -> Pin<Box<dyn Stream<Item = Result<String>> + Send>>;
 }
 
 #[cfg(test)]

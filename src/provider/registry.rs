@@ -7,7 +7,7 @@ use crate::provider::anthropic::AnthropicProvider;
 use crate::provider::config::{ProviderConfig, ProvidersConfig};
 use crate::provider::error::{ProviderError, Result};
 use crate::provider::openai::OpenAiProvider;
-use crate::provider::trait::Provider;
+use crate::provider::provider_trait::Provider;
 use crate::provider::zhipu::ZhipuProvider;
 
 pub struct ProviderRegistry {
@@ -37,26 +37,14 @@ impl ProviderRegistry {
         }
     }
 
-    pub fn get(&self, name: &str) -> Option<Box<dyn Provider + '_>> {
+    pub fn contains(&self, name: &str) -> bool {
         let providers = self.providers.read().expect("Failed to acquire read lock");
-        providers.get(name).map(|p| p.as_ref()).map(|p| {
-            struct ProviderWrapper<'a>(&'a (dyn Provider));
-            impl<'a> std::ops::Deref for ProviderWrapper<'a> {
-                type Target = dyn Provider;
-                fn deref(&self) -> &Self::Target {
-                    self.0
-                }
-            }
-            Box::new(ProviderWrapper(p)) as Box<dyn Provider>
-        }).ok()
+        providers.contains_key(name)
     }
 
-    pub fn get_provider(&self, name: &str) -> Result<&dyn Provider> {
+    pub fn get_provider_name(&self, name: &str) -> Option<String> {
         let providers = self.providers.read().expect("Failed to acquire read lock");
-        providers
-            .get(name)
-            .map(|p| p.as_ref())
-            .ok_or_else(|| ProviderError::Config(format!("未找到 Provider: {}", name)))
+        providers.get(name).map(|p| p.name().to_string())
     }
 
     pub fn default_provider(&self) -> String {
@@ -84,7 +72,7 @@ impl ProviderRegistry {
 
     pub fn remove(&self, name: &str) -> Option<String> {
         let mut providers = self.providers.write().expect("Failed to acquire write lock");
-        providers.remove(name).map(|p| {
+        providers.remove(name).map(|_| {
             info!("移除 Provider: {}", name);
             name.to_string()
         })
@@ -183,16 +171,16 @@ mod tests {
         let provider = OpenAiProvider::new(config);
         registry.register(Box::new(provider));
 
-        let result = registry.get_provider("openai");
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().name(), "openai");
+        let result = registry.get_provider_name("openai");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "openai");
     }
 
     #[test]
     fn test_registry_get_nonexistent() {
         let registry = ProviderRegistry::new();
-        let result = registry.get_provider("nonexistent");
-        assert!(result.is_err());
+        let result = registry.get_provider_name("nonexistent");
+        assert!(result.is_none());
     }
 
     #[test]

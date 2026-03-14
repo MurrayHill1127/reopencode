@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>ReOpenCode TUI Preview</title>
+<style>
+body {
+    background: #1a1a2e;
+    color: #eee;
+    font-family: 'Monaco', 'Consolas', monospace;
+    padding: 20px;
+    margin: 0;
+}
+.terminal {
+    background: #16213e;
+    border: 2px solid #0f3460;
+    border-radius: 8px;
+    padding: 0;
+    overflow: hidden;
+    max-width: 900px;
+    margin: 0 auto;
+}
+.title-bar {
+    background: #0f3460;
+    padding: 8px 16px;
+    font-weight: bold;
+    color: #00d9ff;
+    border-bottom: 1px solid #1a4a7a;
+}
+.layout {
+    display: grid;
+    grid-template-rows: 1fr 3fr 2fr 2fr;
+    gap: 1px;
+    background: #0f3460;
+}
+.panel {
+    background: #16213e;
+    padding: 10px;
+}
+.panel-title {
+    color: #e94560;
+    font-weight: bold;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #0f3460;
+    padding-bottom: 4px;
+}
+.message {
+    margin: 4px 0;
+    padding: 4px 8px;
+    border-left: 2px solid #00d9ff;
+    background: #1a1a2e;
+}
+.message.user {
+    border-left-color: #4ade80;
+}
+.input-box {
+    background: #1a1a2e;
+    border: 1px solid #0f3460;
+    padding: 8px;
+    color: #fbbf24;
+}
+.file-item {
+    padding: 4px 8px;
+    margin: 2px 0;
+    background: #1a1a2e;
+    border-left: 2px solid #e94560;
+}
+.cursor {
+    display: inline-block;
+    width: 8px;
+    height: 16px;
+    background: #fbbf24;
+    animation: blink 1s infinite;
+}
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+.hint {
+    color: #666;
+    font-size: 12px;
+    margin-top: 10px;
+    text-align: center;
+}
+</style>
+</head>
+<body>
+<div class="terminal">
+    <div class="title-bar">
+    ReOpenCode v0.1.0 — Press 'q' to quit | Ctrl+C to cancel
+    </div>
+    <div class="layout">
+        <div class="panel">
+            <div class="panel-title">📊 Status</div>
+            <div>Provider: OpenAI (connected)</div>
+            <div>Session: active</div>
+            <div>Tools: 3 available</div>
+        </div>
+        <div class="panel">
+            <div class="panel-title">💬 Messages</div>
+            <div class="message">Welcome to ReOpenCode!</div>
+            <div class="message user">> cargo test</div>
+            <div class="message">Running tests...</div>
+            <div class="message">✅ 4 tests passed</div>
+            <div class="message">> /help</div>
+            <div class="message">Available commands: run, serve, version</div>
+        </div>
+        <div class="panel">
+            <div class="panel-title">✏️ Input</div>
+            <div class="input-box">
+                > cargo build --release<span class="cursor"></span>
+            </div>
+        </div>
+        <div class="panel">
+            <div class="panel-title">📁 Files</div>
+            <div class="file-item">src/main.rs</div>
+            <div class="file-item">src/lib.rs</div>
+            <div class="file-item">src/agent/mod.rs</div>
+            <div class="file-item">src/tool/mod.rs</div>
+            <div class="file-item">src/session/mod.rs</div>
+            <div class="file-item">src/provider/mod.rs</div>
+            <div class="file-item">Cargo.toml</div>
+        </div>
+    </div>
+</div>
+<div class="hint">
+    ReOpenCode TUI Preview — 基于 ratatui 的终端用户界面
+</div>
+</body>
+</html>

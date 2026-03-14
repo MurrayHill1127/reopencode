@@ -1,5 +1,7 @@
+use std::pin::Pin;
+
 use async_trait::async_trait;
-use futures::stream::{Stream, StreamExt};
+use futures::stream::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
@@ -7,7 +9,7 @@ use tracing::{debug, error, info};
 use crate::provider::config::ProviderConfig;
 use crate::provider::error::{ProviderError, Result};
 use crate::provider::message::{Message, MessageRole};
-use crate::provider::trait::{Provider, ProviderResponse, Usage};
+use crate::provider::provider_trait::{Provider, ProviderResponse, Usage};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com/v1";
@@ -61,17 +63,11 @@ struct AnthropicStreamEvent {
     #[serde(rename = "type")]
     event_type: String,
     delta: Option<AnthropicDelta>,
-    message: Option<AnthropicStreamMessage>,
 }
 
 #[derive(Deserialize)]
 struct AnthropicDelta {
     text: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct AnthropicStreamMessage {
-    usage: Option<AnthropicUsage>,
 }
 
 impl AnthropicProvider {
@@ -88,7 +84,7 @@ impl AnthropicProvider {
         self.config.base_url.as_deref().unwrap_or(DEFAULT_BASE_URL)
     }
 
-    fn split_messages(&self, messages: Vec<Message>) -> (Option<String>, Vec<AnthropicMessage>) {
+    fn split_messages(messages: Vec<Message>) -> (Option<String>, Vec<AnthropicMessage>) {
         let mut system = None;
         let mut anthropic_messages = Vec::new();
 
@@ -125,7 +121,7 @@ impl Provider for AnthropicProvider {
 
         let url = format!("{}/messages", self.get_base_url());
 
-        let (system, anthropic_messages) = self.split_messages(messages);
+        let (system, anthropic_messages) = Self::split_messages(messages);
 
         let request = AnthropicRequest {
             model: model.to_string(),
@@ -189,14 +185,15 @@ impl Provider for AnthropicProvider {
         model: &str,
         temperature: f32,
         max_tokens: Option<u32>,
-    ) -> impl Stream<Item = Result<String>> + Send {
+    ) -> Pin<Box<dyn futures::Stream<Item = Result<String>> + Send>> {
         let url = format!("{}/messages", self.get_base_url());
         let api_key = self.config.api_key.clone();
         let client = self.client.clone();
-        let (system, anthropic_messages) = self.split_messages(messages);
+        let (system, anthropic_messages) = Self::split_messages(messages);
+        let model = model.to_string();
 
         let request = AnthropicRequest {
-            model: model.to_string(),
+            model: model.clone(),
             messages: anthropic_messages,
             max_tokens: max_tokens.unwrap_or(4096),
             system,
@@ -204,7 +201,7 @@ impl Provider for AnthropicProvider {
             stream: Some(true),
         };
 
-        async_stream::stream! {
+        Box::pin(async_stream::stream! {
             info!("调用 Anthropic API (流式), 模型: {}", model);
 
             let response = match client
@@ -268,7 +265,7 @@ impl Provider for AnthropicProvider {
                     }
                 }
             }
-        }
+        })
     }
 }
 
@@ -332,16 +329,13 @@ mod tests {
 
     #[test]
     fn test_split_messages() {
-        let config = ProviderConfig::new("anthropic", "key");
-        let provider = AnthropicProvider::new(config);
-
         let messages = vec![
             Message::system("You are helpful"),
             Message::user("Hello"),
             Message::assistant("Hi there"),
         ];
 
-        let (system, anthropic_messages) = provider.split_messages(messages);
+        let (system, anthropic_messages) = AnthropicProvider::split_messages(messages);
         assert_eq!(system, Some("You are helpful".to_string()));
         assert_eq!(anthropic_messages.len(), 2);
         assert_eq!(anthropic_messages[0].role, "user");

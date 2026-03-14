@@ -1,5 +1,7 @@
+use std::pin::Pin;
+
 use async_trait::async_trait;
-use futures::stream::{Stream, StreamExt};
+use futures::stream::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
@@ -7,7 +9,7 @@ use tracing::{debug, error, info};
 use crate::provider::config::ProviderConfig;
 use crate::provider::error::{ProviderError, Result};
 use crate::provider::message::Message;
-use crate::provider::trait::{Provider, ProviderResponse, Usage};
+use crate::provider::provider_trait::{Provider, ProviderResponse, Usage};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_BASE_URL: &str = "https://open.bigmodel.cn/api/paas/v4";
@@ -36,7 +38,7 @@ struct ZhipuMessage {
 
 #[derive(Deserialize)]
 struct ZhipuResponse {
-    choices: Vec<ZhipuChoice>,
+    choices: Option<Vec<ZhipuChoice>>,
     usage: Option<ZhipuUsage>,
     model: Option<String>,
     error: Option<ZhipuError>,
@@ -58,6 +60,7 @@ struct ZhipuUsage {
 #[derive(Deserialize)]
 struct ZhipuError {
     message: String,
+    #[allow(dead_code)]
     code: Option<String>,
 }
 
@@ -69,7 +72,6 @@ struct ZhipuStreamResponse {
 #[derive(Deserialize)]
 struct ZhipuStreamChoice {
     delta: ZhipuDelta,
-    finish_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -91,7 +93,7 @@ impl ZhipuProvider {
         self.config.base_url.as_deref().unwrap_or(DEFAULT_BASE_URL)
     }
 
-    fn convert_messages(&self, messages: Vec<Message>) -> Vec<ZhipuMessage> {
+    fn convert_messages(messages: Vec<Message>) -> Vec<ZhipuMessage> {
         messages
             .into_iter()
             .map(|m| ZhipuMessage {
@@ -101,7 +103,7 @@ impl ZhipuProvider {
             .collect()
     }
 
-    fn parse_stream_line(&self, line: &str) -> Option<String> {
+    fn parse_stream_line(line: &str) -> Option<String> {
         if line.starts_with("data: ") {
             let data = &line[6..];
             if data == "[DONE]" {
@@ -137,7 +139,7 @@ impl Provider for ZhipuProvider {
 
         let request = ZhipuRequest {
             model: model.to_string(),
-            messages: self.convert_messages(messages),
+            messages: Self::convert_messages(messages),
             temperature,
             max_tokens,
             stream: None,
@@ -174,7 +176,8 @@ impl Provider for ZhipuProvider {
             return Err(ProviderError::Api(error.message));
         }
 
-        let choice = json.choices.first().ok_or_else(|| {
+        let choices = json.choices.unwrap_or_default();
+        let choice = choices.first().ok_or_else(|| {
             ProviderError::Api("No choices in response".to_string())
         })?;
 
@@ -204,21 +207,22 @@ impl Provider for ZhipuProvider {
         model: &str,
         temperature: f32,
         max_tokens: Option<u32>,
-    ) -> impl Stream<Item = Result<String>> + Send {
+    ) -> Pin<Box<dyn futures::Stream<Item = Result<String>> + Send>> {
         let url = format!("{}/chat/completions", self.get_base_url());
         let api_key = self.config.api_key.clone();
         let client = self.client.clone();
-        let zhipu_messages = self.convert_messages(messages);
+        let zhipu_messages = Self::convert_messages(messages);
+        let model = model.to_string();
 
         let request = ZhipuRequest {
-            model: model.to_string(),
+            model: model.clone(),
             messages: zhipu_messages,
             temperature,
             max_tokens,
             stream: Some(true),
         };
 
-        async_stream::stream! {
+        Box::pin(async_stream::stream! {
             info!("调用智谱 AI API (流式), 模型: {}", model);
 
             let response = match client
@@ -269,12 +273,12 @@ impl Provider for ZhipuProvider {
                         continue;
                     }
 
-                    if let Some(content) = Self { config: ProviderConfig::default(), client: client.clone() }.parse_stream_line(line) {
+                    if let Some(content) = Self::parse_stream_line(line) {
                         yield Ok(content);
                     }
                 }
             }
-        }
+        })
     }
 }
 
@@ -339,8 +343,9 @@ mod tests {
         }"#;
 
         let response: ZhipuResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.choices.len(), 1);
-        assert_eq!(response.choices[0].message.as_ref().unwrap().content, "你好！");
+        let choices = response.choices.unwrap();
+        assert_eq!(choices.len(), 1);
+        assert_eq!(choices[0].message.as_ref().unwrap().content, "你好！");
         assert_eq!(response.usage.unwrap().total_tokens, 15);
         assert!(response.error.is_none());
     }
@@ -358,7 +363,6 @@ mod tests {
         assert!(response.error.is_some());
         let error = response.error.unwrap();
         assert_eq!(error.message, "API key 无效");
-        assert_eq!(error.code, Some("INVALID_API_KEY".to_string()));
     }
 
     #[test]

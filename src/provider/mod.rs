@@ -8,8 +8,8 @@ pub mod config;
 pub mod error;
 pub mod message;
 pub mod openai;
+pub mod provider_trait;
 pub mod registry;
-pub mod r#trait;
 pub mod zhipu;
 
 pub use anthropic::AnthropicProvider;
@@ -17,6 +17,6 @@ pub use config::{ProviderConfig, ProvidersConfig};
 pub use error::{ProviderError, Result};
 pub use message::{Message, MessageRole};
 pub use openai::OpenAiProvider;
+pub use provider_trait::{Provider, ProviderResponse, Usage};
 pub use registry::ProviderRegistry;
-pub use r#trait::{Provider, ProviderResponse, Usage};
 pub use zhipu::ZhipuProvider;
