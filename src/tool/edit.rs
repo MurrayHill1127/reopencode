@@ -261,9 +261,10 @@ mod tests {
         let result = tool.execute(args).await.unwrap();
         assert!(result.output.contains("Successfully edited"));
 
-        // Verify file content
+        // Verify file content (writeln adds newline)
         let content = tokio::fs::read_to_string(path).await.unwrap();
-        assert_eq!(content, r#"path = "/baz/qux", pattern = "\n\t""#);
+        assert_eq!(content, r#"path = "/baz/qux", pattern = "\n\t"
+"#);
     }
 
     #[tokio::test]

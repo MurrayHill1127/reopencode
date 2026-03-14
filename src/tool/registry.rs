@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::tool::traits::Tool;
 
@@ -30,14 +30,10 @@ impl ToolRegistry {
         debug!("Registered tool: {}", name);
     }
 
-    /// Get a tool by name (returns cloned Arc)
-    pub fn get(&self, name: &str) -> Option<Box<dyn Tool>> {
+    /// Get a tool by name (returns Arc reference)
+    pub fn get(&self, name: &str) -> Option<Arc<Box<dyn Tool>>> {
         let tools = self.tools.read().expect("Failed to acquire read lock");
-        tools.get(name).map(|arc| {
-            // Clone the Arc and wrap in Box
-            let inner: Box<dyn Tool> = (**arc).clone();
-            Box::new(inner)
-        })
+        tools.get(name).cloned()
     }
 
     /// Check if a tool exists in the registry
@@ -170,10 +166,11 @@ mod tests {
     #[test]
     fn test_registry_clear() {
         use crate::tool::bash::BashTool;
+        use crate::tool::read::ReadTool;
 
         let registry = ToolRegistry::new();
         registry.register(Box::new(BashTool::new()));
-        registry.register(Box::new(BashTool::new()));
+        registry.register(Box::new(ReadTool::new()));
 
         assert_eq!(registry.len(), 2);
         registry.clear();
@@ -183,6 +180,7 @@ mod tests {
     #[test]
     fn test_registry_clone() {
         use crate::tool::bash::BashTool;
+        use crate::tool::read::ReadTool;
 
         let registry = ToolRegistry::new();
         registry.register(Box::new(BashTool::new()));
@@ -191,9 +189,9 @@ mod tests {
         assert_eq!(cloned.len(), 1);
         assert!(cloned.contains("bash"));
         
-        // Changes to original should be visible in clone
+        // Changes to original should be visible in clone (Arc shares data)
         let original = registry.clone();
-        original.register(Box::new(BashTool::new()));
+        original.register(Box::new(ReadTool::new()));
         assert_eq!(registry.len(), 2);
         assert_eq!(cloned.len(), 2);
     }

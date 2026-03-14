@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
 
-use crate::tool::error::{ToolError, Result};
+use crate::tool::error::Result;
 
 /// Tool result
 #[derive(Debug, Clone)]

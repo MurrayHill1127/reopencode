@@ -39,7 +39,7 @@ impl Tool for ReadTool {
         })
     }
 
-    async fn execute(&self, args: Value) -> Result<ToolResult, ToolError> {
+    async fn execute(&self, args: Value) -> Result<ToolResult> {
         let path = args["path"]
             .as_str()
             .ok_or_else(|| ToolError::Parse("Missing 'path' argument".to_string()))?;
