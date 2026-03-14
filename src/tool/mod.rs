@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use serde_json::Value;
+use std::process::Command;
 
 /// Tool result
 #[derive(Debug)]
@@ -82,14 +83,14 @@ impl Tool for BashTool {
         
         let cwd = args["cwd"].as_str();
         
-        let mut cmd = tokio::process::Command::new("sh");
+        let mut cmd = Command::new("sh");
         cmd.arg("-c").arg(command);
         
         if let Some(cwd) = cwd {
             cmd.current_dir(cwd);
         }
         
-        let output = cmd.output().await?;
+        let output = cmd.output()?;
         
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -222,5 +223,67 @@ impl Tool for WriteTool {
 impl Default for WriteTool {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Tool registry - manages all available tools
+pub struct ToolRegistry {
+    tools: std::collections::HashMap<String, Box<dyn Tool>>,
+}
+
+impl ToolRegistry {
+    pub fn new() -> Self {
+        Self {
+            tools: std::collections::HashMap::new(),
+        }
+    }
+    
+    /// Register a tool
+    pub fn register(&mut self, tool: Box<dyn Tool>) {
+        let name = tool.name().to_string();
+        self.tools.insert(name, tool);
+    }
+    
+    /// Get a tool by name
+    pub fn get(&self, name: &str) -> Option<&dyn Tool> {
+        self.tools.get(name).map(|t| t.as_ref())
+    }
+    
+    /// List all tool names
+    pub fn list_tools(&self) -> Vec<&str> {
+        self.tools.keys().map(|s| s.as_str()).collect()
+    }
+}
+
+impl Default for ToolRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[tokio::test]
+    async fn test_bash_tool() {
+        let tool = BashTool::new();
+        let args = serde_json::json!({
+            "command": "echo hello"
+        });
+        
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.output.contains("hello"));
+    }
+    
+    #[tokio::test]
+    async fn test_read_tool() {
+        let tool = ReadTool::new();
+        let args = serde_json::json!({
+            "path": "Cargo.toml"
+        });
+        
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.output.contains("[package]"));
     }
 }
