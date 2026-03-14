@@ -68,7 +68,7 @@ ROC 用 Rust 重写，目标：
 
 ## 开发进度
 
-### Phase 1: MVP 核心 ✅ (Day 1)
+### Phase 1: MVP 核心 ✅
 - [x] 项目初始化
 - [x] Agent trait 定义
 - [x] Tool trait 定义
@@ -76,13 +76,13 @@ ROC 用 Rust 重写，目标：
 - [x] TUI MVP（ratatui）
 - [x] 4 个单元测试通过
 
-### Phase 2: 核心功能 🔄 (Day 2-7)
+### Phase 2: 核心功能 🔄
 - [ ] Provider 系统（OpenAI API 集成）
 - [ ] 完整 Tool 系统（26 个工具）
 - [ ] Session 管理（持久化存储）
 - [ ] TUI 改进（文件树、语法高亮、主题）
 
-### Phase 3: TUI 实现 (Day 8-14)
+### Phase 3: TUI 实现
 - [ ] 基础布局（侧边栏 + 主内容区）
 - [ ] 文件树浏览
 - [ ] 对话界面（用户输入 + AI 回复）
@@ -90,13 +90,13 @@ ROC 用 Rust 重写，目标：
 - [ ] 键盘快捷键
 - [ ] 主题/配色方案
 
-### Phase 4: 插件系统 (Day 15-28)
+### Phase 4: 插件系统
 - [ ] Hook 系统
 - [ ] Category 系统
 - [ ] Skill 系统
 - [ ] Command 系统
 
-### Phase 5: 完善与测试 (Day 29-50)
+### Phase 5: 完善与测试
 - [ ] 性能优化
 - [ ] 完整测试套件
 - [ ] 文档完善
