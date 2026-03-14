@@ -1,13 +1,16 @@
 //! CLI commands
 
+pub mod tui;
+
 use anyhow::Result;
 
-/// Run command - start interactive session
+/// Run command - start TUI interactive session
 pub async fn run(cwd: Option<String>) -> Result<()> {
-    println!("Starting interactive session...");
     if let Some(cwd) = cwd {
         println!("Working directory: {}", cwd);
     }
+    println!("Starting TUI session...");
+    tui::run()?;
     Ok(())
 }
 
