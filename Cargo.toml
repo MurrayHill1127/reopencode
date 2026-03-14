@@ -39,7 +39,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # HTTP Client
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Async Stream
+futures = "0.3"
 
 # Utility
 once_cell = "1"
