@@ -51,6 +51,10 @@ chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
 once_cell = "1"
 uuid = { version = "1", features = ["v4"] }
+camino = "1.2.2"
+base64 = "0.22.1"
+fnv = "1.0.7"
+globset = "0.4.18"
 
 [dev-dependencies]
 tokio-test = "0.4"
