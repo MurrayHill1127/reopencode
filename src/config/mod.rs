@@ -42,8 +42,11 @@ pub use types::{
     McpConfig, McpLocalConfig, McpRemoteConfig,
     PermissionConfig, PermissionPolicy, PermissionRule,
     CommandConfig, SkillsConfig, StorageConfig, StorageType,
-    HookConfig, CategoryConfig,
+    HookConfig,
 };
+
+// Re-export CategoryConfig from category module
+pub use crate::category::CategoryConfig;
 
 // Re-export loader
 pub use loader::{ConfigLoader, ConfigLayer};

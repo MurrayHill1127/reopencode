@@ -1792,6 +1792,7 @@ dependencies = [
  "fnv",
  "futures",
  "globset",
+ "lazy_static",
  "once_cell",
  "ratatui",
  "reqwest",

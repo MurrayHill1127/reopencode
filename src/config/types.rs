@@ -5,6 +5,9 @@
 use std::collections::{BTreeMap, HashMap};
 use serde::{Deserialize, Serialize};
 
+// Import CategoryConfig from category module
+use crate::category::CategoryConfig;
+
 // ==================== Root Config ====================
 
 /// ROC 根配置结构
@@ -333,7 +336,3 @@ pub enum StorageType {
 /// Hook 配置 (Future)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HookConfig {}
-
-/// 分类配置 (Future)
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct CategoryConfig {}
