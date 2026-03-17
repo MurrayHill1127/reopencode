@@ -6,6 +6,7 @@ pub enum MessageRole {
     System,
     User,
     Assistant,
+    Tool,
 }
 
 impl MessageRole {
@@ -14,6 +15,7 @@ impl MessageRole {
             MessageRole::System => "system",
             MessageRole::User => "user",
             MessageRole::Assistant => "assistant",
+            MessageRole::Tool => "tool",
         }
     }
 }
@@ -28,6 +30,8 @@ impl std::fmt::Display for MessageRole {
 pub struct Message {
     pub role: MessageRole,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 impl Message {
@@ -35,6 +39,7 @@ impl Message {
         Self {
             role,
             content: content.into(),
+            tool_call_id: None,
         }
     }
 
@@ -49,6 +54,14 @@ impl Message {
     pub fn assistant(content: impl Into<String>) -> Self {
         Self::new(MessageRole::Assistant, content)
     }
+
+    pub fn tool(content: impl Into<String>, tool_call_id: impl Into<String>) -> Self {
+        Self {
+            role: MessageRole::Tool,
+            content: content.into(),
+            tool_call_id: Some(tool_call_id.into()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -60,6 +73,7 @@ mod tests {
         assert_eq!(MessageRole::System.as_str(), "system");
         assert_eq!(MessageRole::User.as_str(), "user");
         assert_eq!(MessageRole::Assistant.as_str(), "assistant");
+        assert_eq!(MessageRole::Tool.as_str(), "tool");
     }
 
     #[test]
@@ -77,12 +91,18 @@ mod tests {
         let msg = Message::user("Hello");
         assert_eq!(msg.role, MessageRole::User);
         assert_eq!(msg.content, "Hello");
+        assert!(msg.tool_call_id.is_none());
 
         let msg = Message::system("You are helpful");
         assert_eq!(msg.role, MessageRole::System);
 
         let msg = Message::assistant("Hi there");
         assert_eq!(msg.role, MessageRole::Assistant);
+
+        let msg = Message::tool("Tool result", "call_123");
+        assert_eq!(msg.role, MessageRole::Tool);
+        assert_eq!(msg.content, "Tool result");
+        assert_eq!(msg.tool_call_id, Some("call_123".to_string()));
     }
 
     #[test]
@@ -91,9 +111,15 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"role\":\"user\""));
         assert!(json.contains("\"content\":\"Test message\""));
+        assert!(!json.contains("tool_call_id"));
+
+        let msg = Message::tool("Result", "call_abc");
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"role\":\"tool\""));
+        assert!(json.contains("\"tool_call_id\":\"call_abc\""));
 
         let deserialized: Message = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.role, MessageRole::User);
-        assert_eq!(deserialized.content, "Test message");
+        assert_eq!(deserialized.role, MessageRole::Tool);
+        assert_eq!(deserialized.tool_call_id, Some("call_abc".to_string()));
     }
 }
