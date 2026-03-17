@@ -11,6 +11,8 @@ use tower_http::trace::TraceLayer;
 
 use crate::agent::Sisyphus;
 use crate::provider::{OpenAiProvider, Provider, ProviderConfig};
+use crate::session::SessionManager;
+use crate::storage::path::GlobalPath;
 
 pub use routes::create_router;
 
@@ -40,11 +42,12 @@ impl ServerConfig {
 pub struct AppState {
     pub provider: Arc<dyn Provider>,
     pub agent: Arc<Sisyphus>,
+    pub session_manager: SessionManager,
 }
 
 impl AppState {
     /// Create a new AppState with Kimi provider configuration
-    pub fn new_kimi(api_key: impl Into<String>) -> Self {
+    pub fn new_kimi(api_key: impl Into<String>, session_manager: SessionManager) -> Self {
         let config = ProviderConfig::new("kimi", api_key.into())
             .with_base_url("https://api.moonshot.cn/v1");
         
@@ -55,7 +58,7 @@ impl AppState {
                 .with_temperature(0.7),
         );
 
-        Self { provider, agent }
+        Self { provider, agent, session_manager }
     }
 }
 
@@ -75,7 +78,15 @@ pub async fn start(config: ServerConfig) -> anyhow::Result<()> {
     let api_key = std::env::var("KIMI_API_KEY")
         .map_err(|_| anyhow::anyhow!("KIMI_API_KEY environment variable not set"))?;
     
-    let state = AppState::new_kimi(api_key);
+    let global_path = GlobalPath::get();
+    global_path.init().await?;
+    let db_path = global_path.database_path("latest");
+    let database_url = format!("sqlite:{}", db_path.display());
+    
+    let session_manager = SessionManager::new(&database_url).await
+        .map_err(|e| anyhow::anyhow!("Failed to initialize session manager: {}", e))?;
+    
+    let state = AppState::new_kimi(api_key, session_manager);
     let app = build_app(state);
     let addr = format!("{}:{}", config.host, config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
