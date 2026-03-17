@@ -7,6 +7,7 @@ mod command;
 mod config;
 mod hook;
 mod provider;
+mod server;
 mod session;
 mod skill;
 mod storage;

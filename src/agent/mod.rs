@@ -1,8 +1,13 @@
 //! Agent system - AI agents that orchestrate tasks
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tracing::{debug, error};
+
+use crate::provider::{Message as ProviderMessage, MessageRole as ProviderMessageRole, Provider};
 
 /// Agent configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,6 +24,16 @@ pub enum Role {
     System,
     User,
     Assistant,
+}
+
+impl From<Role> for ProviderMessageRole {
+    fn from(role: Role) -> Self {
+        match role {
+            Role::System => ProviderMessageRole::System,
+            Role::User => ProviderMessageRole::User,
+            Role::Assistant => ProviderMessageRole::Assistant,
+        }
+    }
 }
 
 /// Chat message
@@ -95,10 +110,11 @@ pub trait Agent: Send + Sync {
 /// Sisyphus - the main orchestrator agent
 pub struct Sisyphus {
     config: AgentConfig,
+    provider: Arc<dyn Provider>,
 }
 
 impl Sisyphus {
-    pub fn new() -> Self {
+    pub fn new(provider: Arc<dyn Provider>) -> Self {
         Self {
             config: AgentConfig {
                 name: "sisyphus".to_string(),
@@ -106,7 +122,30 @@ impl Sisyphus {
                 temperature: 0.7,
                 max_tokens: Some(4096),
             },
+            provider,
         }
+    }
+
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.config.model = model.into();
+        self
+    }
+
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.config.temperature = temperature;
+        self
+    }
+
+    pub fn with_max_tokens(mut self, max_tokens: Option<u32>) -> Self {
+        self.config.max_tokens = max_tokens;
+        self
+    }
+
+    fn convert_messages(messages: Vec<Message>) -> Vec<ProviderMessage> {
+        messages
+            .into_iter()
+            .map(|m| ProviderMessage::new(m.role.into(), m.content))
+            .collect()
     }
 }
 
@@ -122,17 +161,36 @@ impl Agent for Sisyphus {
     
     async fn execute(
         &self,
-        _messages: Vec<Message>,
+        messages: Vec<Message>,
         _tools: Vec<ToolDefinition>,
     ) -> Result<AgentResponse, AgentError> {
-        // TODO: Implement actual execution
+        debug!("Sisyphus executing with {} messages", messages.len());
+
+        let provider_messages = Self::convert_messages(messages);
+        
+        let response = self
+            .provider
+            .chat(
+                provider_messages,
+                &self.config.model,
+                self.config.temperature,
+                self.config.max_tokens,
+            )
+            .await
+            .map_err(|e| {
+                error!("Provider error: {}", e);
+                AgentError::Provider(e.to_string())
+            })?;
+
+        debug!("Provider response: {} tokens used", response.usage.total_tokens);
+
         Ok(AgentResponse {
-            content: "Sisyphus agent ready".to_string(),
+            content: response.content,
             tool_calls: vec![],
             usage: Usage {
-                prompt_tokens: 0,
-                completion_tokens: 0,
-                total_tokens: 0,
+                prompt_tokens: response.usage.prompt_tokens,
+                completion_tokens: response.usage.completion_tokens,
+                total_tokens: response.usage.total_tokens,
             },
         })
     }
@@ -140,6 +198,6 @@ impl Agent for Sisyphus {
 
 impl Default for Sisyphus {
     fn default() -> Self {
-        Self::new()
+        panic!("Sisyphus requires a provider. Use Sisyphus::new(provider) instead.");
     }
 }

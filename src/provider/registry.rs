@@ -11,7 +11,7 @@ use crate::provider::provider_trait::Provider;
 use crate::provider::zhipu::ZhipuProvider;
 
 pub struct ProviderRegistry {
-    providers: Arc<RwLock<HashMap<String, Box<dyn Provider>>>>,
+    providers: Arc<RwLock<HashMap<String, Arc<dyn Provider>>>>,
     default_provider: Arc<RwLock<String>>,
 }
 
@@ -23,7 +23,7 @@ impl ProviderRegistry {
         }
     }
 
-    pub fn register(&self, provider: Box<dyn Provider>) {
+    pub fn register(&self, provider: Arc<dyn Provider>) {
         let name = provider.name().to_string();
         info!("注册 Provider: {}", name);
 
@@ -35,6 +35,18 @@ impl ProviderRegistry {
             *default = name;
             debug!("设置默认 Provider: {}", *default);
         }
+    }
+
+    /// Get a provider by name
+    pub fn get(&self, name: &str) -> Option<Arc<dyn Provider>> {
+        let providers = self.providers.read().expect("Failed to acquire read lock");
+        providers.get(name).cloned()
+    }
+
+    /// Get the default provider
+    pub fn get_default(&self) -> Option<Arc<dyn Provider>> {
+        let default = self.default_provider.read().expect("Failed to acquire read lock");
+        self.get(&default)
     }
 
     pub fn contains(&self, name: &str) -> bool {
@@ -100,15 +112,15 @@ impl ProviderRegistry {
             match name.as_str() {
                 "openai" => {
                     let provider = OpenAiProvider::new(provider_config.clone());
-                    registry.register(Box::new(provider));
+                    registry.register(Arc::new(provider));
                 }
                 "anthropic" => {
                     let provider = AnthropicProvider::new(provider_config.clone());
-                    registry.register(Box::new(provider));
+                    registry.register(Arc::new(provider));
                 }
                 "zhipu" => {
                     let provider = ZhipuProvider::new(provider_config.clone());
-                    registry.register(Box::new(provider));
+                    registry.register(Arc::new(provider));
                 }
                 _ => {
                     warn!("未知的 Provider 类型: {}", name);
@@ -158,7 +170,7 @@ mod tests {
         let config = ProviderConfig::new("openai", "sk-test");
         let provider = OpenAiProvider::new(config);
         
-        registry.register(Box::new(provider));
+        registry.register(Arc::new(provider));
         
         assert_eq!(registry.len(), 1);
         assert!(registry.list().contains(&"openai".to_string()));
@@ -169,7 +181,7 @@ mod tests {
         let registry = ProviderRegistry::new();
         let config = ProviderConfig::new("openai", "sk-test");
         let provider = OpenAiProvider::new(config);
-        registry.register(Box::new(provider));
+        registry.register(Arc::new(provider));
 
         let result = registry.get_provider_name("openai");
         assert!(result.is_some());
@@ -190,8 +202,8 @@ mod tests {
         let config1 = ProviderConfig::new("openai", "sk-test1");
         let config2 = ProviderConfig::new("anthropic", "sk-ant-test2");
         
-        registry.register(Box::new(OpenAiProvider::new(config1)));
-        registry.register(Box::new(AnthropicProvider::new(config2)));
+        registry.register(Arc::new(OpenAiProvider::new(config1)));
+        registry.register(Arc::new(AnthropicProvider::new(config2)));
 
         assert_eq!(registry.default_provider(), "openai");
 
@@ -210,7 +222,7 @@ mod tests {
     fn test_registry_remove() {
         let registry = ProviderRegistry::new();
         let config = ProviderConfig::new("openai", "sk-test");
-        registry.register(Box::new(OpenAiProvider::new(config)));
+        registry.register(Arc::new(OpenAiProvider::new(config)));
 
         let removed = registry.remove("openai");
         assert_eq!(removed, Some("openai".to_string()));
@@ -220,8 +232,8 @@ mod tests {
     #[test]
     fn test_registry_clear() {
         let registry = ProviderRegistry::new();
-        registry.register(Box::new(OpenAiProvider::new(ProviderConfig::new("openai", "sk-test"))));
-        registry.register(Box::new(AnthropicProvider::new(ProviderConfig::new("anthropic", "sk-ant-test"))));
+        registry.register(Arc::new(OpenAiProvider::new(ProviderConfig::new("openai", "sk-test"))));
+        registry.register(Arc::new(AnthropicProvider::new(ProviderConfig::new("anthropic", "sk-ant-test"))));
 
         assert_eq!(registry.len(), 2);
         registry.clear();
@@ -255,7 +267,7 @@ models = ["claude-3-opus"]
     #[test]
     fn test_registry_clone() {
         let registry = ProviderRegistry::new();
-        registry.register(Box::new(OpenAiProvider::new(ProviderConfig::new("openai", "sk-test"))));
+        registry.register(Arc::new(OpenAiProvider::new(ProviderConfig::new("openai", "sk-test"))));
 
         let cloned = registry.clone();
         assert_eq!(cloned.len(), 1);
