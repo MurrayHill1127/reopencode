@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
 
+use crate::agent::ToolDefinition;
 use crate::tool::error::Result;
 
 /// Tool result
@@ -40,6 +41,14 @@ pub trait Tool: Send + Sync {
 
     /// Execute the tool with arguments
     async fn execute(&self, args: Value) -> Result<ToolResult>;
+
+    fn to_agent_definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: self.name().to_string(),
+            description: self.description().to_string(),
+            parameters: self.parameters(),
+        }
+    }
 }
 
 #[cfg(test)]
