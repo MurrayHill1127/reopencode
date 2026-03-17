@@ -8,6 +8,7 @@ mod command;
 mod config;
 mod hook;
 mod provider;
+mod pty;
 mod server;
 mod session;
 mod skill;

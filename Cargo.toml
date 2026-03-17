@@ -62,6 +62,9 @@ walkdir = "2"
 shellexpand = "3"
 dashmap = "6.1.0"
 
+# PTY (Pseudo-Terminal)
+portable-pty = "0.9"
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3"

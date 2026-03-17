@@ -10,6 +10,7 @@ pub mod command;
 pub mod config;
 pub mod hook;
 pub mod provider;
+pub mod pty;
 pub mod server;
 pub mod session;
 pub mod skill;
