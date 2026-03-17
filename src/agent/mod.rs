@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, error};
 
-use crate::provider::{Message as ProviderMessage, MessageRole as ProviderMessageRole, Provider, ToolDefinition as ProviderToolDefinition};
+use crate::provider::{Message as ProviderMessage, MessageRole as ProviderMessageRole, Provider, ProviderToolCallFunction, ToolDefinition as ProviderToolDefinition};
 
 /// Agent configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +54,7 @@ pub struct ToolDefinition {
 /// Tool call from agent response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCall {
+    pub id: String,
     pub name: String,
     pub arguments: Value,
 }
@@ -186,9 +187,23 @@ impl Agent for Sisyphus {
 
         debug!("Provider response: {} tokens used", response.usage.total_tokens);
 
+        let tool_calls: Vec<ToolCall> = response
+            .tool_calls
+            .into_iter()
+            .map(|tc| {
+                let args: Value = serde_json::from_str(&tc.function.arguments)
+                    .unwrap_or(Value::Object(serde_json::Map::new()));
+                ToolCall {
+                    id: tc.id,
+                    name: tc.function.name,
+                    arguments: args,
+                }
+            })
+            .collect();
+
         Ok(AgentResponse {
             content: response.content,
-            tool_calls: vec![],
+            tool_calls,
             usage: Usage {
                 prompt_tokens: response.usage.prompt_tokens,
                 completion_tokens: response.usage.completion_tokens,

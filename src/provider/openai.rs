@@ -38,6 +38,8 @@ struct OpenAiMessage {
     content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tool_calls: Vec<ProviderToolCall>,
 }
 
 #[derive(Deserialize)]
@@ -117,6 +119,7 @@ impl OpenAiProvider {
                 role: m.role.to_string(),
                 content: m.content,
                 tool_call_id: m.tool_call_id,
+                tool_calls: m.tool_calls,
             })
             .collect()
     }
@@ -352,6 +355,7 @@ mod tests {
                 role: "user".to_string(),
                 content: "Hello".to_string(),
                 tool_call_id: None,
+                tool_calls: vec![],
             }],
             temperature: 0.7,
             max_tokens: Some(100),

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use super::provider_trait::ProviderToolCall;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MessageRole {
@@ -32,6 +34,8 @@ pub struct Message {
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<ProviderToolCall>,
 }
 
 impl Message {
@@ -40,6 +44,7 @@ impl Message {
             role,
             content: content.into(),
             tool_call_id: None,
+            tool_calls: vec![],
         }
     }
 
@@ -55,11 +60,24 @@ impl Message {
         Self::new(MessageRole::Assistant, content)
     }
 
+    pub fn assistant_with_tool_calls(
+        content: impl Into<String>,
+        tool_calls: Vec<ProviderToolCall>,
+    ) -> Self {
+        Self {
+            role: MessageRole::Assistant,
+            content: content.into(),
+            tool_call_id: None,
+            tool_calls,
+        }
+    }
+
     pub fn tool(content: impl Into<String>, tool_call_id: impl Into<String>) -> Self {
         Self {
             role: MessageRole::Tool,
             content: content.into(),
             tool_call_id: Some(tool_call_id.into()),
+            tool_calls: vec![],
         }
     }
 }
