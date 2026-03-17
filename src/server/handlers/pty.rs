@@ -1,7 +1,9 @@
 use axum::{
-    extract::{Json, Path, State},
+    extract::{Json, Path, State, ws},
     http::StatusCode,
+    response::IntoResponse,
 };
+use futures::{StreamExt, SinkExt};
 use serde::{Deserialize, Serialize};
 
 use crate::pty::{self, PtyInfo, CreatePtyRequest, UpdatePtyRequest, PtySize};
@@ -157,15 +159,106 @@ pub async fn remove(Path(id): Path<String>) -> Result<Json<bool>, StatusCode> {
     }
 }
 
-/// GET /pty/:id/connect - WebSocket connection (stub)
-pub async fn connect(Path(id): Path<String>) -> Result<Json<serde_json::Value>, StatusCode> {
+/// WebSocket message from client to control PTY
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum PtyCommand {
+    #[serde(rename = "resize")]
+    Resize { rows: u16, cols: u16 },
+    #[serde(rename = "write")]
+    Write { data: String },
+    #[serde(rename = "kill")]
+    Kill,
+}
+
+/// WebSocket message to client with PTY output
+#[derive(Debug, Serialize)]
+struct PtyOutputMessage {
+    #[serde(rename = "type")]
+    msg_type: String,
+    data: Option<String>,
+}
+
+impl PtyOutputMessage {
+    fn output(data: &str) -> Self {
+        Self {
+            msg_type: "output".to_string(),
+            data: Some(data.to_string()),
+        }
+    }
+}
+
+/// GET /pty/:id/connect - WebSocket connection for PTY
+pub async fn connect(
+    ws: ws::WebSocketUpgrade,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
     let manager = pty::global();
     
     if manager.get(&id).await.is_none() {
         return Err(StatusCode::NOT_FOUND);
     }
 
-    Err(StatusCode::UPGRADE_REQUIRED)
+    Ok(ws.on_upgrade(move |socket| handle_pty_socket(socket, id)))
+}
+
+/// Handle bidirectional WebSocket communication with PTY
+async fn handle_pty_socket(ws: ws::WebSocket, id: String) {
+    let manager = pty::global();
+    
+    let mut rx = match manager.subscribe_output(&id) {
+        Some(rx) => rx,
+        None => {
+            tracing::error!("Failed to subscribe to PTY output: {}", id);
+            return;
+        }
+    };
+
+    let (mut sender, mut receiver) = ws.split();
+    
+    let pty_to_ws = async {
+        while let Ok(data) = rx.recv().await {
+            let text = String::from_utf8_lossy(&data).to_string();
+            let msg = PtyOutputMessage::output(&text);
+            if let Ok(json) = serde_json::to_string(&msg) {
+                if sender.send(ws::Message::Text(json.into())).await.is_err() {
+                    break;
+                }
+            }
+        }
+    };
+
+    let ws_to_pty = async {
+        while let Some(msg) = receiver.next().await {
+            match msg {
+                Ok(ws::Message::Text(text)) => {
+                    if let Ok(cmd) = serde_json::from_str::<PtyCommand>(&text) {
+                        match cmd {
+                            PtyCommand::Resize { rows, cols } => {
+                                let _ = manager.resize(&id, rows, cols).await;
+                            }
+                            PtyCommand::Write { data } => {
+                                let _ = manager.write(&id, data.as_bytes()).await;
+                            }
+                            PtyCommand::Kill => {
+                                let _ = manager.kill(&id).await;
+                                break;
+                            }
+                        }
+                    }
+                }
+                Ok(ws::Message::Close(_)) | Err(_) => break,
+                _ => {}
+            }
+        }
+    };
+
+    tokio::select! {
+        _ = pty_to_ws => {}
+        _ = ws_to_pty => {}
+    }
+    
+    tracing::info!("WebSocket PTY connection closed: {}", id);
 }
 
 /// POST /pty/:id/resize - Resize PTY session
