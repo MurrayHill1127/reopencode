@@ -5,6 +5,7 @@ use axum::{
 use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
+use crate::bus::GlobalBus;
 
 #[derive(Debug, Serialize)]
 pub struct HealthStatus {
@@ -41,17 +42,27 @@ pub async fn health() -> Json<HealthStatus> {
 }
 
 pub async fn event() -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let stream = futures::stream::iter(vec![Ok(Event::default().data(
-        serde_json::to_string(&SseEvent {
-            directory: "/".to_string(),
-            payload: SsePayload {
-                event_type: "server.connected".to_string(),
-                properties: serde_json::json!({}),
-            },
-        })
-        .unwrap(),
-    ))]);
-    Sse::new(stream)
+    let mut rx = GlobalBus::subscribe();
+    let stream = async_stream::stream! {
+        loop {
+            match rx.recv().await {
+                Ok(global_event) => {
+                    yield Ok::<_, Infallible>(Event::default()
+                        .data(serde_json::to_string(&SseEvent {
+                            directory: global_event.directory,
+                            payload: SsePayload {
+                                event_type: global_event.payload.event_type,
+                                properties: serde_json::json!({}),
+                            },
+                        }).unwrap()));
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    };
+    Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::new()
+        .interval(std::time::Duration::from_secs(15)))
 }
 
 pub async fn config_get() -> Json<GlobalConfig> {
