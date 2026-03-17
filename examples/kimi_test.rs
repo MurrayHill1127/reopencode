@@ -25,7 +25,7 @@ async fn main() {
 
     let messages = vec![Message::user("Hello!")];
 
-    match provider.chat(messages, KIMI_MODEL, 0.7, Some(100)).await {
+    match provider.chat(messages, KIMI_MODEL, 0.7, Some(100), &[]).await {
         Ok(response) => {
             println!("=== Response ===");
             println!("Model: {}", response.model);

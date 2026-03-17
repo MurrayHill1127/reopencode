@@ -9,7 +9,7 @@ use tracing::{debug, error, info};
 use crate::provider::config::ProviderConfig;
 use crate::provider::error::{ProviderError, Result};
 use crate::provider::message::Message;
-use crate::provider::provider_trait::{Provider, ProviderResponse, ToolDefinition, Usage};
+use crate::provider::provider_trait::{Provider, ProviderResponse, ProviderToolCall, ToolDefinition, Usage};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -36,6 +36,8 @@ struct OpenAiRequest {
 struct OpenAiMessage {
     role: String,
     content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -54,6 +56,22 @@ struct OpenAiChoice {
 #[derive(Deserialize)]
 struct OpenAiMessageResponse {
     content: Option<String>,
+    #[serde(default)]
+    tool_calls: Vec<OpenAiToolCall>,
+}
+
+#[derive(Deserialize)]
+struct OpenAiToolCall {
+    id: String,
+    #[serde(rename = "type")]
+    call_type: String,
+    function: OpenAiToolCallFunction,
+}
+
+#[derive(Deserialize)]
+struct OpenAiToolCallFunction {
+    name: String,
+    arguments: String,
 }
 
 #[derive(Deserialize)]
@@ -98,6 +116,7 @@ impl OpenAiProvider {
             .map(|m| OpenAiMessage {
                 role: m.role.to_string(),
                 content: m.content,
+                tool_call_id: m.tool_call_id,
             })
             .collect()
     }
@@ -182,6 +201,24 @@ impl Provider for OpenAiProvider {
             .and_then(|m| m.content.clone())
             .unwrap_or_default();
 
+        let tool_calls: Vec<ProviderToolCall> = choice
+            .message
+            .as_ref()
+            .map(|m| {
+                m.tool_calls
+                    .iter()
+                    .map(|tc| ProviderToolCall {
+                        id: tc.id.clone(),
+                        call_type: tc.call_type.clone(),
+                        function: crate::provider::provider_trait::ProviderToolCallFunction {
+                            name: tc.function.name.clone(),
+                            arguments: tc.function.arguments.clone(),
+                        },
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let usage = json.usage.map(|u| Usage {
             prompt_tokens: u.prompt_tokens,
             completion_tokens: u.completion_tokens,
@@ -193,7 +230,7 @@ impl Provider for OpenAiProvider {
             model: json.model.unwrap_or_else(|| model.to_string()),
             usage,
             finish_reason: choice.finish_reason.clone(),
-            tool_calls: vec![],
+            tool_calls,
         })
     }
 
@@ -314,6 +351,7 @@ mod tests {
             messages: vec![OpenAiMessage {
                 role: "user".to_string(),
                 content: "Hello".to_string(),
+                tool_call_id: None,
             }],
             temperature: 0.7,
             max_tokens: Some(100),
@@ -346,5 +384,33 @@ mod tests {
         assert_eq!(response.choices.len(), 1);
         assert_eq!(response.choices[0].message.as_ref().unwrap().content, Some("Hello!".to_string()));
         assert_eq!(response.usage.unwrap().total_tokens, 15);
+    }
+
+    #[test]
+    fn test_openai_response_with_tool_calls() {
+        let json = r#"{
+            "choices": [{
+                "message": {
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_123",
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": "{\"location\": \"Beijing\"}"
+                        }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }],
+            "model": "gpt-4"
+        }"#;
+
+        let response: OpenAiResponse = serde_json::from_str(json).unwrap();
+        let msg = response.choices[0].message.as_ref().unwrap();
+        assert_eq!(msg.tool_calls.len(), 1);
+        assert_eq!(msg.tool_calls[0].id, "call_123");
+        assert_eq!(msg.tool_calls[0].function.name, "get_weather");
+        assert_eq!(msg.tool_calls[0].function.arguments, r#"{"location": "Beijing"}"#);
     }
 }

@@ -33,7 +33,7 @@ async fn test_kimi_api_basic_chat() {
     let messages = vec![Message::user("Say 'Hello, World!' and nothing else.")];
 
     let result = provider
-        .chat(messages, KIMI_MODEL, 0.7, Some(50))
+        .chat(messages, KIMI_MODEL, 0.7, Some(50), &[])
         .await;
 
     match result {
@@ -72,7 +72,7 @@ async fn test_kimi_api_with_system_message() {
     ];
 
     let result = provider
-        .chat(messages, KIMI_MODEL, 0.5, Some(20))
+        .chat(messages, KIMI_MODEL, 0.5, Some(20), &[])
         .await;
 
     match result {
@@ -103,7 +103,7 @@ async fn test_kimi_api_streaming() {
 
     let messages = vec![Message::user("Count from 1 to 5, one number per line.")];
 
-    let mut stream = provider.chat_stream(messages, KIMI_MODEL, 0.7, Some(50));
+    let mut stream = provider.chat_stream(messages, KIMI_MODEL, 0.7, Some(50), &[]);
 
     println!("=== Kimi API Streaming Response ===");
     let mut full_response = String::new();
