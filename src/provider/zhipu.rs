@@ -199,6 +199,7 @@ impl Provider for ZhipuProvider {
             model: json.model.unwrap_or_else(|| model.to_string()),
             usage,
             finish_reason: choice.finish_reason.clone(),
+            tool_calls: vec![],
         })
     }
 

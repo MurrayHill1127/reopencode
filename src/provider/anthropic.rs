@@ -177,6 +177,7 @@ impl Provider for AnthropicProvider {
             model: json.model,
             usage,
             finish_reason: json.stop_reason,
+            tool_calls: vec![],
         })
     }
 

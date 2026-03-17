@@ -22,6 +22,27 @@ pub struct ToolFunction {
     pub parameters: serde_json::Value,
 }
 
+/// Tool call returned by the provider
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderToolCall {
+    /// Unique identifier for this tool call
+    pub id: String,
+    /// The type of tool (always "function" for now)
+    #[serde(rename = "type")]
+    pub call_type: String,
+    /// The function call details
+    pub function: ProviderToolCallFunction,
+}
+
+/// Function details within a tool call
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderToolCallFunction {
+    /// Name of the function to call
+    pub name: String,
+    /// JSON-encoded arguments string
+    pub arguments: String,
+}
+
 impl From<&crate::agent::ToolDefinition> for ToolDefinition {
     fn from(td: &crate::agent::ToolDefinition) -> Self {
         Self {
@@ -58,6 +79,7 @@ pub struct ProviderResponse {
     pub model: String,
     pub usage: Usage,
     pub finish_reason: Option<String>,
+    pub tool_calls: Vec<ProviderToolCall>,
 }
 
 impl ProviderResponse {
@@ -67,6 +89,7 @@ impl ProviderResponse {
             model: model.into(),
             usage: Usage::default(),
             finish_reason: None,
+            tool_calls: vec![],
         }
     }
 
@@ -78,6 +101,15 @@ impl ProviderResponse {
     pub fn with_finish_reason(mut self, reason: impl Into<String>) -> Self {
         self.finish_reason = Some(reason.into());
         self
+    }
+
+    pub fn with_tool_calls(mut self, tool_calls: Vec<ProviderToolCall>) -> Self {
+        self.tool_calls = tool_calls;
+        self
+    }
+
+    pub fn has_tool_calls(&self) -> bool {
+        !self.tool_calls.is_empty()
     }
 }
 
