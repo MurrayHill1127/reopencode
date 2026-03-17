@@ -9,6 +9,7 @@ pub mod cli;
 pub mod command;
 pub mod config;
 pub mod hook;
+pub mod mcp;
 pub mod provider;
 pub mod pty;
 pub mod server;

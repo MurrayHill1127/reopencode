@@ -11,6 +11,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::agent::Sisyphus;
 use crate::bus::Bus;
+use crate::mcp::McpManager;
 use crate::provider::{OpenAiProvider, Provider, ProviderConfig};
 use crate::session::SessionManager;
 use crate::storage::path::GlobalPath;
@@ -45,6 +46,7 @@ pub struct AppState {
     pub agent: Arc<Sisyphus>,
     pub session_manager: SessionManager,
     pub bus: Arc<Bus>,
+    pub mcp_manager: Arc<McpManager>,
 }
 
 impl AppState {
@@ -61,8 +63,9 @@ impl AppState {
         );
         
         let bus = Arc::new(Bus::new(directory));
+        let mcp_manager = Arc::new(McpManager::new());
 
-        Self { provider, agent, session_manager, bus }
+        Self { provider, agent, session_manager, bus, mcp_manager }
     }
 }
 

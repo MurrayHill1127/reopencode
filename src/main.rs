@@ -7,6 +7,7 @@ mod cli;
 mod command;
 mod config;
 mod hook;
+mod mcp;
 mod provider;
 mod pty;
 mod server;
