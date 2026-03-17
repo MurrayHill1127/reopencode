@@ -29,6 +29,7 @@ sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 toml = "0.8"
 
 # Error handling
@@ -57,6 +58,8 @@ camino = "1.2.2"
 base64 = "0.22.1"
 fnv = "1.0.7"
 globset = "0.4.18"
+walkdir = "2"
+shellexpand = "3"
 
 [dev-dependencies]
 tokio-test = "0.4"
