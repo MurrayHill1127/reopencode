@@ -9,7 +9,7 @@ use tracing::{debug, error, info};
 use crate::provider::config::ProviderConfig;
 use crate::provider::error::{ProviderError, Result};
 use crate::provider::message::Message;
-use crate::provider::provider_trait::{Provider, ProviderResponse, Usage};
+use crate::provider::provider_trait::{Provider, ProviderResponse, ToolDefinition, Usage};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_BASE_URL: &str = "https://open.bigmodel.cn/api/paas/v4";
@@ -131,6 +131,7 @@ impl Provider for ZhipuProvider {
         model: &str,
         temperature: f32,
         max_tokens: Option<u32>,
+        _tools: &[ToolDefinition],
     ) -> Result<ProviderResponse> {
         info!("调用智谱 AI API, 模型: {}", model);
         debug!("请求参数: messages={}, temp={}", messages.len(), temperature);
@@ -207,6 +208,7 @@ impl Provider for ZhipuProvider {
         model: &str,
         temperature: f32,
         max_tokens: Option<u32>,
+        _tools: &[ToolDefinition],
     ) -> Pin<Box<dyn futures::Stream<Item = Result<String>> + Send>> {
         let url = format!("{}/chat/completions", self.get_base_url());
         let api_key = self.config.api_key.clone();

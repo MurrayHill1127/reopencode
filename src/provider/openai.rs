@@ -9,7 +9,7 @@ use tracing::{debug, error, info};
 use crate::provider::config::ProviderConfig;
 use crate::provider::error::{ProviderError, Result};
 use crate::provider::message::Message;
-use crate::provider::provider_trait::{Provider, ProviderResponse, Usage};
+use crate::provider::provider_trait::{Provider, ProviderResponse, ToolDefinition, Usage};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -28,6 +28,8 @@ struct OpenAiRequest {
     max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tools: Vec<ToolDefinition>,
 }
 
 #[derive(Serialize)]
@@ -128,6 +130,7 @@ impl Provider for OpenAiProvider {
         model: &str,
         temperature: f32,
         max_tokens: Option<u32>,
+        tools: &[ToolDefinition],
     ) -> Result<ProviderResponse> {
         info!("调用 OpenAI API, 模型: {}", model);
         debug!("请求参数: messages={}, temp={}", messages.len(), temperature);
@@ -140,6 +143,7 @@ impl Provider for OpenAiProvider {
             temperature,
             max_tokens,
             stream: None,
+            tools: tools.to_vec(),
         };
 
         let response = self
@@ -198,12 +202,14 @@ impl Provider for OpenAiProvider {
         model: &str,
         temperature: f32,
         max_tokens: Option<u32>,
+        tools: &[ToolDefinition],
     ) -> Pin<Box<dyn futures::Stream<Item = Result<String>> + Send>> {
         let url = format!("{}/chat/completions", self.get_base_url());
         let api_key = self.config.api_key.clone();
         let client = self.client.clone();
         let openai_messages = Self::convert_messages(messages);
         let model = model.to_string();
+        let tools = tools.to_vec();
 
         let request = OpenAiRequest {
             model: model.clone(),
@@ -211,6 +217,7 @@ impl Provider for OpenAiProvider {
             temperature,
             max_tokens,
             stream: Some(true),
+            tools,
         };
 
         Box::pin(async_stream::stream! {
@@ -310,6 +317,7 @@ mod tests {
             temperature: 0.7,
             max_tokens: Some(100),
             stream: None,
+            tools: vec![],
         };
 
         let json = serde_json::to_string(&request).unwrap();

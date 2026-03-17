@@ -2,9 +2,38 @@ use std::pin::Pin;
 
 use async_trait::async_trait;
 use futures::Stream;
+use serde::{Deserialize, Serialize};
 
 use crate::provider::error::Result;
 use crate::provider::message::Message;
+
+/// Tool definition for providers (mirrors agent::ToolDefinition for API use)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolDefinition {
+    #[serde(rename = "type")]
+    pub tool_type: String,
+    pub function: ToolFunction,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolFunction {
+    pub name: String,
+    pub description: String,
+    pub parameters: serde_json::Value,
+}
+
+impl From<&crate::agent::ToolDefinition> for ToolDefinition {
+    fn from(td: &crate::agent::ToolDefinition) -> Self {
+        Self {
+            tool_type: "function".to_string(),
+            function: ToolFunction {
+                name: td.name.clone(),
+                description: td.description.clone(),
+                parameters: td.parameters.clone(),
+            },
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Usage {
@@ -62,6 +91,7 @@ pub trait Provider: Send + Sync {
         model: &str,
         temperature: f32,
         max_tokens: Option<u32>,
+        tools: &[ToolDefinition],
     ) -> Result<ProviderResponse>;
 
     fn chat_stream(
@@ -70,6 +100,7 @@ pub trait Provider: Send + Sync {
         model: &str,
         temperature: f32,
         max_tokens: Option<u32>,
+        tools: &[ToolDefinition],
     ) -> Pin<Box<dyn Stream<Item = Result<String>> + Send>>;
 }
 

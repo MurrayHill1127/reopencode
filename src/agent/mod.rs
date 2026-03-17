@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, error};
 
-use crate::provider::{Message as ProviderMessage, MessageRole as ProviderMessageRole, Provider};
+use crate::provider::{Message as ProviderMessage, MessageRole as ProviderMessageRole, Provider, ToolDefinition as ProviderToolDefinition};
 
 /// Agent configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,11 +162,12 @@ impl Agent for Sisyphus {
     async fn execute(
         &self,
         messages: Vec<Message>,
-        _tools: Vec<ToolDefinition>,
+        tools: Vec<ToolDefinition>,
     ) -> Result<AgentResponse, AgentError> {
         debug!("Sisyphus executing with {} messages", messages.len());
 
         let provider_messages = Self::convert_messages(messages);
+        let provider_tools: Vec<ProviderToolDefinition> = tools.iter().map(ProviderToolDefinition::from).collect();
         
         let response = self
             .provider
@@ -175,6 +176,7 @@ impl Agent for Sisyphus {
                 &self.config.model,
                 self.config.temperature,
                 self.config.max_tokens,
+                &provider_tools,
             )
             .await
             .map_err(|e| {

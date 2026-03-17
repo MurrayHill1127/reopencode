@@ -17,6 +17,6 @@ pub use config::{ProviderConfig, ProvidersConfig};
 pub use error::{ProviderError, Result};
 pub use message::{Message, MessageRole};
 pub use openai::OpenAiProvider;
-pub use provider_trait::{Provider, ProviderResponse, Usage};
+pub use provider_trait::{Provider, ProviderResponse, ToolDefinition, Usage};
 pub use registry::ProviderRegistry;
 pub use zhipu::ZhipuProvider;
