@@ -3,9 +3,14 @@
 pub mod handlers;
 pub mod routes;
 
+use std::sync::Arc;
+
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
+
+use crate::agent::Sisyphus;
+use crate::provider::{OpenAiProvider, Provider, ProviderConfig};
 
 pub use routes::create_router;
 
@@ -30,7 +35,31 @@ impl ServerConfig {
     }
 }
 
-pub fn build_app() -> Router {
+/// Application state shared across handlers
+#[derive(Clone)]
+pub struct AppState {
+    pub provider: Arc<dyn Provider>,
+    pub agent: Arc<Sisyphus>,
+}
+
+impl AppState {
+    /// Create a new AppState with Kimi provider configuration
+    pub fn new_kimi(api_key: impl Into<String>) -> Self {
+        let config = ProviderConfig::new("kimi", api_key.into())
+            .with_base_url("https://api.moonshot.cn/v1");
+        
+        let provider = Arc::new(OpenAiProvider::new(config));
+        let agent = Arc::new(
+            Sisyphus::new(Arc::clone(&provider) as Arc<dyn Provider>)
+                .with_model("moonshot-v1-8k")
+                .with_temperature(0.7),
+        );
+
+        Self { provider, agent }
+    }
+}
+
+pub fn build_app(state: AppState) -> Router {
     create_router()
         .layer(
             CorsLayer::new()
@@ -39,10 +68,15 @@ pub fn build_app() -> Router {
                 .allow_headers(Any),
         )
         .layer(TraceLayer::new_for_http())
+        .with_state(state)
 }
 
 pub async fn start(config: ServerConfig) -> anyhow::Result<()> {
-    let app = build_app();
+    let api_key = std::env::var("KIMI_API_KEY")
+        .map_err(|_| anyhow::anyhow!("KIMI_API_KEY environment variable not set"))?;
+    
+    let state = AppState::new_kimi(api_key);
+    let app = build_app(state);
     let addr = format!("{}:{}", config.host, config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 

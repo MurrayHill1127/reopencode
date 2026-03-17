@@ -1,9 +1,12 @@
 use axum::{
-    extract::{Json, Path},
+    extract::{Json, Path, State},
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
+use tracing::{error, info};
 
+use crate::agent::{Agent, Message, Role};
+use crate::server::AppState;
 use crate::session::{Session, SessionStatus};
 
 #[derive(Debug, Serialize)]
@@ -63,13 +66,30 @@ pub async fn get(Path(_id): Path<String>) -> StatusCode {
 }
 
 pub async fn send_message(
+    State(state): State<AppState>,
     Path(session_id): Path<String>,
     Json(body): Json<SendMessageRequest>,
-) -> Json<SendMessageResponse> {
+) -> Result<Json<SendMessageResponse>, StatusCode> {
     let message_id = uuid::Uuid::new_v4().to_string();
     
-    Json(SendMessageResponse {
-        message_id,
-        response: format!("Echo: {} (session: {})", body.content, session_id),
-    })
+    info!("Processing message for session {}: {}", session_id, body.content);
+    
+    let messages = vec![Message {
+        role: Role::User,
+        content: body.content,
+    }];
+    
+    match state.agent.execute(messages, vec![]).await {
+        Ok(response) => {
+            info!("Agent response: {} tokens used", response.usage.total_tokens);
+            Ok(Json(SendMessageResponse {
+                message_id,
+                response: response.content,
+            }))
+        }
+        Err(e) => {
+            error!("Agent execution failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }

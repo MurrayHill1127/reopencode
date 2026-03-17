@@ -4,8 +4,9 @@ use axum::{
 };
 
 use super::handlers;
+use super::AppState;
 
-pub fn create_router() -> Router {
+pub fn create_router() -> Router<AppState> {
     Router::new()
         .route("/", get(handlers::health))
         .route("/session", get(handlers::session::list).post(handlers::session::create))
