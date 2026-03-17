@@ -1,6 +1,7 @@
 //! ReOpenCode (ROC) - Rust rewrite of opencode + oh-my-openagent
 
 mod agent;
+mod bus;
 mod category;
 mod cli;
 mod command;

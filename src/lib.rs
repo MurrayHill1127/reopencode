@@ -3,6 +3,7 @@
 //! A high-performance AI coding assistant with plugin support.
 
 pub mod agent;
+pub mod bus;
 pub mod category;
 pub mod cli;
 pub mod command;

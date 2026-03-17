@@ -10,6 +10,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use crate::agent::Sisyphus;
+use crate::bus::Bus;
 use crate::provider::{OpenAiProvider, Provider, ProviderConfig};
 use crate::session::SessionManager;
 use crate::storage::path::GlobalPath;
@@ -43,11 +44,12 @@ pub struct AppState {
     pub provider: Arc<dyn Provider>,
     pub agent: Arc<Sisyphus>,
     pub session_manager: SessionManager,
+    pub bus: Arc<Bus>,
 }
 
 impl AppState {
     /// Create a new AppState with Kimi provider configuration
-    pub fn new_kimi(api_key: impl Into<String>, session_manager: SessionManager) -> Self {
+    pub fn new_kimi(api_key: impl Into<String>, session_manager: SessionManager, directory: impl Into<String>) -> Self {
         let config = ProviderConfig::new("kimi", api_key.into())
             .with_base_url("https://api.moonshot.cn/v1");
         
@@ -57,8 +59,10 @@ impl AppState {
                 .with_model("moonshot-v1-8k")
                 .with_temperature(0.7),
         );
+        
+        let bus = Arc::new(Bus::new(directory));
 
-        Self { provider, agent, session_manager }
+        Self { provider, agent, session_manager, bus }
     }
 }
 
@@ -86,7 +90,11 @@ pub async fn start(config: ServerConfig) -> anyhow::Result<()> {
     let session_manager = SessionManager::new(&database_url).await
         .map_err(|e| anyhow::anyhow!("Failed to initialize session manager: {}", e))?;
     
-    let state = AppState::new_kimi(api_key, session_manager);
+    let directory = std::env::current_dir()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "/".to_string());
+    
+    let state = AppState::new_kimi(api_key, session_manager, directory);
     let app = build_app(state);
     let addr = format!("{}:{}", config.host, config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
