@@ -1,6 +1,11 @@
+pub mod command;
 pub mod config;
+pub mod file;
+pub mod path;
+pub mod project;
 pub mod provider;
 pub mod session;
+pub mod vcs;
 
 use axum::Json;
 use serde_json::json;
