@@ -5,9 +5,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
-use crate::provider::{Message as ProviderMessage, MessageRole as ProviderMessageRole, Provider, ProviderToolCallFunction, ToolDefinition as ProviderToolDefinition};
+use crate::provider::{Message as ProviderMessage, MessageRole as ProviderMessageRole, Provider, ProviderToolCall, ProviderToolCallFunction, ToolDefinition as ProviderToolDefinition};
+use crate::tool::registry::ToolRegistry;
+use crate::tool::traits::Tool;
 
 /// Agent configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,6 +149,105 @@ impl Sisyphus {
             .into_iter()
             .map(|m| ProviderMessage::new(m.role.into(), m.content))
             .collect()
+    }
+
+    /// Execute with tool calling loop - continues until no more tool calls
+    /// or max iterations reached
+    pub async fn execute_with_tools(
+        &self,
+        messages: Vec<Message>,
+        tools: Vec<ToolDefinition>,
+        tool_registry: &ToolRegistry,
+        max_iterations: usize,
+    ) -> Result<AgentResponse, AgentError> {
+        let mut current_messages: Vec<ProviderMessage> = Self::convert_messages(messages);
+        let provider_tools: Vec<ProviderToolDefinition> = tools.iter().map(ProviderToolDefinition::from).collect();
+        
+        let mut total_usage = Usage {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+        };
+        
+        let mut iterations = 0;
+        
+        loop {
+            iterations += 1;
+            if iterations > max_iterations {
+                debug!("Max iterations ({}) reached, stopping", max_iterations);
+                break;
+            }
+            
+            debug!("Iteration {}: calling provider with {} messages", iterations, current_messages.len());
+            
+            let response = self
+                .provider
+                .chat(
+                    current_messages.clone(),
+                    &self.config.model,
+                    self.config.temperature,
+                    self.config.max_tokens,
+                    &provider_tools,
+                )
+                .await
+                .map_err(|e| {
+                    error!("Provider error: {}", e);
+                    AgentError::Provider(e.to_string())
+                })?;
+            
+            total_usage.prompt_tokens += response.usage.prompt_tokens;
+            total_usage.completion_tokens += response.usage.completion_tokens;
+            total_usage.total_tokens += response.usage.total_tokens;
+            
+            if !response.has_tool_calls() {
+                debug!("No tool calls, returning final response");
+                return Ok(AgentResponse {
+                    content: response.content,
+                    tool_calls: vec![],
+                    usage: total_usage,
+                });
+            }
+            
+            debug!("Provider returned {} tool calls", response.tool_calls.len());
+            
+            let assistant_msg = ProviderMessage::assistant_with_tool_calls(
+                response.content.clone(),
+                response.tool_calls.clone(),
+            );
+            current_messages.push(assistant_msg);
+            
+            for tool_call in &response.tool_calls {
+                let tool_name = &tool_call.function.name;
+                let tool_args: Value = serde_json::from_str(&tool_call.function.arguments)
+                    .unwrap_or(Value::Object(serde_json::Map::new()));
+                
+                info!("Executing tool: {} with args: {:?}", tool_name, tool_args);
+                
+                let tool_result = if let Some(tool) = tool_registry.get(tool_name) {
+                    match tool.execute(tool_args).await {
+                        Ok(result) => result.output,
+                        Err(e) => {
+                            error!("Tool {} execution failed: {}", tool_name, e);
+                            format!("Error: {}", e)
+                        }
+                    }
+                } else {
+                    error!("Tool not found: {}", tool_name);
+                    format!("Error: Tool '{}' not found", tool_name)
+                };
+                
+                debug!("Tool {} result: {}", tool_name, tool_result);
+                
+                let tool_msg = ProviderMessage::tool(tool_result, &tool_call.id);
+                current_messages.push(tool_msg);
+            }
+        }
+        
+        Ok(AgentResponse {
+            content: "Max iterations reached without final response".to_string(),
+            tool_calls: vec![],
+            usage: total_usage,
+        })
     }
 }
 
