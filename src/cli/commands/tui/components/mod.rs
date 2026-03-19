@@ -5,6 +5,7 @@
 pub mod command_dialog;
 pub mod composite;
 pub mod dialog;
+pub mod dialog_agent;
 pub mod dialog_permission;
 pub mod dialog_question;
 pub mod error;
@@ -27,6 +28,14 @@ pub mod toast;
 pub mod types;
 
 pub use command_dialog::{CommandDialog, CommandEntry};
+pub use dialog::{
+    ActiveButton, ConfirmDialog, Dialog, DialogResult, DialogSize, InputDialog, PermissionButton,
+    PermissionDialog, QuestionDialog, SelectDialog, SelectOption,
+};
+pub use dialog_agent::{AgentInfo, DialogAgent};
+pub use dialog_question::{
+    MultiQuestionDialog, Question, QuestionAnswer, QuestionOption, QuestionRequest,
+};
 pub use events::{ComponentAction, ComponentEvent, ToastVariant};
 pub use focus::FocusManager;
 pub use footer::Footer;
@@ -36,13 +45,6 @@ pub use message_list::MessageList;
 pub use sidebar::{ContextInfo, DiffInfo, LspServerInfo, McpServerInfo, Sidebar, TodoItem};
 pub use status_dialog::StatusDialog;
 pub use textarea::TextArea;
-pub use dialog::{
-    ActiveButton, ConfirmDialog, Dialog, DialogSize, DialogResult, InputDialog,
-    PermissionButton, PermissionDialog, QuestionDialog, SelectDialog, SelectOption,
-};
-pub use dialog_question::{
-    MultiQuestionDialog, Question, QuestionAnswer, QuestionOption, QuestionRequest,
-};
 pub use types::{ComponentId, EventPropagation};
 
 use crossterm::event::KeyEvent;

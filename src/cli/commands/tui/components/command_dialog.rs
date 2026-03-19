@@ -6,7 +6,7 @@
 use super::dialog::{SelectDialog, SelectOption};
 use super::{Component, ComponentId, EventPropagation};
 use crossterm::event::KeyEvent;
-use ratatui::{layout::Rect, Frame};
+use ratatui::{Frame, layout::Rect};
 use std::time::Duration;
 
 pub type CommandAction = Box<dyn FnMut() + Send + Sync>;

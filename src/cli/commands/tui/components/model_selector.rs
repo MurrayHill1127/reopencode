@@ -35,11 +35,11 @@ use super::{Component, ComponentEvent, ComponentId, EventPropagation};
 use crate::cli::commands::tui::keybindings::{KeybindInfo, KeybindsConfig};
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
-    Frame,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -1378,9 +1378,11 @@ mod tests {
 
         // Check state
         if let Some(item) = selector.filtered_items.first() {
-            assert!(selector
-                .state
-                .is_favorite(&item.model.provider_id, &item.model.model_id));
+            assert!(
+                selector
+                    .state
+                    .is_favorite(&item.model.provider_id, &item.model.model_id)
+            );
         }
     }
 

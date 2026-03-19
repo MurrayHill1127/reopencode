@@ -205,11 +205,7 @@ impl LspServerInfo {
 
     /// Get status indicator
     pub fn status_indicator(&self) -> &'static str {
-        if self.active {
-            "●"
-        } else {
-            "○"
-        }
+        if self.active { "●" } else { "○" }
     }
 
     /// Get status color

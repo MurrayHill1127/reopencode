@@ -13,11 +13,11 @@ use std::time::Duration;
 
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
     text::{Line, Span},
     widgets::Paragraph,
-    Frame,
 };
 
 use super::{Component, ComponentId, EventPropagation};

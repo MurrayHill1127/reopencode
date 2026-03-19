@@ -386,7 +386,7 @@ fn default_session_new() -> String {
 }
 
 fn default_session_list() -> String {
-    "<leader>l".to_string()
+    "ctrl+p".to_string()
 }
 
 fn default_session_timeline() -> String {
@@ -518,7 +518,7 @@ fn default_model_cycle_favorite_reverse() -> String {
 }
 
 fn default_command_list() -> String {
-    "ctrl+p".to_string()
+    "none".to_string()
 }
 
 fn default_agent_list() -> String {
@@ -1366,7 +1366,7 @@ mod tests {
 
         assert_eq!(config.session_export, "<leader>x");
         assert_eq!(config.session_new, "<leader>n");
-        assert_eq!(config.session_list, "<leader>l");
+        assert_eq!(config.session_list, "ctrl+p");
         assert_eq!(config.session_timeline, "<leader>g");
         assert_eq!(config.session_fork, "none");
         assert_eq!(config.session_rename, "ctrl+r");
@@ -1402,7 +1402,7 @@ mod tests {
         assert_eq!(config.input_undo, "ctrl+-,super+z");
         assert_eq!(config.input_redo, "ctrl+.,super+shift+z");
 
-        assert_eq!(config.command_list, "ctrl+p");
+        assert_eq!(config.command_list, "none");
         assert_eq!(config.agent_list, "<leader>a");
         assert_eq!(config.agent_cycle, "tab");
         assert_eq!(config.agent_cycle_reverse, "shift+tab");

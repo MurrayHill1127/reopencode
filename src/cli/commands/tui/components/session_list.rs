@@ -1,37 +1,89 @@
 //! Session List Component
 //!
 //! A component for displaying a list of sessions with search and navigation.
-//! Supports filtering, pagination, and delete confirmation.
+//! Supports filtering, pagination, delete confirmation, and date-based grouping.
 
-use super::{Component, ComponentEvent, ComponentId, EventPropagation};
 use crate::cli::commands::tui::SessionInfo;
+use chrono::{Local, NaiveDate};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List as TuiList, ListItem, ListState},
+    widgets::{Block, Borders, List as TuiList, ListItem, ListState, Paragraph},
 };
 use reqwest::Client;
-use serde::Serialize;
-use std::time::Duration;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
+
+use super::{Component, ComponentEvent, ComponentId, EventPropagation};
 
 const SERVER_URL: &str = "http://127.0.0.1:4096";
+const DELETE_CONFIRM_TIMEOUT_MS: u64 = 3000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum DateCategory {
+    Today,
+    Yesterday,
+    ThisWeek,
+    Older,
+}
+
+impl DateCategory {
+    pub fn from_date_str(date_str: &str) -> Self {
+        let parsed_date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+            .or_else(|_| NaiveDate::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S%.fZ"))
+            .or_else(|_| NaiveDate::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S"))
+            .or_else(|_| chrono::DateTime::parse_from_rfc3339(date_str).map(|dt| dt.date_naive()))
+            .or_else(|_| chrono::DateTime::parse_from_str(date_str, "%+").map(|dt| dt.date_naive()))
+            .ok();
+
+        match parsed_date {
+            Some(date) => {
+                let today = Local::now().date_naive();
+                let yesterday = today - chrono::Duration::days(1);
+                let week_ago = today - chrono::Duration::days(7);
+
+                if date == today {
+                    DateCategory::Today
+                } else if date == yesterday {
+                    DateCategory::Yesterday
+                } else if date >= week_ago {
+                    DateCategory::ThisWeek
+                } else {
+                    DateCategory::Older
+                }
+            }
+            None => DateCategory::Older,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            DateCategory::Today => "Today",
+            DateCategory::Yesterday => "Yesterday",
+            DateCategory::ThisWeek => "This Week",
+            DateCategory::Older => "Older",
+        }
+    }
+
+    pub fn all() -> [DateCategory; 4] {
+        [
+            DateCategory::Today,
+            DateCategory::Yesterday,
+            DateCategory::ThisWeek,
+            DateCategory::Older,
+        ]
+    }
+}
 
 #[derive(Debug, Serialize)]
 pub struct CreateSessionRequest {
     pub title: Option<String>,
 }
 
-/// Session list component for displaying and managing sessions.
-///
-/// Features:
-/// - Search/filter sessions by title
-/// - Navigation with wrap-around (next/prev)
-/// - Page up/down for fast scrolling
-/// - Delete confirmation with double-press
-/// - Focus-aware styling
 pub struct SessionList {
     id: ComponentId,
     sessions: Vec<SessionInfo>,
@@ -44,13 +96,13 @@ pub struct SessionList {
     client: Client,
     loading: bool,
     error_message: Option<String>,
+    current_session_id: Option<String>,
+    rename_session_id: Option<String>,
+    delete_first_press: Option<Instant>,
+    grouped_sessions: HashMap<DateCategory, Vec<SessionInfo>>,
 }
 
 impl SessionList {
-    /// Create a new SessionList component.
-    ///
-    /// Initializes with empty sessions, hidden by default,
-    /// and selection set to first item.
     pub fn new() -> Self {
         let mut state = ListState::default();
         state.select(Some(0));
@@ -66,6 +118,10 @@ impl SessionList {
             client: Client::new(),
             loading: false,
             error_message: None,
+            current_session_id: None,
+            rename_session_id: None,
+            delete_first_press: None,
+            grouped_sessions: HashMap::new(),
         }
     }
 
@@ -141,12 +197,72 @@ impl SessionList {
         self.delete_pending = Some(session_id.into());
     }
 
-    /// Clear delete pending state.
     pub fn clear_delete_pending(&mut self) {
+        self.delete_pending = None;
+        self.delete_first_press = None;
+    }
+
+    pub fn set_current_session_id(&mut self, id: Option<String>) {
+        self.current_session_id = id;
+    }
+
+    pub fn current_session_id(&self) -> Option<&String> {
+        self.current_session_id.as_ref()
+    }
+
+    pub fn is_current_session(&self, session_id: &str) -> bool {
+        self.current_session_id.as_deref() == Some(session_id)
+    }
+
+    pub fn rename_session_id(&self) -> Option<&String> {
+        self.rename_session_id.as_ref()
+    }
+
+    pub fn set_rename_session(&mut self, session_id: Option<String>) {
+        self.rename_session_id = session_id;
+    }
+
+    pub fn get_rename_request(&self) -> Option<(String, String)> {
+        self.rename_session_id
+            .as_ref()
+            .map(|id| (id.clone(), String::new()))
+    }
+
+    pub fn clear_rename_session(&mut self) {
+        self.rename_session_id = None;
+    }
+
+    pub fn handle_delete_press(&mut self) -> Option<String> {
+        if let Some(instant) = self.delete_first_press {
+            if instant.elapsed().as_millis() as u64 > DELETE_CONFIRM_TIMEOUT_MS {
+                self.delete_first_press = Some(Instant::now());
+                if let Some(session) = self.selected_session() {
+                    self.delete_pending = Some(session.id.clone());
+                }
+                return None;
+            }
+            self.delete_first_press = None;
+            let session_id = self.delete_pending.clone();
+            self.delete_pending = None;
+            return session_id;
+        }
+
+        self.delete_first_press = Some(Instant::now());
+        if let Some(session) = self.selected_session() {
+            self.delete_pending = Some(session.id.clone());
+        }
+        None
+    }
+
+    pub fn is_delete_confirm_pending(&self) -> bool {
+        self.delete_first_press.is_some()
+    }
+
+    fn clear_delete_confirmation(&mut self) {
+        self.delete_first_press = None;
         self.delete_pending = None;
     }
 
-    /// Update filtered sessions based on search query.
     fn update_filtered(&mut self) {
         if self.search_query.is_empty() {
             self.filtered_sessions = self.sessions.clone();
@@ -159,7 +275,9 @@ impl SessionList {
                 .cloned()
                 .collect();
         }
-        // Reset selection if out of bounds
+        self.filtered_sessions
+            .sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        self.group_by_date();
         if self.state.selected().unwrap_or(0) >= self.filtered_sessions.len()
             && !self.filtered_sessions.is_empty()
         {
@@ -169,11 +287,26 @@ impl SessionList {
         }
     }
 
-    /// Select next item (wraps around to first).
+    fn group_by_date(&mut self) {
+        self.grouped_sessions.clear();
+        for session in &self.filtered_sessions {
+            let category = DateCategory::from_date_str(&session.updated_at);
+            self.grouped_sessions
+                .entry(category)
+                .or_insert_with(Vec::new)
+                .push(session.clone());
+        }
+    }
+
+    pub fn grouped_sessions(&self) -> &HashMap<DateCategory, Vec<SessionInfo>> {
+        &self.grouped_sessions
+    }
+
     fn select_next(&mut self) {
         if self.filtered_sessions.is_empty() {
             return;
         }
+        self.clear_delete_confirmation();
         let i = match self.state.selected() {
             Some(i) => {
                 if i >= self.filtered_sessions.len() - 1 {
@@ -187,11 +320,11 @@ impl SessionList {
         self.state.select(Some(i));
     }
 
-    /// Select previous item (wraps around to last).
     fn select_prev(&mut self) {
         if self.filtered_sessions.is_empty() {
             return;
         }
+        self.clear_delete_confirmation();
         let i = match self.state.selected() {
             Some(i) => {
                 if i == 0 {
@@ -352,7 +485,6 @@ impl Component for SessionList {
             return;
         }
 
-        // Create block with title showing search query if present
         let title = if self.loading {
             "Sessions (Loading...)".to_string()
         } else if self.search_query.is_empty() {
@@ -374,24 +506,68 @@ impl Component for SessionList {
             Block::default().title(title).borders(Borders::ALL)
         };
 
-        // Build list items from filtered sessions
-        let items: Vec<ListItem> = self
-            .filtered_sessions
-            .iter()
-            .map(|session| {
-                let status_symbol = match session.status.as_str() {
-                    "active" => "●",
-                    "completed" => "✓",
-                    "error" => "✗",
-                    _ => "○",
-                };
-                let content = format!(
-                    "{} {} | {} msgs | {}",
-                    status_symbol, session.title, session.message_count, session.updated_at
-                );
-                ListItem::new(Line::from(Span::raw(content)))
-            })
-            .collect();
+        let mut items: Vec<ListItem> = Vec::new();
+        let selected_idx = self.state.selected().unwrap_or(0);
+
+        for category in DateCategory::all() {
+            if let Some(sessions) = self.grouped_sessions.get(&category) {
+                if !sessions.is_empty() {
+                    items.push(ListItem::new(Line::from(Span::styled(
+                        format!("── {} ──", category.label()),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ))));
+                }
+
+                for session in sessions {
+                    let is_current = self.is_current_session(&session.id);
+                    let is_delete_pending = self
+                        .delete_pending
+                        .as_ref()
+                        .map(|id| id == &session.id)
+                        .unwrap_or(false);
+
+                    let status_symbol = if is_current {
+                        "●"
+                    } else {
+                        match session.status.as_str() {
+                            "active" => "○",
+                            "completed" => "✓",
+                            "error" => "✗",
+                            _ => "○",
+                        }
+                    };
+
+                    let content = format!(
+                        "{} {} | {} msgs | {}",
+                        status_symbol, session.title, session.message_count, session.updated_at
+                    );
+
+                    let style = if is_delete_pending {
+                        Style::default()
+                            .bg(Color::Red)
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else if is_current {
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    };
+
+                    items.push(ListItem::new(Line::from(Span::styled(content, style))));
+                }
+            }
+        }
+
+        if items.is_empty() {
+            items.push(ListItem::new(Line::from(Span::styled(
+                "No sessions found",
+                Style::default().fg(Color::DarkGray),
+            ))));
+        }
 
         let list = TuiList::new(items)
             .block(block)
@@ -403,6 +579,15 @@ impl Component for SessionList {
             .highlight_symbol("> ");
 
         frame.render_stateful_widget(list, area, &mut self.state.clone());
+
+        if self.delete_first_press.is_some() {
+            let msg = "Press ctrl+d again to confirm delete (Esc to cancel)";
+            let msg_area = Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1);
+            frame.render_widget(
+                Paragraph::new(msg).style(Style::default().fg(Color::Red).bg(Color::Black)),
+                msg_area,
+            );
+        }
     }
 
     fn handle_input(&mut self, event: KeyEvent) -> EventPropagation {
@@ -411,12 +596,15 @@ impl Component for SessionList {
         }
 
         match (event.code, event.modifiers) {
-            // Navigation
-            (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::CONTROL) => {
+            (KeyCode::Down, _)
+            | (KeyCode::Char('j'), KeyModifiers::CONTROL)
+            | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
                 self.select_next();
                 EventPropagation::Stop
             }
-            (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
+            (KeyCode::Up, _)
+            | (KeyCode::Char('k'), KeyModifiers::CONTROL)
+            | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
                 self.select_prev();
                 EventPropagation::Stop
             }
@@ -436,7 +624,16 @@ impl Component for SessionList {
                 self.select_last();
                 EventPropagation::Stop
             }
-            // Search input
+            (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                self.handle_delete_press();
+                EventPropagation::Stop
+            }
+            (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
+                if let Some(session) = self.selected_session() {
+                    self.rename_session_id = Some(session.id.clone());
+                }
+                EventPropagation::Stop
+            }
             (KeyCode::Char(c), KeyModifiers::NONE) if c.is_alphabetic() || c.is_numeric() => {
                 self.search_query.push(c);
                 self.update_filtered();
@@ -451,16 +648,15 @@ impl Component for SessionList {
                 self.clear_search();
                 EventPropagation::Stop
             }
-            // Escape to hide
+            (KeyCode::Esc, _) if self.delete_first_press.is_some() => {
+                self.clear_delete_confirmation();
+                EventPropagation::Stop
+            }
             (KeyCode::Esc, _) => {
                 self.hide();
                 EventPropagation::Stop
             }
-            // Enter to select
-            (KeyCode::Enter, _) => {
-                // Selection is handled, propagate Stop
-                EventPropagation::Stop
-            }
+            (KeyCode::Enter, _) => EventPropagation::Stop,
             _ => EventPropagation::Continue,
         }
     }
@@ -927,8 +1123,168 @@ mod tests {
         list.show();
         list.on_focus();
 
-        // A key that doesn't trigger search (e.g., Tab)
         let event = KeyEvent::new(KeyCode::Tab, KeyModifiers::empty());
         assert_eq!(list.handle_input(event), EventPropagation::Continue);
+    }
+
+    #[test]
+    fn test_date_category_from_date_str() {
+        let today = Local::now().format("%Y-%m-%d").to_string();
+        let yesterday = (Local::now() - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+        let three_days_ago = (Local::now() - chrono::Duration::days(3)).format("%Y-%m-%d").to_string();
+        let ten_days_ago = (Local::now() - chrono::Duration::days(10)).format("%Y-%m-%d").to_string();
+
+        assert_eq!(DateCategory::from_date_str(&today), DateCategory::Today);
+        assert_eq!(DateCategory::from_date_str(&yesterday), DateCategory::Yesterday);
+        assert_eq!(DateCategory::from_date_str(&three_days_ago), DateCategory::ThisWeek);
+        assert_eq!(DateCategory::from_date_str(&ten_days_ago), DateCategory::Older);
+    }
+
+    #[test]
+    fn test_date_category_invalid_date() {
+        assert_eq!(DateCategory::from_date_str("invalid"), DateCategory::Older);
+        assert_eq!(DateCategory::from_date_str(""), DateCategory::Older);
+    }
+
+    #[test]
+    fn test_date_category_label() {
+        assert_eq!(DateCategory::Today.label(), "Today");
+        assert_eq!(DateCategory::Yesterday.label(), "Yesterday");
+        assert_eq!(DateCategory::ThisWeek.label(), "This Week");
+        assert_eq!(DateCategory::Older.label(), "Older");
+    }
+
+    #[test]
+    fn test_session_list_current_session_id() {
+        let mut list = SessionList::new();
+        assert!(list.current_session_id().is_none());
+
+        list.set_current_session_id(Some("session-123".to_string()));
+        assert_eq!(list.current_session_id(), Some(&"session-123".to_string()));
+        assert!(list.is_current_session("session-123"));
+        assert!(!list.is_current_session("session-456"));
+
+        list.set_current_session_id(None);
+        assert!(list.current_session_id().is_none());
+    }
+
+    #[test]
+    fn test_session_list_rename_session() {
+        let mut list = SessionList::new();
+        list.set_sessions(vec![create_test_session("1", "Session 1", "active", 5)]);
+        list.show();
+        list.on_focus();
+
+        assert!(list.rename_session_id().is_none());
+
+        let event = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL);
+        assert_eq!(list.handle_input(event), EventPropagation::Stop);
+        assert_eq!(list.rename_session_id(), Some(&"1".to_string()));
+
+        list.clear_rename_session();
+        assert!(list.rename_session_id().is_none());
+    }
+
+    #[test]
+    fn test_session_list_delete_confirmation_first_press() {
+        let mut list = SessionList::new();
+        list.set_sessions(vec![create_test_session("1", "Session 1", "active", 5)]);
+        list.show();
+        list.on_focus();
+
+        assert!(list.delete_pending().is_none());
+        assert!(!list.is_delete_confirm_pending());
+
+        let result = list.handle_delete_press();
+        assert!(result.is_none());
+        assert!(list.is_delete_confirm_pending());
+        assert_eq!(list.delete_pending(), Some(&"1".to_string()));
+    }
+
+    #[test]
+    fn test_session_list_delete_confirmation_esc_cancel() {
+        let mut list = SessionList::new();
+        list.set_sessions(vec![create_test_session("1", "Session 1", "active", 5)]);
+        list.show();
+        list.on_focus();
+
+        let _ = list.handle_delete_press();
+        assert!(list.is_delete_confirm_pending());
+
+        let event = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
+        assert_eq!(list.handle_input(event), EventPropagation::Stop);
+        assert!(!list.is_delete_confirm_pending());
+        assert!(list.delete_pending().is_none());
+    }
+
+    #[test]
+    fn test_session_list_ctrl_p_ctrl_n_navigation() {
+        let mut list = SessionList::new();
+        list.set_sessions(vec![
+            create_test_session("1", "Session 1", "active", 5),
+            create_test_session("2", "Session 2", "active", 5),
+            create_test_session("3", "Session 3", "active", 5),
+        ]);
+        list.show();
+        list.on_focus();
+
+        assert_eq!(list.selected_session().map(|s| s.id.as_str()), Some("1"));
+
+        let event = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL);
+        assert_eq!(list.handle_input(event), EventPropagation::Stop);
+        assert_eq!(list.selected_session().map(|s| s.id.as_str()), Some("2"));
+
+        let event = KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL);
+        assert_eq!(list.handle_input(event), EventPropagation::Stop);
+        assert_eq!(list.selected_session().map(|s| s.id.as_str()), Some("1"));
+    }
+
+    #[test]
+    fn test_session_list_navigation_clears_delete_pending() {
+        let mut list = SessionList::new();
+        list.set_sessions(vec![
+            create_test_session("1", "Session 1", "active", 5),
+            create_test_session("2", "Session 2", "active", 5),
+        ]);
+        list.show();
+        list.on_focus();
+
+        let _ = list.handle_delete_press();
+        assert!(list.is_delete_confirm_pending());
+
+        list.select_next();
+        assert!(!list.is_delete_confirm_pending());
+    }
+
+    #[test]
+    fn test_session_list_grouped_sessions() {
+        let mut list = SessionList::new();
+        let today = Local::now().format("%Y-%m-%d").to_string();
+        let yesterday = (Local::now() - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+
+        let sessions = vec![
+            SessionInfo {
+                id: "1".to_string(),
+                title: "Today Session".to_string(),
+                created_at: today.clone(),
+                updated_at: today,
+                status: "active".to_string(),
+                message_count: 5,
+            },
+            SessionInfo {
+                id: "2".to_string(),
+                title: "Yesterday Session".to_string(),
+                created_at: yesterday.clone(),
+                updated_at: yesterday,
+                status: "active".to_string(),
+                message_count: 3,
+            },
+        ];
+
+        list.set_sessions(sessions);
+        let grouped = list.grouped_sessions();
+
+        assert!(grouped.contains_key(&DateCategory::Today));
+        assert!(grouped.contains_key(&DateCategory::Yesterday));
     }
 }

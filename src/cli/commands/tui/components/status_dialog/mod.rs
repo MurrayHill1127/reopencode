@@ -17,11 +17,11 @@ use super::{Component, ComponentId, EventPropagation};
 use crate::mcp::types::McpStatus;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
-    Frame,
 };
 use std::collections::HashMap;
 use std::time::Duration;

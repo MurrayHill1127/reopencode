@@ -41,11 +41,11 @@
 use super::{Component, ComponentId, EventPropagation};
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
-    Frame,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

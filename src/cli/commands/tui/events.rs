@@ -13,12 +13,16 @@ use crate::bus::{
     TuiCommandExecuteProperties, TuiPromptAppendProperties, TuiSessionSelectProperties,
     TuiToastShowProperties,
 };
-use crate::cli::commands::tui::transcript::{create_assistant_message, TranscriptMessage, PartType};
+use crate::cli::commands::tui::transcript::{
+    PartType, TranscriptMessage, create_assistant_message,
+};
 
 use super::TuiApp;
 
 fn get_message_text(message: &TranscriptMessage) -> String {
-    message.parts.iter()
+    message
+        .parts
+        .iter()
         .filter_map(|part| {
             if let PartType::Text { text, synthetic } = part {
                 if !synthetic {
@@ -165,7 +169,12 @@ impl TuiEventSubscriber {
     /// * `app` - Mutable reference to TUI application state
     /// * `props` - Command execute properties (command string)
     pub fn handle_command_execute(app: &mut TuiApp, props: TuiCommandExecuteProperties) {
-        let cmd_msg = create_assistant_message(&format!("[Command] {}", props.command), "system", "internal", None);
+        let cmd_msg = create_assistant_message(
+            &format!("[Command] {}", props.command),
+            "system",
+            "internal",
+            None,
+        );
         app.messages.push(cmd_msg.clone());
         app.message_list.push(cmd_msg);
     }
@@ -263,7 +272,9 @@ mod tests {
 
         TuiEventSubscriber::handle_toast_show(&mut app, props);
 
-        assert!(get_message_text(&app.messages[1]).contains("[Success] Success: Operation completed"));
+        assert!(
+            get_message_text(&app.messages[1]).contains("[Success] Success: Operation completed")
+        );
     }
 
     #[tokio::test]
@@ -363,8 +374,16 @@ mod tests {
         TuiEventSubscriber::handle_command_execute(&mut app, props1);
         TuiEventSubscriber::handle_command_execute(&mut app, props2);
 
-        assert!(app.messages.iter().any(|m| get_message_text(m).contains("[Command] ls -la")));
-        assert!(app.messages.iter().any(|m| get_message_text(m).contains("[Command] pwd")));
+        assert!(
+            app.messages
+                .iter()
+                .any(|m| get_message_text(m).contains("[Command] ls -la"))
+        );
+        assert!(
+            app.messages
+                .iter()
+                .any(|m| get_message_text(m).contains("[Command] pwd"))
+        );
     }
 
     #[tokio::test]
@@ -441,11 +460,9 @@ mod tests {
 
         // Verify event was handled
         let app = app.read().await;
-        assert!(
-            app.messages
-                .iter()
-                .any(|m| get_message_text(m).contains("[Success] Integration Test: This tests the full flow"))
-        );
+        assert!(app.messages.iter().any(|m| {
+            get_message_text(m).contains("[Success] Integration Test: This tests the full flow")
+        }));
     }
 
     #[tokio::test]

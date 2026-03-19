@@ -21,16 +21,16 @@ pub use context::ContextInfo;
 pub use sections::{DiffInfo, LspServerInfo, McpServerInfo, SidebarSection, TodoItem};
 
 use super::{Component, ComponentId, EventPropagation};
+use crate::VERSION;
 use crate::cli::commands::tui::theme::ThemeContext;
 use crate::mcp::types::McpStatus;
-use crate::VERSION;
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame,
 };
 use sections::SectionState;
 use std::collections::HashMap;

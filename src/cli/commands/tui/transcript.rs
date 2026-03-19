@@ -1660,7 +1660,12 @@ mod tests {
     #[test]
     fn test_create_assistant_message() {
         let msg = create_assistant_message("Response", "oracle", "claude-3", Some(1500));
-        if let MessageRole::Assistant { agent, model_id, duration_ms } = msg.role {
+        if let MessageRole::Assistant {
+            agent,
+            model_id,
+            duration_ms,
+        } = msg.role
+        {
             assert_eq!(agent, "oracle");
             assert_eq!(model_id, "claude-3");
             assert_eq!(duration_ms, Some(1500));
@@ -1671,7 +1676,13 @@ mod tests {
 
     #[test]
     fn test_create_tool_message() {
-        let msg = create_tool_message("bash", ToolStatus::Completed, Some("ls".into()), Some("files".into()), None);
+        let msg = create_tool_message(
+            "bash",
+            ToolStatus::Completed,
+            Some("ls".into()),
+            Some("files".into()),
+            None,
+        );
         assert_eq!(msg.parts.len(), 1);
         if let PartType::Tool { name, status, .. } = &msg.parts[0] {
             assert_eq!(name, "bash");

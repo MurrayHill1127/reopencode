@@ -2396,8 +2396,7 @@ impl PermissionDialog {
 
     /// Check if permission was allowed once
     pub fn is_allowed_once(&self) -> bool {
-        self.result == DialogResult::Confirmed
-            && self.active_button == PermissionButton::AllowOnce
+        self.result == DialogResult::Confirmed && self.active_button == PermissionButton::AllowOnce
     }
 
     /// Check if permission was denied
@@ -2804,8 +2803,8 @@ impl Component for QuestionDialog {
             ))
         };
 
-        let input_paragraph = Paragraph::new(display_text)
-            .block(Block::default().borders(Borders::BOTTOM));
+        let input_paragraph =
+            Paragraph::new(display_text).block(Block::default().borders(Borders::BOTTOM));
         frame.render_widget(input_paragraph, layout[1]);
 
         // Render help text

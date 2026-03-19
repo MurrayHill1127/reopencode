@@ -222,19 +222,19 @@ impl Component for MessageList {
                 // Render markdown content using TranscriptRenderer
                 let markdown = self.format_message_to_markdown(message);
                 let text = self.renderer.render(&markdown);
-                
+
                 // Create a line with role label and first line of content
                 let role_label = self.get_role_label(&message.role);
                 let role_style = self.get_role_style(&message.role);
-                
+
                 let prefix = format!("[{}] ", role_label);
                 let first_line = text.lines.first().cloned().unwrap_or(Line::from(""));
-                
+
                 // Combine prefix with first line
                 let styled_prefix = ratatui::text::Span::styled(prefix, role_style);
                 let mut spans = vec![styled_prefix];
                 spans.extend(first_line.spans);
-                
+
                 ratatui::widgets::ListItem::new(Line::from(spans))
             })
             .collect();
@@ -311,7 +311,7 @@ impl MessageList {
     /// Convert a TranscriptMessage to a Markdown string for rendering
     fn format_message_to_markdown(&self, message: &TranscriptMessage) -> String {
         let mut result = String::new();
-        
+
         // Add role header
         match &message.role {
             MessageRole::User => {
@@ -326,21 +326,25 @@ impl MessageList {
                 let mut chars = agent.chars();
                 let titlecase_agent = match chars.next() {
                     None => String::new(),
-                    Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+                    Some(first) => {
+                        first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
+                    }
                 };
-                
-                let duration_str = duration_ms.map(|ms| {
-                    let seconds = ms as f64 / 1000.0;
-                    format!(" · {:.1}s", seconds)
-                }).unwrap_or_default();
-                
+
+                let duration_str = duration_ms
+                    .map(|ms| {
+                        let seconds = ms as f64 / 1000.0;
+                        format!(" · {:.1}s", seconds)
+                    })
+                    .unwrap_or_default();
+
                 result.push_str(&format!(
                     "## Assistant ({} · {}{})\n\n",
                     titlecase_agent, model_id, duration_str
                 ));
             }
         }
-        
+
         // Format parts
         for part in &message.parts {
             match part {
@@ -361,28 +365,28 @@ impl MessageList {
                     error,
                 } => {
                     result.push_str(&format!("**Tool: {}**\n", name));
-                    
+
                     if let Some(inp) = input {
                         result.push_str(&format!("\n**Input:**\n```json\n{}\n```\n", inp));
                     }
-                    
+
                     if *status == ToolStatus::Completed
                         && let Some(out) = output
                     {
                         result.push_str(&format!("\n**Output:**\n```\n{}\n```\n", out));
                     }
-                    
+
                     if *status == ToolStatus::Error
                         && let Some(err) = error
                     {
                         result.push_str(&format!("\n**Error:**\n```\n{}\n```\n", err));
                     }
-                    
+
                     result.push('\n');
                 }
             }
         }
-        
+
         result
     }
 }
@@ -393,12 +397,10 @@ mod tests {
 
     #[test]
     fn test_message_list_new() {
-        let messages = vec![
-            TranscriptMessage {
-                role: MessageRole::User,
-                parts: vec![],
-            },
-        ];
+        let messages = vec![TranscriptMessage {
+            role: MessageRole::User,
+            parts: vec![],
+        }];
         let list = MessageList::new(messages);
         assert_eq!(list.len(), 1);
     }
@@ -420,7 +422,7 @@ mod tests {
     fn test_message_list_push() {
         let mut list = MessageList::default();
         assert!(list.is_empty());
-        
+
         list.push(TranscriptMessage {
             role: MessageRole::User,
             parts: vec![],
@@ -450,24 +452,24 @@ mod tests {
             },
         ];
         let mut list = MessageList::new(messages);
-        
+
         assert_eq!(list.selected_index(), Some(0));
-        
+
         list.next();
         assert_eq!(list.selected_index(), Some(1));
-        
+
         list.next();
         assert_eq!(list.selected_index(), Some(2));
-        
+
         list.next(); // Wrap around
         assert_eq!(list.selected_index(), Some(0));
-        
+
         list.prev();
         assert_eq!(list.selected_index(), Some(2));
-        
+
         list.first();
         assert_eq!(list.selected_index(), Some(0));
-        
+
         list.last();
         assert_eq!(list.selected_index(), Some(2));
     }
@@ -475,14 +477,14 @@ mod tests {
     #[test]
     fn test_message_list_scroll_to_bottom() {
         let mut list = MessageList::default();
-        
+
         for _ in 0..5 {
             list.push(TranscriptMessage {
                 role: MessageRole::User,
                 parts: vec![],
             });
         }
-        
+
         list.scroll_to_bottom();
         assert_eq!(list.selected_index(), Some(4));
     }
@@ -494,7 +496,7 @@ mod tests {
             role: MessageRole::User,
             parts: vec![],
         });
-        
+
         assert_eq!(list.len(), 1);
         list.clear();
         assert_eq!(list.len(), 0);

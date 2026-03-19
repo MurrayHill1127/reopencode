@@ -27,7 +27,11 @@ use std::io;
 
 use crate::mcp::types::McpStatus;
 use components::mcp_status::McpStatusPanel;
-use components::{CommandDialog, CommandEntry, Component, ContextInfo, FocusManager, Footer, List, MessageList, Sidebar, StatusDialog, TextArea};
+use components::session_list::SessionList;
+use components::{
+    AgentInfo, CommandDialog, CommandEntry, Component, ContextInfo, DialogAgent, FocusManager,
+    Footer, List, MessageList, Sidebar, StatusDialog, TextArea,
+};
 use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
 use std::collections::HashMap;
 use theme::ThemeContext;
@@ -89,6 +93,8 @@ pub struct TuiApp {
     pub status_dialog: StatusDialog,
     pub focus_manager: FocusManager,
     pub command_dialog: CommandDialog,
+    pub session_list: SessionList,
+    pub dialog_agent: DialogAgent,
 }
 
 impl Default for TuiApp {
@@ -138,6 +144,8 @@ impl Default for TuiApp {
             status_dialog: StatusDialog::new(),
             focus_manager: FocusManager::new(),
             command_dialog: CommandDialog::new(),
+            session_list: SessionList::new(),
+            dialog_agent: DialogAgent::new(),
         }
     }
 }
@@ -156,12 +164,34 @@ impl TuiApp {
         self.focus_manager.register(self.message_list.id());
 
         // Set initial focus to input component
-        if self.focus_manager.set_focus(self.input_component.id()).is_ok() {
+        if self
+            .focus_manager
+            .set_focus(self.input_component.id())
+            .is_ok()
+        {
             self.input_component.on_focus();
         }
 
         // Initialize command dialog with available commands
         self.init_commands();
+
+        self.init_agents();
+    }
+
+    fn init_agents(&mut self) {
+        let agents = vec![
+            AgentInfo::new("build")
+                .with_description("General coding assistant")
+                .with_category("default"),
+            AgentInfo::new("explore")
+                .with_description("Code exploration")
+                .with_category("subagent"),
+            AgentInfo::new("librarian")
+                .with_description("Documentation lookup")
+                .with_category("subagent"),
+        ];
+        self.dialog_agent.set_agents(agents);
+        self.dialog_agent.set_current_agent("build");
     }
 
     fn init_commands(&mut self) {
@@ -192,11 +222,38 @@ impl TuiApp {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<String> {
-        // Command dialog takes priority when visible
+        use crate::cli::commands::tui::components::EventPropagation;
+
+        if self.session_list.is_visible() && self.session_list.focused() {
+            let propagation = self.session_list.handle_input(key);
+            if propagation == EventPropagation::Stop {
+                if self.session_list.rename_session_id().is_some() {
+                    self.session_list.clear_rename_session();
+                }
+                return None;
+            }
+        }
+
         if self.command_dialog.is_visible() {
-            use crate::cli::commands::tui::components::EventPropagation;
             let propagation = self.command_dialog.handle_input(key);
             if propagation == EventPropagation::Stop {
+                return None;
+            }
+        }
+
+        if self.dialog_agent.is_visible() {
+            use crate::cli::commands::tui::components::EventPropagation;
+            let propagation = self.dialog_agent.handle_input(key);
+            if propagation == EventPropagation::Stop {
+                if !self.dialog_agent.is_visible() {
+                    if let Some(agent_name) = self
+                        .dialog_agent
+                        .get_selected_agent()
+                        .map(|s| s.to_string())
+                    {
+                        self.dialog_agent.set_current_agent(agent_name);
+                    }
+                }
                 return None;
             }
         }
@@ -212,6 +269,22 @@ impl TuiApp {
 
         if self.keybinds.matches("app_exit", &key_info, leader_active) {
             self.running = false;
+            return None;
+        }
+
+        if self
+            .keybinds
+            .matches("session_list", &key_info, leader_active)
+        {
+            if self.session_list.is_visible() {
+                self.session_list.hide();
+                self.session_list.on_blur();
+            } else {
+                self.session_list.show();
+                self.session_list.on_focus();
+                self.session_list
+                    .set_current_session_id(self.session_id.clone());
+            }
             return None;
         }
 
@@ -263,7 +336,8 @@ impl TuiApp {
             if self.status_dialog.is_visible() {
                 self.status_dialog.hide();
             } else {
-                self.status_dialog.set_mcp_statuses(self.mcp_statuses.clone());
+                self.status_dialog
+                    .set_mcp_statuses(self.mcp_statuses.clone());
                 self.status_dialog.set_lsp_count(self.lsp_count);
                 self.status_dialog.show();
             }
@@ -283,13 +357,32 @@ impl TuiApp {
             return None;
         }
 
+        if self
+            .keybinds
+            .matches("agent_list", &key_info, leader_active)
+        {
+            if self.dialog_agent.is_visible() {
+                self.dialog_agent.hide();
+            } else {
+                self.dialog_agent.clear_filter();
+                self.dialog_agent.show();
+            }
+            return None;
+        }
+
         // Handle Tab/Shift+Tab focus navigation
-        if self.keybinds.matches("agent_cycle", &key_info, leader_active) {
+        if self
+            .keybinds
+            .matches("agent_cycle", &key_info, leader_active)
+        {
             self.focus_next();
             return None;
         }
 
-        if self.keybinds.matches("agent_cycle_reverse", &key_info, leader_active) {
+        if self
+            .keybinds
+            .matches("agent_cycle_reverse", &key_info, leader_active)
+        {
             self.focus_prev();
             return None;
         }
@@ -403,31 +496,48 @@ impl TuiApp {
                     if response.status().is_success() {
                         match response.text().await {
                             Ok(text) => {
-                                let assistant_msg = create_assistant_message(&text, "assistant", "default", None);
+                                let assistant_msg =
+                                    create_assistant_message(&text, "assistant", "default", None);
                                 self.messages.push(assistant_msg.clone());
                                 self.status = "Ready".to_string();
                                 self.message_list.push(assistant_msg);
                             }
                             Err(e) => {
-                                let error_msg = create_assistant_message(&format!("Parse error: {}", e), "system", "internal", None);
+                                let error_msg = create_assistant_message(
+                                    &format!("Parse error: {}", e),
+                                    "system",
+                                    "internal",
+                                    None,
+                                );
                                 self.messages.push(error_msg.clone());
                                 self.message_list.push(error_msg);
                             }
                         }
                     } else {
-                        let error_msg = create_assistant_message(&format!("Server returned: {}", response.status()), "system", "internal", None);
+                        let error_msg = create_assistant_message(
+                            &format!("Server returned: {}", response.status()),
+                            "system",
+                            "internal",
+                            None,
+                        );
                         self.messages.push(error_msg.clone());
                         self.message_list.push(error_msg);
                     }
                 }
                 Err(e) => {
-                    let error_msg = create_assistant_message(&format!("Failed to send: {}", e), "system", "internal", None);
+                    let error_msg = create_assistant_message(
+                        &format!("Failed to send: {}", e),
+                        "system",
+                        "internal",
+                        None,
+                    );
                     self.messages.push(error_msg.clone());
                     self.message_list.push(error_msg);
                 }
             }
         } else {
-            let error_msg = create_assistant_message("No active session", "system", "internal", None);
+            let error_msg =
+                create_assistant_message("No active session", "system", "internal", None);
             self.messages.push(error_msg.clone());
             self.message_list.push(error_msg);
         }
@@ -499,7 +609,8 @@ impl TuiApp {
                     match response.json::<Vec<PermissionRequest>>().await {
                         Ok(permissions) => {
                             self.pending_permissions = permissions.len();
-                            self.footer.set_pending_permissions(self.pending_permissions);
+                            self.footer
+                                .set_pending_permissions(self.pending_permissions);
                         }
                         Err(_) => {
                             self.pending_permissions = 0;
@@ -627,6 +738,20 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     if app.command_dialog.is_visible() {
         app.command_dialog.render(f, f.area());
+    }
+
+    if app.dialog_agent.is_visible() {
+        app.dialog_agent.render(f, f.area());
+    }
+
+    if app.session_list.is_visible() {
+        let session_area = Rect::new(
+            f.area().width / 4,
+            f.area().height / 4,
+            f.area().width / 2,
+            f.area().height / 2,
+        );
+        app.session_list.render(f, session_area);
     }
 }
 
