@@ -3,10 +3,13 @@
 //! TDD test suite - all tests should FAIL initially since the component
 //! is not implemented. These tests define the expected behavior.
 
-use super::*;
+use crate::cli::commands::tui::components::Component;
 use crate::mcp::types::McpStatus;
 use crate::mcp::types::McpTool;
-use ratatui::{backend::TestBackend, buffer::Buffer, layout::Rect, Terminal};
+use ratatui::{backend::TestBackend, layout::Rect, Terminal};
+use std::collections::HashMap;
+
+use super::McpStatusPanel;
 
 /// Helper to create a test terminal
 fn test_terminal() -> Terminal<TestBackend> {

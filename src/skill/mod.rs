@@ -37,24 +37,21 @@ pub mod registry;
 pub mod types;
 
 // Re-export error types
-pub use error::{ParseError, SkillError};
+pub use error::SkillError;
 
 // Re-export types
 pub use types::{
-    DiscoveryOptions, DiscoveryResult, SkillConfig, SkillInfo, SkillMetadata, SkillScope,
+    DiscoveryOptions, DiscoveryResult, SkillInfo, SkillMetadata, SkillScope,
 };
 
 // Re-export parser functions
-pub use parser::{parse_skill_content, parse_skill_file};
 
 // Re-export discovery functions
-pub use discovery::{discover_skills, discover_skills_with_options};
 
 // Re-export registry
 pub use registry::SkillRegistry;
 
 // Re-export loader
-pub use loader::{SkillLoader, pull_skills_from_url};
 
 /// Get a skill by name from the global registry
 pub async fn get(name: &str) -> Option<SkillInfo> {

@@ -8,11 +8,10 @@ use serde_json::Value;
 use tracing::{debug, error, info};
 
 use crate::provider::{
-    Message as ProviderMessage, MessageRole as ProviderMessageRole, Provider, ProviderToolCall,
-    ProviderToolCallFunction, ToolDefinition as ProviderToolDefinition,
+    Message as ProviderMessage, MessageRole as ProviderMessageRole, Provider,
+    ToolDefinition as ProviderToolDefinition,
 };
 use crate::tool::registry::ToolRegistry;
-use crate::tool::traits::Tool;
 
 /// Agent configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

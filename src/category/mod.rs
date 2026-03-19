@@ -18,32 +18,20 @@ mod resolver;
 mod types;
 
 // Re-export error types
-pub use error::{CategoryError, ResolutionError};
 
 // Re-export types
 pub use types::{
-    BuiltinCategoryName, CategoryConfig, CategoryName, CategoryResolutionResult, FallbackEntry,
-    ModelInfo, ModelRequirement, ModelSource, ModelSourceType, ModelVariant, ReasoningEffort,
-    ResolvedModel, TextVerbosity, ThinkingConfig, ThinkingType,
+    BuiltinCategoryName, CategoryConfig,
 };
 
 // Re-export defaults
-pub use defaults::{
-    CATEGORY_DESCRIPTIONS, DEFAULT_CATEGORIES, builtin_category_names, get_default_model,
-    get_default_variant, is_builtin_category,
-};
+pub use defaults::is_builtin_category;
 
 // Re-export requirements
-pub use requirements::{
-    AGENT_MODEL_REQUIREMENTS, CATEGORY_MODEL_REQUIREMENTS, get_agent_requirement,
-    get_category_requirement,
-};
 
 // Re-export resolver
-pub use resolver::{CategoryResolver, ResolveOptions, resolve_model_for_category};
 
 // Re-export merge
-pub use merge::{merge_categories, merge_single_category};
 
 /// Get list of all built-in categories
 pub fn builtin_categories() -> Vec<BuiltinCategoryName> {
@@ -66,6 +54,8 @@ pub fn category_exists(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::category::error::CategoryError;
+    use crate::category::types::ModelVariant;
 
     #[test]
     fn test_builtin_categories_count() {

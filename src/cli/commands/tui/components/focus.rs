@@ -162,10 +162,10 @@ impl FocusManager {
         }
 
         // Blur current focused component
-        if let Some(current_id) = self.focused_id {
-            if current_id != id {
-                self.focus_states.insert(current_id, false);
-            }
+        if let Some(current_id) = self.focused_id
+            && current_id != id
+        {
+            self.focus_states.insert(current_id, false);
         }
 
         // Focus new component

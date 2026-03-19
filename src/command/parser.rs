@@ -63,10 +63,8 @@ pub fn find_commands_in_text(text: &str) -> Vec<CommandParseResult> {
                         if text.as_bytes()[i] == b'\n' {
                             break;
                         }
-                        if text.as_bytes()[i] == b'/' {
-                            if looks_like_command(text, i).is_some() {
-                                break;
-                            }
+                        if text.as_bytes()[i] == b'/' && looks_like_command(text, i).is_some() {
+                            break;
                         }
                         i += 1;
                         arg_end = i;

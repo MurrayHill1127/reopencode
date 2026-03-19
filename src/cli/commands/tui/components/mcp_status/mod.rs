@@ -18,13 +18,21 @@
 //! - Disabled: Gray
 //! - NeedsAuth: Yellow
 
+#[cfg(test)]
 mod mock;
+#[cfg(test)]
 mod tests;
 
 use super::{Component, ComponentId, EventPropagation};
 use crate::mcp::types::McpStatus;
 use crossterm::event::KeyEvent;
-use ratatui::{layout::Rect, Frame};
+use ratatui::{
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    Frame,
+};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -198,20 +206,124 @@ impl Component for McpStatusPanel {
         self.id
     }
 
-    fn render(&self, _frame: &mut Frame, _area: Rect) {
-        // TODO: Implement rendering
-        // This is intentionally left empty for TDD - tests should fail
-        todo!("McpStatusPanel::render not implemented yet")
+    fn render(&self, frame: &mut Frame, area: Rect) {
+        if self.servers.is_empty() {
+            // Empty state
+            let block = Block::default()
+                .title("MCP Servers")
+                .borders(Borders::ALL)
+                .border_style(if self.focused {
+                    Style::default().fg(Color::Green)
+                } else {
+                    Style::default()
+                });
+
+            let text = Paragraph::new("No MCP servers configured").block(block);
+            frame.render_widget(text, area);
+            return;
+        }
+
+        // Build the block with title
+        let border_style = if self.focused {
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+
+        let block = Block::default()
+            .title("MCP Servers")
+            .borders(Borders::ALL)
+            .border_style(border_style);
+
+        // Create list items for each server
+        let items: Vec<ListItem> = self
+            .servers
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| {
+                let color = Self::status_color(&entry.status);
+                let status_indicator = match &entry.status {
+                    McpStatus::Connected => "●",
+                    McpStatus::Failed { .. } => "✗",
+                    McpStatus::Disabled => "○",
+                    McpStatus::NeedsAuth => "⚠",
+                    McpStatus::NeedsClientRegistration { .. } => "?",
+                };
+
+                let tool_info = if entry.tool_count > 0 {
+                    format!(" ({} tools)", entry.tool_count)
+                } else {
+                    String::new()
+                };
+
+                let line = if self.expanded {
+                    Line::from(vec![
+                        Span::styled(status_indicator, Style::default().fg(color)),
+                        Span::raw(" "),
+                        Span::styled(&entry.name, Style::default().add_modifier(Modifier::BOLD)),
+                        Span::raw(tool_info),
+                    ])
+                } else {
+                    Line::from(vec![
+                        Span::styled(status_indicator, Style::default().fg(color)),
+                        Span::raw(" "),
+                        Span::raw(&entry.name),
+                    ])
+                };
+
+                let mut item = ListItem::new(line);
+                if i == self.selected && self.focused {
+                    item = item.style(Style::default().bg(Color::DarkGray));
+                }
+                item
+            })
+            .collect();
+
+        let list = List::new(items).block(block);
+
+        if self.focused {
+            let mut state = ListState::default();
+            state.select(Some(self.selected));
+            frame.render_stateful_widget(list, area, &mut state);
+        } else {
+            frame.render_widget(list, area);
+        }
     }
 
-    fn handle_input(&mut self, _event: KeyEvent) -> EventPropagation {
-        // TODO: Implement input handling
-        todo!("McpStatusPanel::handle_input not implemented yet")
+    fn handle_input(&mut self, event: KeyEvent) -> EventPropagation {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        if !self.focused {
+            return EventPropagation::Continue;
+        }
+
+        match (event.code, event.modifiers) {
+            (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
+                self.select_prev();
+                EventPropagation::Stop
+            }
+            (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::CONTROL) => {
+                self.select_next();
+                EventPropagation::Stop
+            }
+            (KeyCode::Enter, _) => {
+                self.toggle_expanded();
+                EventPropagation::Stop
+            }
+            (KeyCode::Esc, _) => {
+                if self.expanded {
+                    self.expanded = false;
+                }
+                EventPropagation::Stop
+            }
+            _ => EventPropagation::Continue,
+        }
     }
 
     fn update(&mut self, _delta: Duration) {
-        // TODO: Implement polling updates
-        // This is intentionally empty for TDD
+        // Placeholder for polling updates if needed
     }
 
     fn is_focusable(&self) -> bool {

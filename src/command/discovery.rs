@@ -100,6 +100,7 @@ impl CommandDiscovery {
     ///
     /// This is a placeholder for future file system discovery.
     /// Will scan the given directory for .md command files.
+    #[allow(dead_code)]
     fn discover_from_dir(&self, _dir: &Path, _scope: CommandScope) -> Vec<CommandInfo> {
         // Future: scan directory for .md files with frontmatter
         // Parse each file and create CommandInfo
@@ -137,6 +138,7 @@ impl CommandDiscovery {
     /// Load plugin commands
     ///
     /// Stub for future plugin command loading.
+    #[allow(dead_code)]
     fn load_plugin_commands(&self) -> Vec<CommandInfo> {
         if !self.options.plugins_enabled {
             return Vec::new();

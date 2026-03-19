@@ -31,9 +31,7 @@ use schema::{ResolvedColors, ThemeJson};
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-pub use color::{ThemeColor, blend, contrasting_fg, is_dark, luminance, parse_hex, to_rgb};
 pub use resolve::{ThemeMode, resolve_theme};
-pub use schema::{ColorValue, ThemeColorsJson};
 
 /// Global theme registry (lazy-initialized)
 static THEME_REGISTRY: Lazy<ThemeRegistry> = Lazy::new(ThemeRegistry::new);

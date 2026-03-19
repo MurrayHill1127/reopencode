@@ -181,12 +181,12 @@ impl MemoryCache {
 
     /// Remove a cache entry
     pub fn remove(&self, key: &str) {
-        if let Ok(mut inner) = self.inner.try_write() {
-            if let Some(removed) = inner.entries.remove(key) {
-                inner.total_size -= removed.size;
-                inner.stats.entries = inner.entries.len();
-                inner.stats.total_size = inner.total_size;
-            }
+        if let Ok(mut inner) = self.inner.try_write()
+            && let Some(removed) = inner.entries.remove(key)
+        {
+            inner.total_size -= removed.size;
+            inner.stats.entries = inner.entries.len();
+            inner.stats.total_size = inner.total_size;
         }
     }
 
@@ -211,14 +211,14 @@ impl MemoryCache {
 
     /// Check if a key exists (without updating access time)
     pub fn contains(&self, key: &str) -> bool {
-        if let Ok(inner) = self.inner.try_read() {
-            if let Some(entry) = inner.entries.get(key) {
-                // Check if expired
-                if entry.created_at.elapsed() > Duration::from_secs(self.config.ttl_seconds) {
-                    return false;
-                }
-                return true;
+        if let Ok(inner) = self.inner.try_read()
+            && let Some(entry) = inner.entries.get(key)
+        {
+            // Check if expired
+            if entry.created_at.elapsed() > Duration::from_secs(self.config.ttl_seconds) {
+                return false;
             }
+            return true;
         }
         false
     }
@@ -230,10 +230,9 @@ impl MemoryCache {
             .iter()
             .min_by_key(|(_, e)| e.accessed_at)
             .map(|(k, _)| k.clone())
+            && let Some(removed) = inner.entries.remove(&lru_key)
         {
-            if let Some(removed) = inner.entries.remove(&lru_key) {
-                inner.total_size -= removed.size;
-            }
+            inner.total_size -= removed.size;
         }
     }
 }

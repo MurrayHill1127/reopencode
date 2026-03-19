@@ -264,14 +264,12 @@ impl Provider for AnthropicProvider {
                     }
 
                     let data = &line[6..];
-                    if let Ok(event) = serde_json::from_str::<AnthropicStreamEvent>(data) {
-                        if event.event_type == "content_block_delta" {
-                            if let Some(delta) = event.delta {
-                                if let Some(text) = delta.text {
-                                    yield Ok(text);
-                                }
-                            }
-                        }
+                    if let Ok(event) = serde_json::from_str::<AnthropicStreamEvent>(data)
+                        && event.event_type == "content_block_delta"
+                        && let Some(delta) = event.delta
+                        && let Some(text) = delta.text
+                    {
+                        yield Ok(text);
                     }
                 }
             }

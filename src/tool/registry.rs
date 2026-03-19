@@ -7,9 +7,11 @@ use tracing::{debug, info};
 
 use crate::tool::traits::Tool;
 
+type ToolMap = Arc<RwLock<HashMap<String, Arc<Box<dyn Tool>>>>>;
+
 /// Thread-safe registry for managing tools
 pub struct ToolRegistry {
-    tools: Arc<RwLock<HashMap<String, Arc<Box<dyn Tool>>>>>,
+    tools: ToolMap,
 }
 
 impl ToolRegistry {

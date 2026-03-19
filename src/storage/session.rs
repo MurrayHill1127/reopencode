@@ -129,12 +129,12 @@ impl SessionStore {
         for key in keys {
             if key.len() >= 3 {
                 let key_refs: Vec<&str> = key.iter().map(String::as_str).collect();
-                if let Some(session) = read::<SessionRecord>(&*self.backend, &key_refs).await? {
-                    if session.id == session_id {
-                        self.cache
-                            .set(format!("session:{}", session_id), session.clone());
-                        return Ok(Some(session));
-                    }
+                if let Some(session) = read::<SessionRecord>(&*self.backend, &key_refs).await?
+                    && session.id == session_id
+                {
+                    self.cache
+                        .set(format!("session:{}", session_id), session.clone());
+                    return Ok(Some(session));
                 }
             }
         }
@@ -155,40 +155,39 @@ impl SessionStore {
             if key.len() >= 3 {
                 let key_refs: Vec<&str> = key.iter().map(String::as_str).collect();
                 if let Some(session) = read::<SessionRecord>(&*self.backend, &key_refs).await? {
-                    if let Some(ref directory) = options.directory {
-                        if session.directory != *directory {
-                            continue;
-                        }
+                    if let Some(ref directory) = options.directory
+                        && session.directory != *directory
+                    {
+                        continue;
                     }
 
                     if options.roots && session.parent_id.is_some() {
                         continue;
                     }
 
-                    if let Some(start) = options.start {
-                        if session.time_updated < start {
-                            continue;
-                        }
+                    if let Some(start) = options.start
+                        && session.time_updated < start
+                    {
+                        continue;
                     }
 
-                    if let Some(ref search) = options.search {
-                        if !session
+                    if let Some(ref search) = options.search
+                        && !session
                             .title
                             .to_lowercase()
                             .contains(&search.to_lowercase())
-                        {
-                            continue;
-                        }
+                    {
+                        continue;
                     }
 
                     sessions.push(session);
                 }
             }
 
-            if let Some(limit) = options.limit {
-                if sessions.len() >= limit {
-                    break;
-                }
+            if let Some(limit) = options.limit
+                && sessions.len() >= limit
+            {
+                break;
             }
         }
 

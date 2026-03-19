@@ -63,14 +63,14 @@ impl Validator {
         }
 
         // Top-p range: 0.0-1.0 (if set)
-        if let Some(top_p) = agent.top_p {
-            if top_p < 0.0 || top_p > 1.0 {
-                return Err(ValidationError::OutOfRange {
-                    field: format!("agent.{}.top_p", name),
-                    actual: top_p.to_string(),
-                    expected: "0.0-1.0".to_string(),
-                });
-            }
+        if let Some(top_p) = agent.top_p
+            && !(0.0..=1.0).contains(&top_p)
+        {
+            return Err(ValidationError::OutOfRange {
+                field: format!("agent.{}.top_p", name),
+                actual: top_p.to_string(),
+                expected: "0.0-1.0".to_string(),
+            });
         }
 
         Ok(())
@@ -87,13 +87,13 @@ impl Validator {
 
     fn validate_provider(name: &str, provider: &ProviderConfig) -> Result<(), ValidationError> {
         // API URL format check (if set)
-        if let Some(url) = &provider.api_url {
-            if !url.starts_with("http://") && !url.starts_with("https://") {
-                return Err(ValidationError::InvalidFormat {
-                    field: format!("provider.{}.api_url", name),
-                    message: "must start with http:// or https://".to_string(),
-                });
-            }
+        if let Some(url) = &provider.api_url
+            && !url.starts_with("http://") && !url.starts_with("https://")
+        {
+            return Err(ValidationError::InvalidFormat {
+                field: format!("provider.{}.api_url", name),
+                message: "must start with http:// or https://".to_string(),
+            });
         }
 
         Ok(())

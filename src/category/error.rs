@@ -4,6 +4,7 @@
 
 /// Category-related errors
 #[derive(Debug, Clone, thiserror::Error)]
+#[allow(dead_code)]
 pub enum CategoryError {
     /// Unknown category name
     #[error("Unknown category: {0}")]
@@ -35,6 +36,7 @@ pub enum CategoryError {
 
 /// Resolution-related errors
 #[derive(Debug, Clone, thiserror::Error)]
+#[allow(dead_code)]
 pub enum ResolutionError {
     /// No available model found
     #[error("No model available for category")]

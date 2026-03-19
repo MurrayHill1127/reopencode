@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 /// Unique identifier for a hook
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct HookId(pub String);
 
 impl HookId {
@@ -31,6 +32,7 @@ impl std::fmt::Display for HookId {
 /// Built-in hook names enumeration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[allow(dead_code)]
 pub enum BuiltinHookName {
     // Session level hooks (23)
     ContextWindowMonitor,
@@ -94,6 +96,7 @@ pub enum BuiltinHookName {
 /// Hook priority levels for execution ordering
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[allow(dead_code)]
 pub enum HookPriority {
     /// Pre-hook - executes before the target operation
     OnBefore = 1,
@@ -117,6 +120,7 @@ pub enum HookPriority {
 /// Session event types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
 pub enum SessionEventType {
     Created,
     Deleted,
@@ -127,6 +131,7 @@ pub enum SessionEventType {
 
 /// Resolved model information
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct ResolvedModel {
     pub provider_id: String,
     pub model_id: String,
@@ -135,6 +140,7 @@ pub struct ResolvedModel {
 
 /// Image source for message content
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct ImageSource {
     #[serde(rename = "type")]
     pub source_type: String,
@@ -145,6 +151,7 @@ pub struct ImageSource {
 /// Message content types
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
+#[allow(dead_code)]
 pub enum MessageContent {
     Text {
         text: String,
@@ -166,6 +173,7 @@ pub enum MessageContent {
 
 /// Chat message structure
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct ChatMessage {
     pub role: String,
     pub content: Vec<MessageContent>,
@@ -174,6 +182,7 @@ pub struct ChatMessage {
 /// Hook event types for triggering callbacks
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "type", content = "properties")]
+#[allow(dead_code)]
 pub enum HookEvent {
     // ===== Chat Events =====
     ChatMessage {
@@ -230,6 +239,7 @@ pub enum HookEvent {
 /// Toast notification variant
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
 pub enum ToastVariant {
     #[default]
     Info,
@@ -240,6 +250,7 @@ pub enum ToastVariant {
 
 /// Toast notification request
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct ToastRequest {
     pub title: String,
     pub message: String,
@@ -250,6 +261,7 @@ pub struct ToastRequest {
 
 /// Hook output for modifying execution flow
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct HookOutput {
     pub message: Option<serde_json::Value>,
     pub params: Option<serde_json::Value>,
@@ -262,6 +274,7 @@ pub struct HookOutput {
 
 /// Hook execution result for controlling flow
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum HookResult {
     /// Continue executing next hook
     Continue,
@@ -280,6 +293,7 @@ pub enum HookResult {
 
 /// Token usage statistics
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct TokenUsage {
     #[serde(default)]
     pub total: u64,
@@ -297,6 +311,7 @@ pub struct TokenUsage {
 
 /// Hook override configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct HookOverride {
     #[serde(default)]
     pub disabled: bool,
@@ -320,6 +335,7 @@ impl Default for HookOverride {
 
 /// Hook configuration for the module
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct HookConfig {
     #[serde(default)]
     pub disabled_hooks: Vec<String>,

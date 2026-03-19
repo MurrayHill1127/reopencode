@@ -1,4 +1,4 @@
-use super::types::{CommandDefinition, CommandInfo, CommandMetadata, CommandScope};
+use super::types::{CommandDefinition, CommandInfo, CommandScope};
 use std::collections::HashMap;
 
 pub type TemplateContext = HashMap<String, String>;
@@ -104,6 +104,7 @@ fn render_template(
 
 #[cfg(test)]
 mod tests {
+    use super::super::types::CommandMetadata;
     use super::*;
 
     fn create_test_command(name: &str) -> CommandInfo {
@@ -246,11 +247,9 @@ mod tests {
 
         let builtin_cmds = registry.list_by_scope(CommandScope::Builtin);
         assert_eq!(builtin_cmds.len(), 2);
-        assert!(
-            builtin_cmds
-                .iter()
-                .all(|cmd| cmd.scope == CommandScope::Builtin)
-        );
+        assert!(builtin_cmds
+            .iter()
+            .all(|cmd| cmd.scope == CommandScope::Builtin));
 
         let user_cmds = registry.list_by_scope(CommandScope::User);
         assert_eq!(user_cmds.len(), 1);

@@ -48,10 +48,10 @@ impl ProjectStore {
         for key in keys {
             if key.len() >= 2 {
                 let key_refs: Vec<&str> = key.iter().map(String::as_str).collect();
-                if let Some(project) = read::<ProjectRecord>(&*self.backend, &key_refs).await? {
-                    if project.worktree == worktree {
-                        return Ok(Some(project));
-                    }
+                if let Some(project) = read::<ProjectRecord>(&*self.backend, &key_refs).await?
+                    && project.worktree == worktree
+                {
+                    return Ok(Some(project));
                 }
             }
         }
@@ -162,10 +162,10 @@ impl WorkspaceStore {
         for key in keys {
             if key.len() >= 2 {
                 let key_refs: Vec<&str> = key.iter().map(String::as_str).collect();
-                if let Some(workspace) = read::<WorkspaceRecord>(&*self.backend, &key_refs).await? {
-                    if workspace.project_id == project_id {
-                        workspaces.push(workspace);
-                    }
+                if let Some(workspace) = read::<WorkspaceRecord>(&*self.backend, &key_refs).await?
+                    && workspace.project_id == project_id
+                {
+                    workspaces.push(workspace);
                 }
             }
         }

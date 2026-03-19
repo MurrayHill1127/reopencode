@@ -14,25 +14,9 @@ mod registry;
 mod template;
 mod types;
 
-pub use error::{CommandError, ParseError, RenderError};
-
-pub use types::{
-    CommandDefinition, CommandInfo, CommandMetadata, CommandParseResult, CommandScope,
-    HandoffDefinition,
-};
-
 pub use registry::CommandRegistry;
 
-pub use discovery::{CommandDiscovery, DiscoveryOptions, discover_commands};
-
-pub use parser::{find_commands_in_text, parse_slash_command};
-
-pub use template::{TemplateContext, render_template};
-
-pub use builtin::{
-    BUILTIN_COMMANDS, BuiltinCommandName, builtin_command_names, get_builtin_command,
-    is_builtin_command,
-};
+pub use parser::parse_slash_command;
 
 /// 快捷方法：解析并执行斜杠命令
 ///
@@ -56,35 +40,19 @@ pub fn parse_and_execute(input: &str, registry: &CommandRegistry) -> Option<Stri
 
 #[cfg(test)]
 mod tests {
+    // Test simplified - checking only actually exported types are accessible
     use super::*;
+    use crate::command::parser::parse_slash_command;
+    use crate::command::registry::CommandRegistry;
 
     #[test]
-    fn test_all_exports_accessible() {
-        let _cmd_err = CommandError::not_found("test");
-        let _parse_err = ParseError::EmptyName;
-        let _render_err = RenderError::missing_variable("var");
-
-        let _def = CommandDefinition::new("test", "template");
-        let _meta = CommandMetadata::new("test");
-        let _info = CommandInfo::new("test", CommandMetadata::new("test"));
-        let _scope = CommandScope::Builtin;
-        let _builtin = BuiltinCommandName::InitDeep;
-        let _handoff = HandoffDefinition::new("label", "agent", "prompt");
-        let _parse_result = CommandParseResult::new("/test", "test", 0, 5);
-
-        let _registry = CommandRegistry::new();
-
-        let _ = parse_slash_command("/test");
-        let _ = find_commands_in_text("text");
-
-        let _ctx = TemplateContext::new();
-        let _ = render_template("$ARGUMENTS", Some("test"), &_ctx);
-
-        let _ = get_builtin_command("init-deep");
-        let _ = is_builtin_command("init-deep");
-        let _ = builtin_command_names();
-
+    fn test_parse_and_execute() {
         let registry = CommandRegistry::new();
         let _ = parse_and_execute("/test", &registry);
+    }
+
+    #[test]
+    fn test_parse_slash_command() {
+        let _ = parse_slash_command("/test");
     }
 }

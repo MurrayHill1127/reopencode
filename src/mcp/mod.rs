@@ -8,11 +8,8 @@ pub mod error;
 pub mod manager;
 pub mod types;
 
-pub use client::McpClient;
-pub use error::{McpError, Result};
 pub use manager::McpManager;
 pub use types::{
-    AuthCallback, AuthStartResponse, McpAddRequest, McpConfigRequest, McpContent, McpPrompt,
-    McpResource, McpServerCapabilities, McpServerInfo, McpStatus, McpTool, McpToolResult,
+    AuthCallback, AuthStartResponse, McpAddRequest, McpConfigRequest, McpStatus,
     RemoveAuthResponse,
 };

@@ -3,9 +3,8 @@ pub mod session;
 pub mod types;
 
 pub use types::{
-    BUFFER_LIMIT, CreatePtyRequest, DEFAULT_COLS, DEFAULT_ROWS, PtyError, PtyInfo, PtyOutput,
-    PtySize, PtyStatus, UpdatePtyRequest, generate_pty_id,
+    CreatePtyRequest, PtyError, PtyInfo, PtyOutput,
+    PtySize, UpdatePtyRequest,
 };
 
-pub use manager::{PtyManager, global};
-pub use session::PtyHandle;
+pub use manager::global;

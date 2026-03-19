@@ -27,32 +27,32 @@ impl Substitutor {
             changed = false;
 
             // Find {env:...} patterns
-            if let Some(start) = result.find("{env:") {
-                if let Some(end) = result[start..].find('}') {
-                    let _full_match = &result[start..start + end + 1];
-                    let inner = &result[start + 5..start + end]; // Skip "{env:"
+            if let Some(start) = result.find("{env:")
+                && let Some(end) = result[start..].find('}')
+            {
+                let _full_match = &result[start..start + end + 1];
+                let inner = &result[start + 5..start + end]; // Skip "{env:"
 
-                    // Parse variable name and optional default
-                    let (var_name, default_value) = if let Some(pipe_pos) = inner.find('|') {
-                        (&inner[..pipe_pos], Some(&inner[pipe_pos + 1..]))
-                    } else {
-                        (inner, None)
-                    };
+                // Parse variable name and optional default
+                let (var_name, default_value) = if let Some(pipe_pos) = inner.find('|') {
+                    (&inner[..pipe_pos], Some(&inner[pipe_pos + 1..]))
+                } else {
+                    (inner, None)
+                };
 
-                    // Get environment variable value
-                    let replacement = env::var(var_name)
-                        .ok()
-                        .or_else(|| default_value.map(|s| s.to_string()))
-                        .unwrap_or_default();
+                // Get environment variable value
+                let replacement = env::var(var_name)
+                    .ok()
+                    .or_else(|| default_value.map(|s| s.to_string()))
+                    .unwrap_or_default();
 
-                    result = format!(
-                        "{}{}{}",
-                        &result[..start],
-                        replacement,
-                        &result[start + end + 1..]
-                    );
-                    changed = true;
-                }
+                result = format!(
+                    "{}{}{}",
+                    &result[..start],
+                    replacement,
+                    &result[start + end + 1..]
+                );
+                changed = true;
             }
         }
 

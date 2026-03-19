@@ -204,6 +204,7 @@ pub fn format_key_display(key: &str) -> String {
 }
 
 /// Build all help items from the keybinds configuration
+#[allow(clippy::vec_init_then_push)]
 fn build_items(config: &KeybindsConfig) -> Vec<HelpItem> {
     let mut items = Vec::new();
 

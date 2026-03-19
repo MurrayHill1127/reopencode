@@ -11,6 +11,7 @@ use std::str::FromStr;
 /// 对应 TypeScript: CommandDefinition (features/claude-code-command-loader/types.ts:19-29)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[allow(dead_code)]
 pub struct CommandDefinition {
     /// 命令名称 (不含 /)
     pub name: String,
@@ -99,6 +100,7 @@ impl CommandDefinition {
 /// 对应 TypeScript: HandoffDefinition (features/claude-code-command-loader/types.ts:8-17)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[allow(dead_code)]
 pub struct HandoffDefinition {
     /// 标签
     pub label: String,
@@ -140,6 +142,7 @@ impl HandoffDefinition {
 /// 对应 TypeScript: CommandMetadata (tools/slashcommand/types.ts:5-12)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[allow(dead_code)]
 pub struct CommandMetadata {
     /// 命令名称
     pub name: String,
@@ -223,10 +226,12 @@ impl CommandMetadata {
 
 /// 命令来源作用域
 /// 对应 TypeScript: CommandScope (tools/slashcommand/types.ts:3)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
+#[allow(dead_code)]
 pub enum CommandScope {
     /// 内置命令
+    #[default]
     Builtin,
     /// 配置文件定义
     Config,
@@ -320,15 +325,10 @@ impl FromStr for CommandScope {
     }
 }
 
-impl Default for CommandScope {
-    fn default() -> Self {
-        Self::Builtin
-    }
-}
-
 /// 命令完整信息
 /// 对应 TypeScript: CommandInfo (tools/slashcommand/types.ts:14-21)
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct CommandInfo {
     /// 命令名称
     pub name: String,
@@ -399,6 +399,7 @@ impl CommandInfo {
 
 /// 斜杠命令解析结果
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct CommandParseResult {
     /// 完整匹配字符串 (如 "/init-deep --create-new")
     pub full_match: String,

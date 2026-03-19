@@ -7,7 +7,7 @@ use super::{
     Component, ComponentAction, ComponentEvent, ComponentId, EventPropagation, FocusManager,
 };
 use anyhow::Result;
-use ratatui::{Frame, layout::Rect};
+use ratatui::{layout::Rect, Frame};
 
 /// Pump events through component chain, stopping when consumed.
 ///
@@ -36,10 +36,11 @@ pub fn event_pump_with_focus(
 ) -> EventPropagation {
     // First, try focused component
     for component in components.iter_mut() {
-        if component.id() == *focused_id && component.focused() {
-            if component.handle_event(event) == EventPropagation::Stop {
-                return EventPropagation::Stop;
-            }
+        if component.id() == *focused_id
+            && component.focused()
+            && component.handle_event(event) == EventPropagation::Stop
+        {
+            return EventPropagation::Stop;
         }
     }
     // Then, try other components
@@ -132,10 +133,11 @@ impl ComponentRegistry {
         if let Some(focused_id) = self.focus_manager.get_focused() {
             // First, try focused component
             for component in &mut self.components {
-                if component.id() == focused_id && component.focused() {
-                    if component.handle_event(event) == EventPropagation::Stop {
-                        return EventPropagation::Stop;
-                    }
+                if component.id() == focused_id
+                    && component.focused()
+                    && component.handle_event(event) == EventPropagation::Stop
+                {
+                    return EventPropagation::Stop;
                 }
             }
         }
@@ -150,10 +152,8 @@ impl ComponentRegistry {
 
     /// Dispatch an action to all components.
     pub fn update_all_components(&mut self, action: &ComponentAction) {
-        for component in &mut self.components {
-            let _ = action;
-            // Actions are handled by the registry, not individual components
-        }
+        let _ = action;
+        // Actions are handled by the registry, not individual components
     }
 
     /// Render all components to the frame.

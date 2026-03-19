@@ -10,7 +10,6 @@ use tracing::{error, info};
 use crate::agent::{Agent, Message, Role};
 use crate::provider::Message as ProviderMessage;
 use crate::provider::MessageRole as ProviderMessageRole;
-use crate::provider::ToolDefinition;
 use crate::server::AppState;
 use crate::session::{Session, SessionStatus};
 

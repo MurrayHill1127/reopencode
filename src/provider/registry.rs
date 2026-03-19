@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 use tracing::{debug, info, warn};
 
 use crate::provider::anthropic::AnthropicProvider;
-use crate::provider::config::{ProviderConfig, ProvidersConfig};
+use crate::provider::config::ProvidersConfig;
 use crate::provider::error::{ProviderError, Result};
 use crate::provider::openai::OpenAiProvider;
 use crate::provider::provider_trait::Provider;
@@ -149,10 +149,10 @@ impl ProviderRegistry {
             }
         }
 
-        if !config.default_provider.is_empty() {
-            if let Err(e) = registry.set_default(&config.default_provider) {
-                warn!("设置默认 Provider 失败: {}", e);
-            }
+        if !config.default_provider.is_empty()
+            && let Err(e) = registry.set_default(&config.default_provider)
+        {
+            warn!("设置默认 Provider 失败: {}", e);
         }
 
         registry
@@ -177,6 +177,7 @@ impl Clone for ProviderRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::config::ProviderConfig;
 
     #[test]
     fn test_registry_new() {

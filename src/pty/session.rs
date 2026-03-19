@@ -87,6 +87,7 @@ impl PtyHandle {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_pty(
     id: String,
     command: String,

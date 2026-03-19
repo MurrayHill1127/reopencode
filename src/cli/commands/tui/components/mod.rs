@@ -21,7 +21,6 @@ pub mod types;
 pub use events::{ComponentAction, ComponentEvent, ToastVariant};
 pub use focus::FocusManager;
 pub use list::List;
-pub use mcp_status::{McpServerEntry, McpStatusPanel};
 pub use textarea::TextArea;
 pub use types::{ComponentId, EventPropagation};
 

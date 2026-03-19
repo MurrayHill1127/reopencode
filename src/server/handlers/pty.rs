@@ -220,10 +220,10 @@ async fn handle_pty_socket(ws: ws::WebSocket, id: String) {
         while let Ok(data) = rx.recv().await {
             let text = String::from_utf8_lossy(&data).to_string();
             let msg = PtyOutputMessage::output(&text);
-            if let Ok(json) = serde_json::to_string(&msg) {
-                if sender.send(ws::Message::Text(json.into())).await.is_err() {
-                    break;
-                }
+            if let Ok(json) = serde_json::to_string(&msg)
+                && sender.send(ws::Message::Text(json.into())).await.is_err()
+            {
+                break;
             }
         }
     };

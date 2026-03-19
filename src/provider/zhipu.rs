@@ -104,15 +104,14 @@ impl ZhipuProvider {
     }
 
     fn parse_stream_line(line: &str) -> Option<String> {
-        if line.starts_with("data: ") {
-            let data = &line[6..];
+        if let Some(data) = line.strip_prefix("data: ") {
             if data == "[DONE]" {
                 return None;
             }
-            if let Ok(response) = serde_json::from_str::<ZhipuStreamResponse>(data) {
-                if let Some(choice) = response.choices.first() {
-                    return choice.delta.content.clone();
-                }
+            if let Ok(response) = serde_json::from_str::<ZhipuStreamResponse>(data)
+                && let Some(choice) = response.choices.first()
+            {
+                return choice.delta.content.clone();
             }
         }
         None

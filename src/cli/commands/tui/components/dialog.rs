@@ -667,10 +667,10 @@ pub fn filter_options<T>(options: &[SelectOption<T>], query: &str) -> Vec<usize>
             }
 
             // Check category
-            if let Some(cat) = &opt.category {
-                if fuzzy_match(&query_lower, cat) {
-                    return true;
-                }
+            if let Some(cat) = &opt.category
+                && fuzzy_match(&query_lower, cat)
+            {
+                return true;
             }
 
             false

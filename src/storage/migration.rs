@@ -2,9 +2,7 @@
 //!
 //! Provides database migration management with version tracking.
 
-use std::sync::Arc;
-
-use crate::storage::{Database, DatabaseError, MigrationError, StorageError};
+use crate::storage::{Database, StorageError};
 
 /// Migration definition
 #[derive(Debug, Clone)]

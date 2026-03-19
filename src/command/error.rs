@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 /// 命令错误
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum CommandError {
     /// 命令不存在
     #[error("命令不存在: {0}")]
@@ -34,6 +35,7 @@ pub enum CommandError {
 
 /// 解析错误
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum ParseError {
     /// 无效的命令格式
     #[error("无效的命令格式: {0}")]
@@ -50,6 +52,7 @@ pub enum ParseError {
 
 /// 渲染错误
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum RenderError {
     /// 缺少必需变量
     #[error("缺少必需变量: {0}")]

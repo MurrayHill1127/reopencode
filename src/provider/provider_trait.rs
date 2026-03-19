@@ -56,21 +56,11 @@ impl From<&crate::agent::ToolDefinition> for ToolDefinition {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Usage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
-}
-
-impl Default for Usage {
-    fn default() -> Self {
-        Self {
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            total_tokens: 0,
-        }
-    }
 }
 
 #[derive(Debug)]

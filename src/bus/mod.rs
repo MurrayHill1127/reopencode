@@ -3,7 +3,7 @@ mod global;
 
 pub use event::definitions::*;
 pub use event::{Event, EventDefinition, EventProperties};
-pub use global::{GlobalBus, GlobalEvent};
+pub use global::GlobalBus;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,11 +13,12 @@ const BUS_CAPACITY: usize = 256;
 
 type SubscriptionId = u64;
 type EventHandler = Box<dyn Fn(&Event) + Send + Sync>;
+type SubscriptionMap = Arc<RwLock<HashMap<String, Vec<(SubscriptionId, EventHandler)>>>>;
 
 pub struct Bus {
     directory: String,
     tx: broadcast::Sender<Event>,
-    subscriptions: Arc<RwLock<HashMap<String, Vec<(SubscriptionId, EventHandler)>>>>,
+    subscriptions: SubscriptionMap,
     next_subscription_id: Arc<RwLock<u64>>,
 }
 

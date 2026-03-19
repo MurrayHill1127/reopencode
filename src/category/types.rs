@@ -10,6 +10,7 @@ use std::str::FromStr;
 /// Built-in category names for task classification
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[allow(dead_code)]
 pub enum BuiltinCategoryName {
     /// Frontend, UI/UX, design, styling, animation
     VisualEngineering,
@@ -129,6 +130,7 @@ impl FromStr for BuiltinCategoryName {
 /// Category name (supports both built-in and custom)
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
+#[allow(dead_code)]
 pub enum CategoryName {
     /// Built-in category
     BuiltIn(BuiltinCategoryName),
@@ -190,6 +192,7 @@ impl From<BuiltinCategoryName> for CategoryName {
 /// Model variant enum
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
 pub enum ModelVariant {
     Low,
     #[default]
@@ -221,6 +224,7 @@ impl fmt::Display for ModelVariant {
 /// Thinking type enum
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
 pub enum ThinkingType {
     Enabled,
     #[default]
@@ -241,6 +245,7 @@ pub struct ThinkingConfig {
 /// Reasoning effort enum
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
 pub enum ReasoningEffort {
     Low,
     #[default]
@@ -252,6 +257,7 @@ pub enum ReasoningEffort {
 /// Text verbosity enum
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
 pub enum TextVerbosity {
     Low,
     #[default]
@@ -262,6 +268,7 @@ pub enum TextVerbosity {
 /// Category configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
 pub struct CategoryConfig {
     /// Category description (shown in task prompt)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -397,6 +404,7 @@ impl CategoryConfig {
 
 /// Fallback chain entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct FallbackEntry {
     /// Provider list (any one available is sufficient)
     pub providers: Vec<String>,
@@ -426,6 +434,7 @@ impl FallbackEntry {
 
 /// Model requirement specification
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct ModelRequirement {
     /// Fallback chain
     #[serde(default)]
@@ -456,6 +465,7 @@ impl ModelRequirement {
 
 /// Model source type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum ModelSourceType {
     UserDefined,
     Inherited,
@@ -465,6 +475,7 @@ pub enum ModelSourceType {
 
 /// Model source
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum ModelSource {
     Override,
     CategoryDefault,
@@ -473,6 +484,7 @@ pub enum ModelSource {
 
 /// Resolved model information
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ResolvedModel {
     /// Provider ID
     pub provider_id: String,
@@ -506,6 +518,7 @@ impl ResolvedModel {
 
 /// Model info for resolution result
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ModelInfo {
     /// Model string
     pub model: String,
@@ -517,6 +530,7 @@ pub struct ModelInfo {
 
 /// Category resolution result
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct CategoryResolutionResult {
     /// Agent name to use
     pub agent_to_use: String,

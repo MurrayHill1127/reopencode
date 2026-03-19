@@ -37,9 +37,10 @@ pub mod schema;
 pub mod session;
 
 // Re-export error types
-pub use error::{DatabaseError, MigrationError, StorageError};
+pub use error::{DatabaseError, StorageError};
 
 // Re-export path types
+#[allow(unused_imports)]
 pub use path::{CACHE_VERSION, GlobalPath};
 
 // Re-export cache types
@@ -47,9 +48,9 @@ pub use cache::{CacheConfig, CacheStats, MemoryCache};
 
 // Re-export schema types
 pub use schema::{
-    ImageSource, MessageInfo, MessagePart, MessageRecord, MessageRole, MessageTime,
-    MessageWithParts, Page, PartRecord, PermissionRecord, ProjectRecord, SessionRecord, Timestamps,
-    TodoItem, TodoPriority, TodoRecord, TodoStatus, WorkspaceRecord,
+    MessageInfo, MessagePart, MessageRecord, MessageRole, MessageTime,
+    MessageWithParts, Page, ProjectRecord, SessionRecord,
+    TodoItem, TodoPriority, TodoStatus, WorkspaceRecord,
 };
 
 // Re-export backend types
@@ -59,16 +60,17 @@ pub use backend::{BackendType, JsonBackend, StorageBackend};
 pub use database::Database;
 
 // Re-export session types
+#[allow(unused_imports)]
 pub use session::{
-    MessageStore, SessionCreateInput, SessionListOptions, SessionStore, TodoStore,
-    generate_message_id, generate_part_id, generate_session_id,
+    MessageStore, SessionCreateInput, SessionStore, TodoStore,
 };
 
 // Re-export project types
+#[allow(unused_imports)]
 pub use project::{ProjectCreateInput, ProjectStore, WorkspaceCreateInput, WorkspaceStore};
 
 // Re-export migration types
-pub use migration::{Migration, MigrationRunner};
+pub use migration::MigrationRunner;
 
 use std::sync::Arc;
 
@@ -177,6 +179,12 @@ pub async fn init() -> Result<Storage, StorageError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[allow(unused_imports)]
+    use crate::storage::path::CACHE_VERSION;
+    #[allow(unused_imports)]
+    use crate::storage::session::SessionCreateInput;
+    #[allow(unused_imports)]
+    use crate::storage::project::ProjectCreateInput;
     use tempfile::TempDir;
 
     #[tokio::test]

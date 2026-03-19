@@ -1,17 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum PtyStatus {
+    #[default]
     Running,
     Exited,
-}
-
-impl Default for PtyStatus {
-    fn default() -> Self {
-        Self::Running
-    }
 }
 
 impl std::fmt::Display for PtyStatus {
