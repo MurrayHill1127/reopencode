@@ -18,6 +18,7 @@ clap = { version = "4", features = ["derive"] }
 ratatui = "0.29"
 crossterm = "0.28"
 tui-textarea = "0.7"
+tui-input = "0.11"
 
 # HTTP
 axum = { version = "0.8", features = ["ws"] }

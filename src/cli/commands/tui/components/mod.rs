@@ -8,6 +8,7 @@ pub mod error;
 pub mod events;
 pub mod file_tree;
 pub mod focus;
+pub mod help_dialog;
 pub mod list;
 pub mod model_selector;
 pub mod session_create;
@@ -17,11 +18,14 @@ pub mod toast;
 pub mod types;
 
 pub use composite::{ComponentRegistry, event_pump, event_pump_with_focus, render_all, update_all};
-pub use dialog::{Dialog, DialogSize};
+pub use dialog::{
+    ActiveButton, ConfirmDialog, Dialog, DialogSize, InputDialog, SelectDialog, SelectOption,
+};
 pub use error::{ComponentError, Result};
 pub use events::{ComponentAction, ComponentEvent, ToastVariant};
 pub use file_tree::{FileNode, FileTree, GitFileStatus};
 pub use focus::{FocusError, FocusManager};
+pub use help_dialog::{HelpCategory, HelpDialog, HelpItem};
 pub use list::List;
 pub use model_selector::{ModelInfo, ModelSelector, ModelSelectorState, ProviderInfo};
 pub use session_create::SessionCreateDialog;

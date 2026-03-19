@@ -1569,6 +1569,631 @@ impl Default for ConfirmDialog {
     }
 }
 
+// =============================================================================
+// SelectDialog Component
+// =============================================================================
+
+/// Generic selection dialog with list navigation and optional filter
+///
+/// A modal dialog that displays a scrollable list of selectable options
+/// with optional fuzzy filtering at the top.
+///
+/// # Features
+///
+/// - Fuzzy filter input at top
+/// - Scrollable list with selection highlighting
+/// - Up/Down navigation with wrap-around
+/// - PageUp/PageDown for page navigation
+/// - Home/End for first/last item
+/// - Enter to select, Esc to cancel
+/// - Real-time filtering as you type
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// let options = vec![
+///     SelectOption::new("Save", "save"),
+///     SelectOption::new("Open", "open"),
+///     SelectOption::new("Save As", "save_as"),
+/// ];
+///
+/// let mut dialog = SelectDialog::with_options("Select Action", options);
+/// dialog.show();
+///
+/// // In render loop
+/// if dialog.is_visible() {
+///     dialog.render(frame, area);
+/// }
+///
+/// // Handle input
+/// let propagation = dialog.handle_input(event);
+///
+/// // Get selected option
+/// if let Some(selected) = dialog.get_selected() {
+///     println!("Selected: {}", selected.value());
+/// }
+/// ```
+pub struct SelectDialog<T> {
+    /// Unique component identifier
+    id: ComponentId,
+    /// Dialog title
+    title: String,
+    /// All available options
+    options: Vec<SelectOption<T>>,
+    /// Currently selected index (in filtered_indices)
+    selected_index: usize,
+    /// Scroll offset for visible area
+    scroll_offset: usize,
+    /// Current filter query
+    filter_query: String,
+    /// Indices of options that match the filter
+    filtered_indices: Vec<usize>,
+    /// Whether the dialog is currently visible
+    visible: bool,
+    /// Whether the dialog currently has focus
+    focused: bool,
+}
+
+impl<T> SelectDialog<T> {
+    /// Create a new empty SelectDialog with the given title
+    ///
+    /// # Arguments
+    ///
+    /// * `title` - The dialog title
+    ///
+    /// # Returns
+    ///
+    /// A new SelectDialog with no options, hidden by default.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::cli::commands::tui::components::dialog::SelectDialog;
+    ///
+    /// let dialog: SelectDialog<String> = SelectDialog::new("Select");
+    /// assert_eq!(dialog.title(), "Select");
+    /// assert!(!dialog.is_visible());
+    /// ```
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            id: ComponentId::new(),
+            title: title.into(),
+            options: Vec::new(),
+            selected_index: 0,
+            scroll_offset: 0,
+            filter_query: String::new(),
+            filtered_indices: Vec::new(),
+            visible: false,
+            focused: false,
+        }
+    }
+
+    /// Create a new SelectDialog with the given title and options
+    ///
+    /// # Arguments
+    ///
+    /// * `title` - The dialog title
+    /// * `options` - Vector of SelectOption items
+    ///
+    /// # Returns
+    ///
+    /// A new SelectDialog with the provided options, hidden by default.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::cli::commands::tui::components::dialog::{SelectDialog, SelectOption};
+    ///
+    /// let options = vec![
+    ///     SelectOption::new("Save", "save"),
+    ///     SelectOption::new("Open", "open"),
+    /// ];
+    ///
+    /// let dialog = SelectDialog::with_options("Select Action", options);
+    /// assert_eq!(dialog.title(), "Select Action");
+    /// assert_eq!(dialog.len(), 2);
+    /// ```
+    pub fn with_options(title: impl Into<String>, options: Vec<SelectOption<T>>) -> Self {
+        let filtered_indices = (0..options.len()).collect();
+        Self {
+            id: ComponentId::new(),
+            title: title.into(),
+            options,
+            selected_index: 0,
+            scroll_offset: 0,
+            filter_query: String::new(),
+            filtered_indices,
+            visible: false,
+            focused: false,
+        }
+    }
+
+    /// Get the dialog title
+    ///
+    /// # Returns
+    ///
+    /// The title as a string slice.
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    /// Set the dialog title
+    ///
+    /// # Arguments
+    ///
+    /// * `title` - The new title
+    pub fn set_title(&mut self, title: impl Into<String>) {
+        self.title = title.into();
+    }
+
+    /// Get the number of options
+    ///
+    /// # Returns
+    ///
+    /// The total number of options (before filtering).
+    pub fn len(&self) -> usize {
+        self.options.len()
+    }
+
+    /// Check if there are no options
+    ///
+    /// # Returns
+    ///
+    /// `true` if there are no options.
+    pub fn is_empty(&self) -> bool {
+        self.options.is_empty()
+    }
+
+    /// Get the number of filtered options
+    ///
+    /// # Returns
+    ///
+    /// The number of options matching the current filter.
+    pub fn filtered_len(&self) -> usize {
+        self.filtered_indices.len()
+    }
+
+    /// Check if the dialog is currently visible
+    ///
+    /// # Returns
+    ///
+    /// `true` if the dialog is visible.
+    pub fn is_visible(&self) -> bool {
+        self.visible
+    }
+
+    /// Show the dialog
+    ///
+    /// Makes the dialog visible and focused.
+    pub fn show(&mut self) {
+        self.visible = true;
+        self.focused = true;
+    }
+
+    /// Hide the dialog
+    ///
+    /// Makes the dialog invisible and unfocused.
+    /// Does not clear the selection or filter.
+    pub fn hide(&mut self) {
+        self.visible = false;
+        self.focused = false;
+    }
+
+    /// Check if the dialog is focused
+    ///
+    /// # Returns
+    ///
+    /// `true` if the dialog has focus.
+    pub fn is_focused(&self) -> bool {
+        self.focused
+    }
+
+    /// Get the currently selected option
+    ///
+    /// # Returns
+    ///
+    /// A reference to the selected SelectOption, or None if no options.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::cli::commands::tui::components::dialog::{SelectDialog, SelectOption};
+    ///
+    /// let options = vec![SelectOption::new("Save", "save")];
+    /// let dialog = SelectDialog::with_options("Select", options);
+    /// assert!(dialog.get_selected().is_some());
+    /// ```
+    pub fn get_selected(&self) -> Option<&SelectOption<T>> {
+        if self.filtered_indices.is_empty() {
+            return None;
+        }
+        let actual_idx = self.filtered_indices[self.selected_index];
+        self.options.get(actual_idx)
+    }
+
+    /// Get the currently selected index
+    ///
+    /// # Returns
+    ///
+    /// The index of the selected option in the filtered list, or None if empty.
+    pub fn get_selected_index(&self) -> Option<usize> {
+        if self.filtered_indices.is_empty() {
+            None
+        } else {
+            Some(self.selected_index)
+        }
+    }
+
+    /// Get the currently selected index in the original options list
+    ///
+    /// # Returns
+    ///
+    /// The index of the selected option in the original options vector.
+    pub fn get_selected_original_index(&self) -> Option<usize> {
+        if self.filtered_indices.is_empty() {
+            None
+        } else {
+            Some(self.filtered_indices[self.selected_index])
+        }
+    }
+
+    /// Set the selection to the given index (in filtered list)
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - The index to select
+    ///
+    /// If the index is out of bounds, selection is clamped to valid range.
+    pub fn select(&mut self, index: usize) {
+        if self.filtered_indices.is_empty() {
+            self.selected_index = 0;
+            return;
+        }
+        self.selected_index = index.min(self.filtered_indices.len() - 1);
+    }
+
+    /// Get the current filter query
+    ///
+    /// # Returns
+    ///
+    /// The filter query as a string slice.
+    pub fn filter_query(&self) -> &str {
+        &self.filter_query
+    }
+
+    /// Set the filter query and apply filtering
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - The new filter query
+    pub fn set_filter(&mut self, query: impl Into<String>) {
+        self.filter_query = query.into();
+        self.apply_filter();
+    }
+
+    /// Clear the filter query and reset filtered indices
+    pub fn clear_filter(&mut self) {
+        self.filter_query.clear();
+        self.filtered_indices = (0..self.options.len()).collect();
+        self.selected_index = 0;
+        self.scroll_offset = 0;
+    }
+
+    /// Apply the current filter query to options
+    ///
+    /// Updates filtered_indices and resets selection if needed.
+    fn apply_filter(&mut self) {
+        self.filtered_indices = filter_options(&self.options, &self.filter_query);
+        // Reset selection to first item if current selection is out of bounds
+        if !self.filtered_indices.is_empty() {
+            self.selected_index = self.selected_index.min(self.filtered_indices.len() - 1);
+        } else {
+            self.selected_index = 0;
+        }
+        self.scroll_offset = 0;
+    }
+
+    /// Navigate to the next item (wraps around)
+    pub fn next(&mut self) {
+        if self.filtered_indices.is_empty() {
+            return;
+        }
+        if self.selected_index >= self.filtered_indices.len() - 1 {
+            self.selected_index = 0;
+        } else {
+            self.selected_index += 1;
+        }
+    }
+
+    /// Navigate to the previous item (wraps around)
+    pub fn prev(&mut self) {
+        if self.filtered_indices.is_empty() {
+            return;
+        }
+        if self.selected_index == 0 {
+            self.selected_index = self.filtered_indices.len() - 1;
+        } else {
+            self.selected_index -= 1;
+        }
+    }
+
+    /// Navigate to the first item
+    pub fn first(&mut self) {
+        if !self.filtered_indices.is_empty() {
+            self.selected_index = 0;
+        }
+    }
+
+    /// Navigate to the last item
+    pub fn last(&mut self) {
+        if !self.filtered_indices.is_empty() {
+            self.selected_index = self.filtered_indices.len() - 1;
+        }
+    }
+
+    /// Navigate up by one page
+    ///
+    /// # Arguments
+    ///
+    /// * `visible_items` - Number of visible items in the list
+    pub fn page_up(&mut self, visible_items: usize) {
+        if self.filtered_indices.is_empty() {
+            return;
+        }
+        self.selected_index = self.selected_index.saturating_sub(visible_items);
+    }
+
+    /// Navigate down by one page
+    ///
+    /// # Arguments
+    ///
+    /// * `visible_items` - Number of visible items in the list
+    pub fn page_down(&mut self, visible_items: usize) {
+        if self.filtered_indices.is_empty() {
+            return;
+        }
+        self.selected_index =
+            (self.selected_index + visible_items).min(self.filtered_indices.len() - 1);
+    }
+
+    /// Get the current scroll offset
+    pub fn scroll_offset(&self) -> usize {
+        self.scroll_offset
+    }
+
+    /// Calculate the centered area for the dialog (Medium size)
+    fn centered_area(&self, frame_area: Rect) -> Rect {
+        let width = (frame_area.width as f32 * 60.0 / 100.0) as u16;
+        let height = (frame_area.height as f32 * 60.0 / 100.0) as u16;
+
+        let x = frame_area.x + (frame_area.width.saturating_sub(width)) / 2;
+        let y = frame_area.y + (frame_area.height.saturating_sub(height)) / 2;
+
+        Rect::new(x, y, width, height)
+    }
+}
+
+impl<T: Send + Sync + 'static> Component for SelectDialog<T> {
+    fn id(&self) -> ComponentId {
+        self.id
+    }
+
+    fn render(&self, frame: &mut Frame, area: Rect) {
+        if !self.visible {
+            return;
+        }
+
+        let dialog_area = self.centered_area(area);
+
+        // Clear the area for modal overlay
+        frame.render_widget(Clear, dialog_area);
+
+        // Dialog block with border
+        let border_style = if self.focused {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
+        };
+
+        let block = Block::default()
+            .title(format!(" {} ", self.title))
+            .borders(Borders::ALL)
+            .border_style(border_style);
+
+        // Calculate inner area
+        let inner = block.inner(dialog_area);
+        frame.render_widget(block, dialog_area);
+
+        // Create layout: filter (if not empty), list, help text
+        let mut constraints = vec![Constraint::Min(1)]; // List
+        if !self.filter_query.is_empty() {
+            constraints.insert(0, Constraint::Length(3)); // Filter input (2 lines + border)
+        }
+        constraints.push(Constraint::Length(1)); // Help text
+
+        let layout = Layout::default()
+            .direction(ratatui::layout::Direction::Vertical)
+            .constraints(constraints)
+            .split(inner);
+
+        let mut layout_idx = 0;
+
+        // Render filter input if not empty
+        if !self.filter_query.is_empty() {
+            let filter_text = format!("Filter: {}", self.filter_query);
+            let filter_paragraph = Paragraph::new(Line::from(Span::styled(
+                filter_text,
+                Style::default().fg(Color::Yellow),
+            )))
+            .block(Block::default().borders(Borders::BOTTOM));
+            frame.render_widget(filter_paragraph, layout[layout_idx]);
+            layout_idx += 1;
+        }
+
+        // Render list
+        let list_area = layout[layout_idx];
+        layout_idx += 1;
+
+        // Calculate visible items
+        let visible_items = list_area.height as usize;
+
+        // Calculate scroll offset to keep selection visible (local calculation)
+        let scroll_offset = if self.filtered_indices.is_empty() {
+            0
+        } else if self.selected_index < self.scroll_offset {
+            self.selected_index
+        } else if self.selected_index >= self.scroll_offset + visible_items {
+            self.selected_index.saturating_sub(visible_items - 1)
+        } else {
+            self.scroll_offset
+        };
+
+        // Render each visible option
+        for (i, item_idx) in self
+            .filtered_indices
+            .iter()
+            .skip(scroll_offset)
+            .take(visible_items)
+            .enumerate()
+        {
+            let option = &self.options[*item_idx];
+            let is_selected = Some(i + scroll_offset) == self.get_selected_index();
+
+            let line_text = if is_selected {
+                format!("> {}", option.title())
+            } else {
+                format!("  {}", option.title())
+            };
+
+            let line_style = if is_selected {
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else if option.is_disabled() {
+                Style::default().fg(Color::DarkGray)
+            } else {
+                Style::default()
+            };
+
+            let line = Line::from(Span::styled(line_text, line_style));
+            let y = list_area.y + i as u16;
+            frame.render_widget(
+                Paragraph::new(line),
+                Rect::new(list_area.x, y, list_area.width, 1),
+            );
+        }
+
+        // Render help text
+        let help_area = layout[layout_idx];
+        let help_text = Line::from(vec![
+            Span::styled(
+                "↑↓",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" Navigate | "),
+            Span::styled(
+                "Enter",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" Select | "),
+            Span::styled(
+                "Esc",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" Cancel"),
+        ]);
+        let help_paragraph = Paragraph::new(help_text);
+        frame.render_widget(help_paragraph, help_area);
+    }
+
+    fn handle_input(&mut self, event: KeyEvent) -> EventPropagation {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        if !self.visible {
+            return EventPropagation::Continue;
+        }
+
+        match (event.code, event.modifiers) {
+            // Navigation
+            (KeyCode::Up, _)
+            | (KeyCode::Char('k'), KeyModifiers::CONTROL)
+            | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+                self.prev();
+                EventPropagation::Stop
+            }
+            (KeyCode::Down, _)
+            | (KeyCode::Char('j'), KeyModifiers::CONTROL)
+            | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+                self.next();
+                EventPropagation::Stop
+            }
+            (KeyCode::PageUp, _) => {
+                self.page_up(10);
+                EventPropagation::Stop
+            }
+            (KeyCode::PageDown, _) => {
+                self.page_down(10);
+                EventPropagation::Stop
+            }
+            (KeyCode::Home, _) | (KeyCode::Char('g'), _) => {
+                self.first();
+                EventPropagation::Stop
+            }
+            (KeyCode::End, _) | (KeyCode::Char('G'), KeyModifiers::SHIFT) => {
+                self.last();
+                EventPropagation::Stop
+            }
+            // Selection
+            (KeyCode::Enter, _) => {
+                self.hide();
+                EventPropagation::Stop
+            }
+            (KeyCode::Esc, _) => {
+                self.hide();
+                EventPropagation::Stop
+            }
+            // Filter input
+            (KeyCode::Char(c), _) => {
+                self.filter_query.push(c);
+                self.apply_filter();
+                EventPropagation::Stop
+            }
+            (KeyCode::Backspace, _) => {
+                self.filter_query.pop();
+                self.apply_filter();
+                EventPropagation::Stop
+            }
+            // Default: consume but don't handle
+            _ => EventPropagation::Stop,
+        }
+    }
+
+    fn update(&mut self, _delta: Duration) {
+        // No periodic updates needed
+    }
+
+    fn is_focusable(&self) -> bool {
+        true
+    }
+
+    fn on_focus(&mut self) {
+        self.focused = true;
+    }
+
+    fn on_blur(&mut self) {
+        self.focused = false;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2598,5 +3223,422 @@ mod tests {
         dialog.handle_input(KeyEvent::from(crossterm::event::KeyCode::Char('a')));
         assert_eq!(dialog.get_value(), "😀a");
         assert_eq!(dialog.cursor_position, 2); // 2 characters
+    }
+
+    // =============================================================================
+    // SelectDialog Tests
+    // =============================================================================
+
+    #[test]
+    fn test_select_dialog_new() {
+        let dialog: SelectDialog<String> = SelectDialog::new("Select");
+        assert_eq!(dialog.title(), "Select");
+        assert!(dialog.is_empty());
+        assert!(!dialog.is_visible());
+        assert!(!dialog.is_focused());
+    }
+
+    #[test]
+    fn test_select_dialog_with_options() {
+        let options = vec![
+            SelectOption::new("Save", "save"),
+            SelectOption::new("Open", "open"),
+            SelectOption::new("Close", "close"),
+        ];
+        let dialog = SelectDialog::with_options("Actions", options);
+        assert_eq!(dialog.title(), "Actions");
+        assert_eq!(dialog.len(), 3);
+        assert_eq!(dialog.filtered_len(), 3);
+    }
+
+    #[test]
+    fn test_select_dialog_show_hide() {
+        let mut dialog: SelectDialog<String> = SelectDialog::new("Select");
+        assert!(!dialog.is_visible());
+        assert!(!dialog.is_focused());
+
+        dialog.show();
+        assert!(dialog.is_visible());
+        assert!(dialog.is_focused());
+
+        dialog.hide();
+        assert!(!dialog.is_visible());
+        assert!(!dialog.is_focused());
+    }
+
+    #[test]
+    fn test_select_dialog_get_selected() {
+        let options = vec![
+            SelectOption::new("Save", "save"),
+            SelectOption::new("Open", "open"),
+        ];
+        let dialog = SelectDialog::with_options("Select", options);
+        let selected = dialog.get_selected().unwrap();
+        assert_eq!(selected.title(), "Save");
+        assert_eq!(*selected.value(), "save");
+    }
+
+    #[test]
+    fn test_select_dialog_get_selected_empty() {
+        let dialog: SelectDialog<String> = SelectDialog::new("Select");
+        assert!(dialog.get_selected().is_none());
+    }
+
+    #[test]
+    fn test_select_dialog_get_selected_index() {
+        let options = vec![SelectOption::new("Save", "save")];
+        let dialog = SelectDialog::with_options("Select", options);
+        assert_eq!(dialog.get_selected_index(), Some(0));
+    }
+
+    #[test]
+    fn test_select_dialog_select() {
+        let options = vec![
+            SelectOption::new("Save", "save"),
+            SelectOption::new("Open", "open"),
+            SelectOption::new("Close", "close"),
+        ];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.select(1);
+        let selected = dialog.get_selected().unwrap();
+        assert_eq!(selected.title(), "Open");
+    }
+
+    #[test]
+    fn test_select_dialog_select_out_of_bounds() {
+        let options = vec![SelectOption::new("Save", "save")];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.select(100); // Should clamp to 0
+        assert_eq!(dialog.get_selected_index(), Some(0));
+    }
+
+    #[test]
+    fn test_select_dialog_next() {
+        let options = vec![
+            SelectOption::new("A", 1),
+            SelectOption::new("B", 2),
+            SelectOption::new("C", 3),
+        ];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        assert_eq!(dialog.get_selected_index(), Some(0));
+
+        dialog.next();
+        assert_eq!(dialog.get_selected_index(), Some(1));
+
+        dialog.next();
+        assert_eq!(dialog.get_selected_index(), Some(2));
+
+        dialog.next();
+        assert_eq!(dialog.get_selected_index(), Some(0)); // Wrap around
+    }
+
+    #[test]
+    fn test_select_dialog_prev() {
+        let options = vec![
+            SelectOption::new("A", 1),
+            SelectOption::new("B", 2),
+            SelectOption::new("C", 3),
+        ];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.select(2); // Select last
+        assert_eq!(dialog.get_selected_index(), Some(2));
+
+        dialog.prev();
+        assert_eq!(dialog.get_selected_index(), Some(1));
+
+        dialog.prev();
+        assert_eq!(dialog.get_selected_index(), Some(0));
+
+        dialog.prev();
+        assert_eq!(dialog.get_selected_index(), Some(2)); // Wrap around
+    }
+
+    #[test]
+    fn test_select_dialog_first() {
+        let options = vec![
+            SelectOption::new("A", 1),
+            SelectOption::new("B", 2),
+            SelectOption::new("C", 3),
+        ];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.select(2);
+        dialog.first();
+        assert_eq!(dialog.get_selected_index(), Some(0));
+    }
+
+    #[test]
+    fn test_select_dialog_last() {
+        let options = vec![
+            SelectOption::new("A", 1),
+            SelectOption::new("B", 2),
+            SelectOption::new("C", 3),
+        ];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.last();
+        assert_eq!(dialog.get_selected_index(), Some(2));
+    }
+
+    #[test]
+    fn test_select_dialog_page_down() {
+        let options: Vec<SelectOption<i32>> = (0..50)
+            .map(|i| SelectOption::new(format!("Item {}", i), i))
+            .collect();
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.page_down(10);
+        assert_eq!(dialog.get_selected_index(), Some(10));
+        dialog.page_down(10);
+        assert_eq!(dialog.get_selected_index(), Some(20));
+    }
+
+    #[test]
+    fn test_select_dialog_page_up() {
+        let options: Vec<SelectOption<i32>> = (0..50)
+            .map(|i| SelectOption::new(format!("Item {}", i), i))
+            .collect();
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.select(30);
+        dialog.page_up(10);
+        assert_eq!(dialog.get_selected_index(), Some(20));
+        dialog.page_up(10);
+        assert_eq!(dialog.get_selected_index(), Some(10));
+    }
+
+    #[test]
+    fn test_select_dialog_page_up_saturating() {
+        let options = vec![
+            SelectOption::new("A", 1),
+            SelectOption::new("B", 2),
+            SelectOption::new("C", 3),
+        ];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.page_up(10); // Should not go below 0
+        assert_eq!(dialog.get_selected_index(), Some(0));
+    }
+
+    #[test]
+    fn test_select_dialog_filter_basic() {
+        let options = vec![
+            SelectOption::new("Save", 1),
+            SelectOption::new("Open", 2),
+            SelectOption::new("Save As", 3),
+        ];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.set_filter("sv");
+        assert_eq!(dialog.filtered_len(), 2); // "Save" and "Save As"
+        assert_eq!(dialog.get_selected().unwrap().title(), "Save");
+    }
+
+    #[test]
+    fn test_select_dialog_filter_clear() {
+        let options = vec![SelectOption::new("Save", 1), SelectOption::new("Open", 2)];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.set_filter("sv");
+        dialog.clear_filter();
+        assert_eq!(dialog.filtered_len(), 2);
+        assert_eq!(dialog.filter_query(), "");
+    }
+
+    #[test]
+    fn test_select_dialog_filter_no_matches() {
+        let options = vec![SelectOption::new("Save", 1), SelectOption::new("Open", 2)];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.set_filter("xyz");
+        assert_eq!(dialog.filtered_len(), 0);
+        assert!(dialog.get_selected().is_none());
+    }
+
+    #[test]
+    fn test_select_dialog_filter_excludes_disabled() {
+        let options = vec![
+            SelectOption::new("Save", 1),
+            SelectOption::new("Open", 2).disabled(),
+            SelectOption::new("Save As", 3),
+        ];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.set_filter("sv");
+        assert_eq!(dialog.filtered_len(), 2);
+    }
+
+    #[test]
+    fn test_select_dialog_handle_input_escape() {
+        let options = vec![SelectOption::new("Save", "save")];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.show();
+
+        let event = KeyEvent::new(
+            crossterm::event::KeyCode::Esc,
+            crossterm::event::KeyModifiers::empty(),
+        );
+        assert_eq!(dialog.handle_input(event), EventPropagation::Stop);
+        assert!(!dialog.is_visible());
+    }
+
+    #[test]
+    fn test_select_dialog_handle_input_enter() {
+        let options = vec![SelectOption::new("Save", "save")];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.show();
+
+        let event = KeyEvent::new(
+            crossterm::event::KeyCode::Enter,
+            crossterm::event::KeyModifiers::empty(),
+        );
+        assert_eq!(dialog.handle_input(event), EventPropagation::Stop);
+        assert!(!dialog.is_visible());
+    }
+
+    #[test]
+    fn test_select_dialog_handle_input_up() {
+        let options = vec![SelectOption::new("A", 1), SelectOption::new("B", 2)];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.show();
+        dialog.select(1);
+
+        let event = KeyEvent::new(
+            crossterm::event::KeyCode::Up,
+            crossterm::event::KeyModifiers::empty(),
+        );
+        assert_eq!(dialog.handle_input(event), EventPropagation::Stop);
+        assert_eq!(dialog.get_selected_index(), Some(0));
+    }
+
+    #[test]
+    fn test_select_dialog_handle_input_down() {
+        let options = vec![SelectOption::new("A", 1), SelectOption::new("B", 2)];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.show();
+
+        let event = KeyEvent::new(
+            crossterm::event::KeyCode::Down,
+            crossterm::event::KeyModifiers::empty(),
+        );
+        assert_eq!(dialog.handle_input(event), EventPropagation::Stop);
+        assert_eq!(dialog.get_selected_index(), Some(1));
+    }
+
+    #[test]
+    fn test_select_dialog_handle_input_filter_char() {
+        let options = vec![SelectOption::new("Save", 1), SelectOption::new("Open", 2)];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.show();
+
+        let event = KeyEvent::new(
+            crossterm::event::KeyCode::Char('s'),
+            crossterm::event::KeyModifiers::empty(),
+        );
+        assert_eq!(dialog.handle_input(event), EventPropagation::Stop);
+        assert_eq!(dialog.filter_query(), "s");
+        assert_eq!(dialog.filtered_len(), 1);
+    }
+
+    #[test]
+    fn test_select_dialog_handle_input_backspace() {
+        let options = vec![SelectOption::new("Save", 1), SelectOption::new("Open", 2)];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.show();
+        dialog.set_filter("sa");
+
+        let event = KeyEvent::new(
+            crossterm::event::KeyCode::Backspace,
+            crossterm::event::KeyModifiers::empty(),
+        );
+        assert_eq!(dialog.handle_input(event), EventPropagation::Stop);
+        assert_eq!(dialog.filter_query(), "s");
+    }
+
+    #[test]
+    fn test_select_dialog_handle_input_not_visible() {
+        let options: Vec<SelectOption<String>> =
+            vec![SelectOption::new("Save".to_string(), "save".to_string())];
+        let mut dialog: SelectDialog<String> = SelectDialog::with_options("Select", options);
+
+        let event = KeyEvent::new(
+            crossterm::event::KeyCode::Enter,
+            crossterm::event::KeyModifiers::empty(),
+        );
+        assert_eq!(dialog.handle_input(event), EventPropagation::Continue);
+    }
+
+    #[test]
+    fn test_select_dialog_component_id() {
+        let dialog1: SelectDialog<String> = SelectDialog::new("A");
+        let dialog2: SelectDialog<String> = SelectDialog::new("B");
+        assert_ne!(dialog1.id(), dialog2.id());
+    }
+
+    #[test]
+    fn test_select_dialog_is_focusable() {
+        let dialog: SelectDialog<String> = SelectDialog::new("Select");
+        assert!(dialog.is_focusable());
+    }
+
+    #[test]
+    fn test_select_dialog_on_focus() {
+        let mut dialog: SelectDialog<String> = SelectDialog::new("Select");
+        assert!(!dialog.is_focused());
+        dialog.on_focus();
+        assert!(dialog.is_focused());
+    }
+
+    #[test]
+    fn test_select_dialog_on_blur() {
+        let mut dialog: SelectDialog<String> = SelectDialog::new("Select");
+        dialog.on_focus();
+        assert!(dialog.is_focused());
+        dialog.on_blur();
+        assert!(!dialog.is_focused());
+    }
+
+    #[test]
+    fn test_select_dialog_update() {
+        let mut dialog: SelectDialog<String> = SelectDialog::new("Select");
+        dialog.update(Duration::from_millis(100));
+        // Should not panic
+    }
+
+    #[test]
+    fn test_select_dialog_render_does_not_panic() {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+        let dialog: SelectDialog<String> = SelectDialog::new("Select");
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                dialog.render(frame, area);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_select_dialog_render_visible_does_not_panic() {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+        let options = vec![
+            SelectOption::new("Save", "save"),
+            SelectOption::new("Open", "open"),
+        ];
+        let mut dialog = SelectDialog::with_options("Select", options);
+        dialog.show();
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                dialog.render(frame, area);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_select_dialog_centered_area() {
+        let dialog: SelectDialog<String> = SelectDialog::new("Select");
+        let frame_area = Rect::new(0, 0, 100, 50);
+        let dialog_area = dialog.centered_area(frame_area);
+
+        // 60% width, 60% height
+        assert_eq!(dialog_area.width, 60);
+        assert_eq!(dialog_area.height, 30);
+        assert_eq!(dialog_area.x, 20);
+        assert_eq!(dialog_area.y, 10);
     }
 }
