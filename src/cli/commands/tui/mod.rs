@@ -17,7 +17,7 @@ use crossterm::{
 use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::Style,
     widgets::{Block, Borders, Paragraph},
 };
@@ -25,9 +25,12 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::io;
 
+use components::mcp_status::McpStatusPanel;
 use components::{Component, List, TextArea};
 use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
 use theme::ThemeContext;
+use std::collections::HashMap;
+use crate::mcp::types::McpStatus;
 
 const SERVER_URL: &str = "http://127.0.0.1:4096";
 
@@ -65,6 +68,9 @@ pub struct TuiApp {
     pub keybinds: KeybindsConfig,
     pub leader_state: LeaderState,
     pub theme: ThemeContext,
+    pub mcp_status_panel: McpStatusPanel,
+    pub mcp_status_expanded: bool,
+    pub mcp_statuses: HashMap<String, McpStatus>,
 }
 
 impl Default for TuiApp {
@@ -86,6 +92,9 @@ impl Default for TuiApp {
             keybinds: KeybindsConfig::default(),
             leader_state: LeaderState::default(),
             theme: ThemeContext::default(),
+            mcp_status_panel: McpStatusPanel::new(),
+            mcp_status_expanded: false,
+            mcp_statuses: HashMap::new(),
         }
     }
 }
@@ -136,6 +145,14 @@ impl TuiApp {
             .matches("input_clear", &key_info, leader_active)
         {
             self.input_component.clear();
+            return None;
+        }
+
+        if self
+            .keybinds
+            .matches("mcp_status_toggle", &key_info, leader_active)
+        {
+            self.mcp_status_expanded = !self.mcp_status_expanded;
             return None;
         }
 
@@ -286,7 +303,7 @@ async fn run_app<B: ratatui::backend::Backend>(
     let mut last_update = std::time::Instant::now();
 
     while app.running {
-        terminal.draw(|f| ui(f, app))?;
+        terminal.draw(|f| ui(f, &mut *app))?;
 
         let now = std::time::Instant::now();
         let delta = now.duration_since(last_update);
@@ -310,7 +327,7 @@ async fn run_app<B: ratatui::backend::Backend>(
     Ok(())
 }
 
-fn ui(f: &mut Frame, app: &TuiApp) {
+fn ui(f: &mut Frame, app: &mut TuiApp) {
     let theme = &app.theme;
 
     let chunks = Layout::default()
@@ -339,6 +356,54 @@ fn ui(f: &mut Frame, app: &TuiApp) {
     app.input_component.render(f, chunks[3]);
     app.message_list.render(f, chunks[2]);
     app.file_list.render(f, chunks[4]);
+
+    // Render MCP status footer indicator
+    let mcp_count = app.mcp_statuses.len();
+    let all_ok = app.mcp_statuses.values().all(|s| matches!(s, McpStatus::Connected));
+    let mcp_color = if mcp_count == 0 {
+        theme.text_muted()
+    } else if all_ok {
+        theme.success()
+    } else {
+        theme.error()
+    };
+
+    let mcp_indicator = format!("⊙ {} MCP", mcp_count);
+    let mcp_footer = Paragraph::new(mcp_indicator)
+        .style(Style::default().fg(mcp_color))
+        .block(Block::default().borders(Borders::NONE));
+    
+    // Position MCP indicator in the bottom right of the status area
+    let mcp_area = Rect::new(
+        f.area().width - 15,
+        f.area().y + 1,
+        15,
+        1,
+    );
+    f.render_widget(mcp_footer, mcp_area);
+
+    // Render MCP sidebar when expanded
+    if app.mcp_status_expanded {
+        // Create a sidebar on the right side
+        let sidebar_width = 40;
+        let sidebar_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(sidebar_width),
+            ])
+            .split(f.area());
+
+        // Render the MCP status panel in the sidebar
+        let sidebar_area = Rect::new(
+            sidebar_chunks[1].x,
+            sidebar_chunks[1].y,
+            sidebar_chunks[1].width,
+            sidebar_chunks[1].height,
+        );
+        
+        app.mcp_status_panel.render(f, sidebar_area);
+    }
 }
 
 #[cfg(test)]

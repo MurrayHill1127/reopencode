@@ -230,6 +230,7 @@ impl KeybindsConfig {
             "scrollbar_toggle" => &self.scrollbar_toggle,
             "username_toggle" => &self.username_toggle,
             "status_view" => &self.status_view,
+            "mcp_status_toggle" => &self.mcp_status_toggle,
             "session_export" => &self.session_export,
             "session_new" => &self.session_new,
             "session_list" => &self.session_list,
@@ -370,6 +371,10 @@ fn default_username_toggle() -> String {
 
 fn default_status_view() -> String {
     "<leader>s".to_string()
+}
+
+fn default_mcp_status_toggle() -> String {
+    "ctrl+m".to_string()
 }
 
 fn default_session_export() -> String {
@@ -741,6 +746,8 @@ pub struct KeybindsConfig {
     pub username_toggle: String,
     #[serde(default = "default_status_view")]
     pub status_view: String,
+    #[serde(default = "default_mcp_status_toggle")]
+    pub mcp_status_toggle: String,
 
     // Session management
     #[serde(default = "default_session_export")]
@@ -961,6 +968,7 @@ impl Default for KeybindsConfig {
             scrollbar_toggle: default_scrollbar_toggle(),
             username_toggle: default_username_toggle(),
             status_view: default_status_view(),
+            mcp_status_toggle: default_mcp_status_toggle(),
 
             // Session management
             session_export: default_session_export(),
@@ -1435,8 +1443,8 @@ mod tests {
 
         assert_eq!(
             obj.len(),
-            95,
-            "Expected 95 keybind fields, got {}",
+            96,
+            "Expected 96 keybind fields, got {}",
             obj.len()
         );
     }
