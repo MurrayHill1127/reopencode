@@ -25,14 +25,22 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::io;
 
+use crate::mcp::types::McpStatus;
 use components::mcp_status::McpStatusPanel;
 use components::{Component, List, TextArea};
 use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
-use theme::ThemeContext;
 use std::collections::HashMap;
-use crate::mcp::types::McpStatus;
+use theme::ThemeContext;
 
 const SERVER_URL: &str = "http://127.0.0.1:4096";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PermissionRequest {
+    pub id: String,
+    pub session_id: String,
+    pub tool: String,
+    pub message: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
@@ -71,10 +79,27 @@ pub struct TuiApp {
     pub mcp_status_panel: McpStatusPanel,
     pub mcp_status_expanded: bool,
     pub mcp_statuses: HashMap<String, McpStatus>,
+    pub current_directory: String,
+    pub lsp_count: usize,
+    pub pending_permissions: usize,
 }
 
 impl Default for TuiApp {
     fn default() -> Self {
+        let current_dir = std::env::current_dir()
+            .ok()
+            .and_then(|p| {
+                let path_str = p.to_string_lossy().to_string();
+                if let Some(home) = dirs::home_dir() {
+                    let home_str = home.to_string_lossy();
+                    if path_str.starts_with(&*home_str) {
+                        return Some(path_str.replacen(&*home_str, "~", 1));
+                    }
+                }
+                Some(path_str)
+            })
+            .unwrap_or_else(|| ".".to_string());
+
         Self {
             running: true,
             client: Client::new(),
@@ -95,6 +120,9 @@ impl Default for TuiApp {
             mcp_status_panel: McpStatusPanel::new(),
             mcp_status_expanded: false,
             mcp_statuses: HashMap::new(),
+            current_directory: current_dir,
+            lsp_count: 0,
+            pending_permissions: 0,
         }
     }
 }
@@ -265,6 +293,55 @@ impl TuiApp {
         }
         self.toasts.retain(|(_, expires)| *expires > now);
     }
+
+    pub async fn fetch_lsp(&mut self) {
+        match self.client.get(format!("{}/lsp", SERVER_URL)).send().await {
+            Ok(response) => {
+                if response.status().is_success() {
+                    match response.json::<Vec<serde_json::Value>>().await {
+                        Ok(lsp_list) => {
+                            self.lsp_count = lsp_list.len();
+                        }
+                        Err(_) => {
+                            self.lsp_count = 0;
+                        }
+                    }
+                } else {
+                    self.lsp_count = 0;
+                }
+            }
+            Err(_) => {
+                self.lsp_count = 0;
+            }
+        }
+    }
+
+    pub async fn fetch_permissions(&mut self) {
+        match self
+            .client
+            .get(format!("{}/permission", SERVER_URL))
+            .send()
+            .await
+        {
+            Ok(response) => {
+                if response.status().is_success() {
+                    match response.json::<Vec<PermissionRequest>>().await {
+                        Ok(permissions) => {
+                            self.pending_permissions = permissions.len();
+                        }
+                        Err(_) => {
+                            self.pending_permissions = 0;
+                        }
+                    }
+                } else {
+                    self.pending_permissions = 0;
+                }
+            }
+            Err(_) => {
+                self.pending_permissions = 0;
+            }
+        }
+    }
 }
 
 pub async fn run() -> Result<()> {
@@ -352,14 +429,51 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         .block(Block::default().borders(Borders::NONE));
     f.render_widget(status, chunks[1]);
 
-    // Render components
-    app.input_component.render(f, chunks[3]);
-    app.message_list.render(f, chunks[2]);
-    app.file_list.render(f, chunks[4]);
+    // Render footer with directory on left and MCP/LSP/Permissions status on right
+    let footer_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(chunks[1]);
+
+    // Directory path on the left
+    let directory_paragraph = Paragraph::new(app.current_directory.as_str())
+        .style(Style::default().fg(theme.text_muted()))
+        .block(Block::default().borders(Borders::NONE));
+    f.render_widget(directory_paragraph, footer_chunks[0]);
+
+    // Render permissions indicator (between directory and LSP/MCP)
+    if app.pending_permissions > 0 {
+        let perm_indicator = format!("△ {} Permission(s)", app.pending_permissions);
+        let perm_paragraph = Paragraph::new(perm_indicator)
+            .style(Style::default().fg(theme.warning()))
+            .block(Block::default().borders(Borders::NONE));
+
+        // Position permissions indicator to the left of LSP indicator
+        let perm_area = Rect::new(f.area().width - 45, f.area().y + 1, 20, 1);
+        f.render_widget(perm_paragraph, perm_area);
+    }
+
+    // Render LSP indicator before MCP indicator
+    let lsp_color = if app.lsp_count > 0 {
+        theme.success()
+    } else {
+        theme.text_muted()
+    };
+    let lsp_indicator = format!("• {} LSP", app.lsp_count);
+    let lsp_paragraph = Paragraph::new(lsp_indicator)
+        .style(Style::default().fg(lsp_color))
+        .block(Block::default().borders(Borders::NONE));
+
+    // Position LSP indicator to the left of MCP indicator
+    let lsp_area = Rect::new(f.area().width - 30, f.area().y + 1, 12, 1);
+    f.render_widget(lsp_paragraph, lsp_area);
 
     // Render MCP status footer indicator
     let mcp_count = app.mcp_statuses.len();
-    let all_ok = app.mcp_statuses.values().all(|s| matches!(s, McpStatus::Connected));
+    let all_ok = app
+        .mcp_statuses
+        .values()
+        .all(|s| matches!(s, McpStatus::Connected));
     let mcp_color = if mcp_count == 0 {
         theme.text_muted()
     } else if all_ok {
@@ -372,14 +486,9 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
     let mcp_footer = Paragraph::new(mcp_indicator)
         .style(Style::default().fg(mcp_color))
         .block(Block::default().borders(Borders::NONE));
-    
+
     // Position MCP indicator in the bottom right of the status area
-    let mcp_area = Rect::new(
-        f.area().width - 15,
-        f.area().y + 1,
-        15,
-        1,
-    );
+    let mcp_area = Rect::new(f.area().width - 15, f.area().y + 1, 15, 1);
     f.render_widget(mcp_footer, mcp_area);
 
     // Render MCP sidebar when expanded
@@ -388,10 +497,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         let sidebar_width = 40;
         let sidebar_chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Min(0),
-                Constraint::Length(sidebar_width),
-            ])
+            .constraints([Constraint::Min(0), Constraint::Length(sidebar_width)])
             .split(f.area());
 
         // Render the MCP status panel in the sidebar
@@ -401,7 +507,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
             sidebar_chunks[1].width,
             sidebar_chunks[1].height,
         );
-        
+
         app.mcp_status_panel.render(f, sidebar_area);
     }
 }
