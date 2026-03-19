@@ -1,4 +1,20 @@
 //! Agent system - AI agents that orchestrate tasks
+//!
+//! This module provides the core agent infrastructure including:
+//! - Agent configuration and metadata types
+//! - Permission system for tool access control
+//! - Prompt templates for builtin agents
+//! - Agent registry for managing agents
+
+pub mod config;
+pub mod permission;
+pub mod prompts;
+pub mod registry;
+
+// Re-export commonly used types
+pub use config::{AgentInfo, AgentMode, ModelConfig};
+pub use permission::{Action, PermissionEngine, Rule, Ruleset, evaluate, merge};
+pub use registry::AgentRegistry;
 
 use std::sync::Arc;
 

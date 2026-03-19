@@ -2267,6 +2267,7 @@ dependencies = [
  "tui-textarea",
  "uuid",
  "walkdir",
+ "wildmatch",
 ]
 
 [[package]]
@@ -3926,6 +3927,12 @@ dependencies = [
  "libredox",
  "wasite",
 ]
+
+[[package]]
+name = "wildmatch"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29333c3ea1ba8b17211763463ff24ee84e41c78224c16b001cd907e663a38c68"
 
 [[package]]
 name = "winapi"
