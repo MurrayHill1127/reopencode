@@ -6,10 +6,12 @@
 //! - Prompt templates for builtin agents
 //! - Agent registry for managing agents
 //! - Loop logic for agent execution cycles
+//! - Message processor for streaming responses
 
 pub mod config;
 pub mod loop_;
 pub mod permission;
+pub mod processor;
 pub mod prompts;
 pub mod registry;
 
@@ -20,6 +22,12 @@ pub use loop_::{
     DEFAULT_CONTEXT_OVERFLOW_THRESHOLD, DEFAULT_CONTEXT_WARNING_THRESHOLD, DEFAULT_MAX_STEPS,
 };
 pub use permission::{Action, PermissionEngine, Rule, Ruleset, evaluate, merge};
+pub use processor::{
+    Processor, ProcessorConfig, ProcessorError, ProcessResult, RetryConfig, StreamEvent,
+    TextPart, ReasoningPart, ToolCallState, ToolCallStatus,
+    DOOM_LOOP_THRESHOLD, DEFAULT_BASE_DELAY_MS, DEFAULT_EXPONENTIAL_BASE,
+    DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRY_ATTEMPTS,
+};
 pub use registry::AgentRegistry;
 
 use std::sync::Arc;
