@@ -32,13 +32,14 @@
 //! ```
 
 use super::{Component, ComponentEvent, ComponentId, EventPropagation};
+use crate::cli::commands::tui::keybindings::{KeybindInfo, KeybindsConfig};
 use crossterm::event::KeyEvent;
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
+    Frame,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -47,24 +48,34 @@ use std::time::Duration;
 #[allow(dead_code)]
 const SERVER_URL: &str = "http://127.0.0.1:4096";
 
+// ==================== Model Metadata Types ====================
+
+/// Model pricing information
+///
+/// Contains input and output token costs for a model.
+/// Used to display "Free" footer for zero-cost models.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ModelCost {
+    /// Cost per input token
+    pub input: f64,
+    /// Cost per output token
+    pub output: f64,
+}
+
+/// Model availability status
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ModelStatus {
+    /// Model is active and available
+    #[default]
+    Active,
+    /// Model is deprecated and should not be shown
+    Deprecated,
+}
+
 // ==================== Data Structures ====================
 
 /// Model information for display and selection
-///
-/// Contains the provider ID, model ID, and display name.
-/// Used to represent a selectable model in the UI.
-///
-/// # Examples
-///
-/// ```
-/// use crate::cli::commands::tui::components::model_selector::ModelInfo;
-///
-/// let model = ModelInfo::new("openai", "gpt-4", "GPT-4");
-/// assert_eq!(model.provider_id(), "openai");
-/// assert_eq!(model.model_id(), "gpt-4");
-/// assert_eq!(model.name(), "GPT-4");
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ModelInfo {
     /// Provider identifier (e.g., "openai", "anthropic")
     provider_id: String,
@@ -72,20 +83,14 @@ pub struct ModelInfo {
     model_id: String,
     /// Display name for the model
     name: String,
+    /// Pricing information (optional)
+    cost: Option<ModelCost>,
+    /// Model status (active or deprecated)
+    status: ModelStatus,
 }
 
 impl ModelInfo {
     /// Create a new ModelInfo
-    ///
-    /// # Arguments
-    ///
-    /// * `provider_id` - The provider identifier
-    /// * `model_id` - The model identifier
-    /// * `name` - The display name
-    ///
-    /// # Returns
-    ///
-    /// A new ModelInfo instance.
     pub fn new(
         provider_id: impl Into<String>,
         model_id: impl Into<String>,
@@ -95,7 +100,21 @@ impl ModelInfo {
             provider_id: provider_id.into(),
             model_id: model_id.into(),
             name: name.into(),
+            cost: None,
+            status: ModelStatus::Active,
         }
+    }
+
+    /// Create a new ModelInfo with cost information
+    pub fn with_cost(mut self, cost: ModelCost) -> Self {
+        self.cost = Some(cost);
+        self
+    }
+
+    /// Create a new ModelInfo with status
+    pub fn with_status(mut self, status: ModelStatus) -> Self {
+        self.status = status;
+        self
     }
 
     /// Get the provider ID
@@ -113,16 +132,39 @@ impl ModelInfo {
         &self.name
     }
 
+    /// Get the cost information
+    pub fn cost(&self) -> Option<&ModelCost> {
+        self.cost.as_ref()
+    }
+
+    /// Get the status
+    pub fn status(&self) -> &ModelStatus {
+        &self.status
+    }
+
     /// Create a unique key for this model (provider_id:model_id)
     pub fn key(&self) -> String {
         format!("{}:{}", self.provider_id, self.model_id)
     }
+
+    /// Check if this is a free model (zero input cost for opencode provider)
+    pub fn is_free(&self) -> bool {
+        self.provider_id == "opencode" && self.cost.as_ref().is_some_and(|c| c.input == 0.0)
+    }
+
+    /// Check if this is a nano model (model_id contains "-nano")
+    pub fn is_nano(&self) -> bool {
+        self.model_id.contains("-nano")
+    }
+
+    /// Check if this model should be disabled
+    /// Nano models are disabled for opencode provider
+    pub fn is_disabled(&self) -> bool {
+        self.provider_id == "opencode" && self.is_nano()
+    }
 }
 
 /// Provider API response
-///
-/// Contains provider information including ID, name, and available models.
-/// Used when fetching providers from the server API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderInfo {
     /// Provider identifier
@@ -131,6 +173,33 @@ pub struct ProviderInfo {
     pub name: String,
     /// List of available model IDs
     pub models: Vec<String>,
+    /// Whether the provider is connected
+    #[serde(default)]
+    pub connected: bool,
+}
+
+// ==================== Fuzzy Search ====================
+
+/// Perform fuzzy matching between query and target
+///
+/// Case-insensitive matching where all query characters must appear
+/// in order in the target string.
+pub fn fuzzy_match(query: &str, target: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+
+    let query_lower: Vec<char> = query.to_lowercase().chars().collect();
+    let target_lower: Vec<char> = target.to_lowercase().chars().collect();
+
+    let mut query_idx = 0;
+    for target_char in target_lower {
+        if query_idx < query_lower.len() && target_char == query_lower[query_idx] {
+            query_idx += 1;
+        }
+    }
+
+    query_idx == query_lower.len()
 }
 
 /// Selection state tracking for favorites and recent models
@@ -314,6 +383,10 @@ pub struct ModelSelector {
     selected_model: Option<(String, String)>,
     /// Filtered display items (cached for rendering)
     filtered_items: Vec<DisplayItem>,
+    /// Optional provider filter (only show models from this provider)
+    provider_id_filter: Option<String>,
+    /// Keybinds configuration
+    keybinds: KeybindsConfig,
 }
 
 /// Item to display in the model list
@@ -323,11 +396,30 @@ struct DisplayItem {
     model: ModelInfo,
     /// Category label (Favorites, Recent, or provider name)
     category: String,
+    /// Section this item belongs to
+    section: ModelSection,
     /// Whether this is a favorite
     is_favorite: bool,
     /// Whether this is recent
     #[allow(dead_code)]
     is_recent: bool,
+    /// Whether this item is disabled (grayed out)
+    disabled: bool,
+    /// Footer text to display (e.g., "Free")
+    footer: Option<String>,
+}
+
+/// Section type for organizing model list items
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModelSection {
+    /// Favorites section
+    Favorites,
+    /// Recent models section
+    Recent,
+    /// Provider-specific section (contains provider name)
+    Provider(String),
+    /// Popular providers section (shown when not connected)
+    PopularProviders,
 }
 
 impl ModelSelector {
@@ -352,17 +444,29 @@ impl ModelSelector {
             focused: false,
             selected_model: None,
             filtered_items: Vec::new(),
+            provider_id_filter: None,
+            keybinds: KeybindsConfig::default(),
         }
     }
 
     /// Create a new ModelSelector with providers
-    ///
-    /// # Arguments
-    ///
-    /// * `providers` - List of available providers
     pub fn with_providers(providers: Vec<ProviderInfo>) -> Self {
         let mut selector = Self::new();
         selector.set_providers(providers);
+        selector
+    }
+
+    /// Create a new ModelSelector with a provider filter
+    pub fn with_provider_filter(provider_id: impl Into<String>) -> Self {
+        let mut selector = Self::new();
+        selector.provider_id_filter = Some(provider_id.into());
+        selector
+    }
+
+    /// Create a new ModelSelector with custom keybinds
+    pub fn with_keybinds(keybinds: KeybindsConfig) -> Self {
+        let mut selector = Self::new();
+        selector.keybinds = keybinds;
         selector
     }
 
@@ -426,69 +530,147 @@ impl ModelSelector {
         &mut self.state
     }
 
+    /// Check if any provider is connected
+    pub fn is_connected(&self) -> bool {
+        self.providers
+            .iter()
+            .any(|p| p.connected || p.id != "opencode")
+    }
+
     /// Update the filtered items list based on search query
     fn update_filtered_items(&mut self) {
         self.filtered_items.clear();
 
         let query = self.search_query.to_lowercase();
+        let connected = self.is_connected();
+        let has_filter = self.provider_id_filter.is_some();
+        let show_sections = connected && query.is_empty() && !has_filter;
 
-        // Add favorites first (if no search query)
-        if query.is_empty() {
+        let make_item = |model: ModelInfo,
+                         section: ModelSection,
+                         category: String,
+                         is_favorite: bool,
+                         is_recent: bool| {
+            let disabled = model.is_disabled();
+            let footer = if model.is_free() {
+                Some("Free".to_string())
+            } else {
+                None
+            };
+            DisplayItem {
+                model,
+                section,
+                category,
+                is_favorite,
+                is_recent,
+                disabled,
+                footer,
+            }
+        };
+
+        if show_sections {
             for (provider_id, model_id) in &self.state.favorites {
                 if let Some(model) = self.find_model(provider_id, model_id) {
-                    self.filtered_items.push(DisplayItem {
-                        model: model.clone(),
-                        category: "Favorites".to_string(),
-                        is_favorite: true,
-                        is_recent: false,
-                    });
+                    self.filtered_items.push(make_item(
+                        model.clone(),
+                        ModelSection::Favorites,
+                        "Favorites".to_string(),
+                        true,
+                        false,
+                    ));
                 }
             }
 
-            // Add recent (excluding favorites)
             for (provider_id, model_id) in &self.state.recent {
                 if self.state.is_favorite(provider_id, model_id) {
                     continue;
                 }
                 if let Some(model) = self.find_model(provider_id, model_id) {
-                    self.filtered_items.push(DisplayItem {
-                        model: model.clone(),
-                        category: "Recent".to_string(),
-                        is_favorite: false,
-                        is_recent: true,
-                    });
+                    self.filtered_items.push(make_item(
+                        model.clone(),
+                        ModelSection::Recent,
+                        "Recent".to_string(),
+                        false,
+                        true,
+                    ));
                 }
             }
-        }
 
-        // Add all models grouped by provider
-        for provider in &self.providers {
-            for model_id in &provider.models {
-                let model = ModelInfo::new(&provider.id, model_id, model_id);
-
-                // Apply search filter
-                if !query.is_empty() && !self.matches_search(&model, &query) {
-                    continue;
-                }
-
-                // Skip if already in favorites or recent (when no search)
-                if query.is_empty()
-                    && (self.state.is_favorite(&provider.id, model_id)
-                        || self.state.is_recent(&provider.id, model_id))
+            for provider in &self.providers {
+                if self
+                    .provider_id_filter
+                    .as_ref()
+                    .is_some_and(|f| &provider.id != f)
                 {
                     continue;
                 }
 
+                for model_id in &provider.models {
+                    let model = ModelInfo::new(&provider.id, model_id, model_id);
+
+                    if self.state.is_favorite(&provider.id, model_id)
+                        || self.state.is_recent(&provider.id, model_id)
+                    {
+                        continue;
+                    }
+
+                    if model.status == ModelStatus::Deprecated {
+                        continue;
+                    }
+
+                    self.filtered_items.push(make_item(
+                        model,
+                        ModelSection::Provider(provider.name.clone()),
+                        provider.name.clone(),
+                        false,
+                        false,
+                    ));
+                }
+            }
+        } else if !query.is_empty() || has_filter {
+            for provider in &self.providers {
+                if self
+                    .provider_id_filter
+                    .as_ref()
+                    .is_some_and(|f| &provider.id != f)
+                {
+                    continue;
+                }
+
+                for model_id in &provider.models {
+                    let model = ModelInfo::new(&provider.id, model_id, model_id);
+
+                    if !query.is_empty() && !self.matches_search(&model, &query) {
+                        continue;
+                    }
+
+                    if model.status == ModelStatus::Deprecated {
+                        continue;
+                    }
+
+                    self.filtered_items.push(make_item(
+                        model,
+                        ModelSection::Provider(provider.name.clone()),
+                        provider.name.clone(),
+                        self.state.is_favorite(&provider.id, model_id),
+                        self.state.is_recent(&provider.id, model_id),
+                    ));
+                }
+            }
+        } else {
+            for provider in self.providers.iter().take(6) {
                 self.filtered_items.push(DisplayItem {
-                    model,
-                    category: provider.name.clone(),
-                    is_favorite: self.state.is_favorite(&provider.id, model_id),
-                    is_recent: self.state.is_recent(&provider.id, model_id),
+                    model: ModelInfo::new(&provider.id, "", &provider.name),
+                    section: ModelSection::PopularProviders,
+                    category: "Popular providers".to_string(),
+                    is_favorite: false,
+                    is_recent: false,
+                    disabled: false,
+                    footer: None,
                 });
             }
         }
 
-        // Ensure selection is valid
         if !self.filtered_items.is_empty() {
             let current = self.list_state.selected().unwrap_or(0);
             if current >= self.filtered_items.len() {
@@ -506,13 +688,11 @@ impl ModelSelector {
             .find(|m| m.provider_id == provider_id && m.model_id == model_id)
     }
 
-    /// Check if a model matches the search query
+    /// Check if a model matches the search query using fuzzy matching
     fn matches_search(&self, model: &ModelInfo, query: &str) -> bool {
-        let name_lower = model.name.to_lowercase();
-        let provider_lower = model.provider_id.to_lowercase();
-
-        // Substring match on name or provider
-        name_lower.contains(query) || provider_lower.contains(query)
+        fuzzy_match(query, &model.name)
+            || fuzzy_match(query, &model.model_id)
+            || fuzzy_match(query, &model.provider_id)
     }
 
     /// Navigate to the next item
@@ -632,9 +812,17 @@ impl Component for ModelSelector {
         };
 
         let title = if self.search_mode {
-            " Select Model [Search] "
+            " Select Model [Search] ".to_string()
+        } else if let Some(ref provider_id) = self.provider_id_filter {
+            let provider_name = self
+                .providers
+                .iter()
+                .find(|p| &p.id == provider_id)
+                .map(|p| p.name.as_str())
+                .unwrap_or(provider_id.as_str());
+            format!(" Select Model - {} ", provider_name)
         } else {
-            " Select Model "
+            " Select Model ".to_string()
         };
 
         let block = Block::default()
@@ -683,32 +871,56 @@ impl Component for ModelSelector {
             frame.render_widget(search_paragraph, layout[0]);
         }
 
-        // Build list items
-        let items: Vec<ListItem> = self
-            .filtered_items
-            .iter()
-            .map(|item| {
-                let mut spans = vec![];
+        // Build list items with section headers
+        let mut items: Vec<ListItem> = Vec::new();
+        let mut last_section: Option<&ModelSection> = None;
 
-                // Favorite indicator
-                if item.is_favorite {
-                    spans.push(Span::styled("* ", Style::default().fg(Color::Yellow)));
-                } else {
-                    spans.push(Span::raw("  "));
-                }
+        for item in &self.filtered_items {
+            if last_section != Some(&item.section) {
+                let section_title = match &item.section {
+                    ModelSection::Favorites => "Favorites",
+                    ModelSection::Recent => "Recent",
+                    ModelSection::Provider(name) => name,
+                    ModelSection::PopularProviders => "Popular providers",
+                };
+                items.push(ListItem::new(Line::from(Span::styled(
+                    format!("── {} ──", section_title),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ))));
+                last_section = Some(&item.section);
+            }
 
-                // Model name
-                spans.push(Span::raw(&item.model.name));
+            let mut spans = vec![];
 
-                // Category/provider
+            if item.is_favorite {
+                spans.push(Span::styled("* ", Style::default().fg(Color::Yellow)));
+            } else {
+                spans.push(Span::raw("  "));
+            }
+
+            let name_style = if item.disabled {
+                Style::default().fg(Color::DarkGray)
+            } else {
+                Style::default()
+            };
+            spans.push(Span::styled(&item.model.name, name_style));
+
+            spans.push(Span::styled(
+                format!(" ({})", item.category),
+                Style::default().fg(Color::DarkGray),
+            ));
+
+            if let Some(ref footer) = item.footer {
                 spans.push(Span::styled(
-                    format!(" ({})", item.category),
-                    Style::default().fg(Color::DarkGray),
+                    format!(" [{}]", footer),
+                    Style::default().fg(Color::Green),
                 ));
+            }
 
-                ListItem::new(Line::from(spans))
-            })
-            .collect();
+            items.push(ListItem::new(Line::from(spans)));
+        }
 
         let list = List::new(items)
             .highlight_style(
@@ -720,14 +932,18 @@ impl Component for ModelSelector {
 
         frame.render_stateful_widget(list, layout[1], &mut self.list_state.clone());
 
-        // Help text
+        let provider_key = &self.keybinds.model_provider_list;
+        let favorite_key = &self.keybinds.model_favorite_toggle;
+
         let help_spans = vec![
             Span::styled("Enter", Style::default().fg(Color::Cyan)),
             Span::raw(" select | "),
             Span::styled("/", Style::default().fg(Color::Cyan)),
             Span::raw(" search | "),
-            Span::styled("f", Style::default().fg(Color::Cyan)),
+            Span::styled(favorite_key, Style::default().fg(Color::Cyan)),
             Span::raw(" favorite | "),
+            Span::styled(provider_key, Style::default().fg(Color::Cyan)),
+            Span::raw(" providers | "),
             Span::styled("Esc", Style::default().fg(Color::Cyan)),
             Span::raw(" cancel"),
         ];
@@ -742,11 +958,12 @@ impl Component for ModelSelector {
             return EventPropagation::Continue;
         }
 
+        let key_info = KeybindInfo::from_crossterm(&event);
+
         // Handle search mode separately
         if self.search_mode {
             match event.code {
                 KeyCode::Esc => {
-                    // Exit search mode
                     if self.search_query.is_empty() {
                         self.search_mode = false;
                     } else {
@@ -784,7 +1001,14 @@ impl Component for ModelSelector {
                 _ => EventPropagation::Stop,
             }
         } else {
-            // Normal mode
+            if self
+                .keybinds
+                .matches("model_favorite_toggle", &key_info, false)
+            {
+                self.toggle_current_favorite();
+                return EventPropagation::Stop;
+            }
+
             match (event.code, event.modifiers) {
                 (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
                     self.next_item();
@@ -813,10 +1037,6 @@ impl Component for ModelSelector {
                 (KeyCode::Char('/'), _) => {
                     self.search_mode = true;
                     self.search_query.clear();
-                    EventPropagation::Stop
-                }
-                (KeyCode::Char('f'), _) => {
-                    self.toggle_current_favorite();
                     EventPropagation::Stop
                 }
                 _ => EventPropagation::Continue,
@@ -865,11 +1085,13 @@ mod tests {
                 id: "openai".to_string(),
                 name: "OpenAI".to_string(),
                 models: vec!["gpt-4".to_string(), "gpt-3.5-turbo".to_string()],
+                connected: true,
             },
             ProviderInfo {
                 id: "anthropic".to_string(),
                 name: "Anthropic".to_string(),
                 models: vec!["claude-3-opus".to_string(), "claude-3-sonnet".to_string()],
+                connected: true,
             },
         ]
     }
@@ -1149,18 +1371,16 @@ mod tests {
         let mut selector = ModelSelector::with_providers(create_test_providers());
         selector.show();
 
-        // Toggle favorite on first item
-        let event = KeyEvent::new(KeyCode::Char('f'), KeyModifiers::empty());
+        // Toggle favorite on first item using ctrl+f (default keybind)
+        let event = KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL);
         let result = selector.handle_input(event);
         assert_eq!(result, EventPropagation::Stop);
 
         // Check state
         if let Some(item) = selector.filtered_items.first() {
-            assert!(
-                selector
-                    .state
-                    .is_favorite(&item.model.provider_id, &item.model.model_id)
-            );
+            assert!(selector
+                .state
+                .is_favorite(&item.model.provider_id, &item.model.model_id));
         }
     }
 
@@ -1332,5 +1552,138 @@ mod tests {
 
         selector.handle_input(KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty()));
         assert!(!selector.search_mode);
+    }
+
+    // ==================== New Feature Tests ====================
+
+    #[test]
+    fn test_fuzzy_match_basic() {
+        assert!(fuzzy_match("gpt", "gpt-4"));
+        assert!(fuzzy_match("g4", "gpt-4"));
+        assert!(fuzzy_match("G4", "gpt-4"));
+        assert!(!fuzzy_match("xyz", "gpt-4"));
+        assert!(fuzzy_match("", "any-string"));
+    }
+
+    #[test]
+    fn test_fuzzy_match_order() {
+        assert!(fuzzy_match("gp4", "gpt-4"));
+        assert!(!fuzzy_match("4gp", "gpt-4"));
+    }
+
+    #[test]
+    fn test_model_is_free() {
+        let mut model = ModelInfo::new("opencode", "test-model", "Test Model");
+        assert!(!model.is_free());
+
+        model = model.with_cost(ModelCost {
+            input: 0.0,
+            output: 0.0,
+        });
+        assert!(model.is_free());
+
+        let other_model = ModelInfo::new("other", "model", "Model").with_cost(ModelCost {
+            input: 0.0,
+            output: 0.0,
+        });
+        assert!(!other_model.is_free());
+    }
+
+    #[test]
+    fn test_model_is_nano() {
+        let normal_model = ModelInfo::new("opencode", "gpt-4", "GPT-4");
+        assert!(!normal_model.is_nano());
+
+        let nano_model = ModelInfo::new("opencode", "gpt-4-nano", "GPT-4 Nano");
+        assert!(nano_model.is_nano());
+    }
+
+    #[test]
+    fn test_model_is_disabled() {
+        let nano_model = ModelInfo::new("opencode", "gpt-4-nano", "GPT-4 Nano");
+        assert!(nano_model.is_disabled());
+
+        let other_nano = ModelInfo::new("other", "model-nano", "Model Nano");
+        assert!(!other_nano.is_disabled());
+
+        let normal = ModelInfo::new("opencode", "gpt-4", "GPT-4");
+        assert!(!normal.is_disabled());
+    }
+
+    #[test]
+    fn test_provider_connected_field() {
+        let provider = ProviderInfo {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            models: vec!["model-1".to_string()],
+            connected: true,
+        };
+        assert!(provider.connected);
+    }
+
+    #[test]
+    fn test_is_connected() {
+        let mut selector = ModelSelector::new();
+        assert!(!selector.is_connected());
+
+        selector.providers = vec![ProviderInfo {
+            id: "opencode".to_string(),
+            name: "OpenCode".to_string(),
+            models: vec![],
+            connected: false,
+        }];
+        assert!(!selector.is_connected());
+
+        selector.providers.push(ProviderInfo {
+            id: "openai".to_string(),
+            name: "OpenAI".to_string(),
+            models: vec![],
+            connected: false,
+        });
+        assert!(selector.is_connected());
+    }
+
+    #[test]
+    fn test_provider_filter() {
+        let selector = ModelSelector::with_provider_filter("openai");
+        assert_eq!(selector.provider_id_filter, Some("openai".to_string()));
+    }
+
+    #[test]
+    fn test_with_keybinds() {
+        let mut keybinds = KeybindsConfig::default();
+        keybinds.model_favorite_toggle = "ctrl+shift+f".to_string();
+        let selector = ModelSelector::with_keybinds(keybinds.clone());
+        assert_eq!(selector.keybinds.model_favorite_toggle, "ctrl+shift+f");
+    }
+
+    #[test]
+    fn test_model_cost() {
+        let cost = ModelCost {
+            input: 0.01,
+            output: 0.03,
+        };
+        let model = ModelInfo::new("openai", "gpt-4", "GPT-4").with_cost(cost);
+        assert_eq!(model.cost().unwrap().input, 0.01);
+        assert_eq!(model.cost().unwrap().output, 0.03);
+    }
+
+    #[test]
+    fn test_model_status() {
+        let model = ModelInfo::new("openai", "gpt-4", "GPT-4").with_status(ModelStatus::Deprecated);
+        assert_eq!(model.status(), &ModelStatus::Deprecated);
+
+        let default_model = ModelInfo::new("openai", "gpt-4", "GPT-4");
+        assert_eq!(default_model.status(), &ModelStatus::Active);
+    }
+
+    #[test]
+    fn test_section_variants() {
+        assert_eq!(ModelSection::Favorites, ModelSection::Favorites);
+        assert_ne!(ModelSection::Favorites, ModelSection::Recent);
+        assert_eq!(
+            ModelSection::Provider("OpenAI".to_string()),
+            ModelSection::Provider("OpenAI".to_string())
+        );
     }
 }
