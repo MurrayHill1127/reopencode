@@ -27,7 +27,7 @@ use std::io;
 
 use crate::mcp::types::McpStatus;
 use components::mcp_status::McpStatusPanel;
-use components::{Component, ContextInfo, Footer, List, Sidebar, StatusDialog, TextArea};
+use components::{CommandDialog, CommandEntry, Component, ContextInfo, FocusManager, Footer, List, Sidebar, StatusDialog, TextArea};
 use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
 use std::collections::HashMap;
 use theme::ThemeContext;
@@ -86,6 +86,8 @@ pub struct TuiApp {
     pub context_info: ContextInfo,
     pub footer: Footer,
     pub status_dialog: StatusDialog,
+    pub focus_manager: FocusManager,
+    pub command_dialog: CommandDialog,
 }
 
 impl Default for TuiApp {
@@ -131,6 +133,8 @@ impl Default for TuiApp {
             context_info: ContextInfo::default(),
             footer: Footer::new(ThemeContext::default()),
             status_dialog: StatusDialog::new(),
+            focus_manager: FocusManager::new(),
+            command_dialog: CommandDialog::new(),
         }
     }
 }
@@ -143,10 +147,57 @@ impl TuiApp {
     pub fn init(&mut self) {
         self.input_component
             .set_placeholder("Type your message here...");
-        self.input_component.on_focus();
+
+        // Register focusable components
+        self.focus_manager.register(self.input_component.id());
+        self.focus_manager.register(self.message_list.id());
+
+        // Set initial focus to input component
+        if self.focus_manager.set_focus(self.input_component.id()).is_ok() {
+            self.input_component.on_focus();
+        }
+
+        // Initialize command dialog with available commands
+        self.init_commands();
+    }
+
+    fn init_commands(&mut self) {
+        let commands = vec![
+            CommandEntry::new("New Session", "session.new")
+                .with_category("Session")
+                .with_keybind("ctrl+n"),
+            CommandEntry::new("List Sessions", "session.list")
+                .with_category("Session")
+                .with_keybind("ctrl+p"),
+            CommandEntry::new("Toggle Sidebar", "sidebar.toggle")
+                .with_category("View")
+                .with_keybind("ctrl+b"),
+            CommandEntry::new("MCP Status", "mcp.status")
+                .with_category("View")
+                .with_keybind("ctrl+m"),
+            CommandEntry::new("Model Selection", "model.list")
+                .with_category("Model")
+                .with_keybind("ctrl+shift+m"),
+            CommandEntry::new("Exit", "app.exit")
+                .with_category("Application")
+                .with_keybind("ctrl+c"),
+            CommandEntry::new("Help", "help.show")
+                .with_category("Application")
+                .with_keybind("?"),
+        ];
+        self.command_dialog.set_commands(commands);
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<String> {
+        // Command dialog takes priority when visible
+        if self.command_dialog.is_visible() {
+            use crate::cli::commands::tui::components::EventPropagation;
+            let propagation = self.command_dialog.handle_input(key);
+            if propagation == EventPropagation::Stop {
+                return None;
+            }
+        }
+
         let key_info = KeybindInfo::from_crossterm(&key);
         let leader_active = self.leader_state.is_active();
 
@@ -215,8 +266,70 @@ impl TuiApp {
             return None;
         }
 
+        if self
+            .keybinds
+            .matches("command_list", &key_info, leader_active)
+        {
+            if self.command_dialog.is_visible() {
+                self.command_dialog.hide();
+            } else {
+                self.command_dialog.clear_filter();
+                self.command_dialog.show();
+            }
+            return None;
+        }
+
+        // Handle Tab/Shift+Tab focus navigation
+        if self.keybinds.matches("agent_cycle", &key_info, leader_active) {
+            self.focus_next();
+            return None;
+        }
+
+        if self.keybinds.matches("agent_cycle_reverse", &key_info, leader_active) {
+            self.focus_prev();
+            return None;
+        }
+
         self.input_component.handle_input(key);
         None
+    }
+
+    fn focus_next(&mut self) {
+        let prev_id = self.focus_manager.get_focused();
+        if let Some(prev) = prev_id {
+            if prev == self.input_component.id() {
+                self.input_component.on_blur();
+            } else if prev == self.message_list.id() {
+                self.message_list.on_blur();
+            }
+        }
+
+        if let Some(next_id) = self.focus_manager.next_focus() {
+            if next_id == self.input_component.id() {
+                self.input_component.on_focus();
+            } else if next_id == self.message_list.id() {
+                self.message_list.on_focus();
+            }
+        }
+    }
+
+    fn focus_prev(&mut self) {
+        let prev_id = self.focus_manager.get_focused();
+        if let Some(prev) = prev_id {
+            if prev == self.input_component.id() {
+                self.input_component.on_blur();
+            } else if prev == self.message_list.id() {
+                self.message_list.on_blur();
+            }
+        }
+
+        if let Some(prev_id) = self.focus_manager.prev_focus() {
+            if prev_id == self.input_component.id() {
+                self.input_component.on_focus();
+            } else if prev_id == self.message_list.id() {
+                self.message_list.on_focus();
+            }
+        }
     }
 
     pub async fn init_session(&mut self) {
@@ -485,6 +598,10 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     if app.status_dialog.is_visible() {
         app.status_dialog.render(f, f.area());
+    }
+
+    if app.command_dialog.is_visible() {
+        app.command_dialog.render(f, f.area());
     }
 }
 

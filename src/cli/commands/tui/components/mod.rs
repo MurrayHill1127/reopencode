@@ -2,6 +2,7 @@
 //!
 //! This module provides a modular component architecture for the TUI.
 
+pub mod command_dialog;
 pub mod composite;
 pub mod dialog;
 pub mod error;
@@ -22,6 +23,7 @@ pub mod textarea;
 pub mod toast;
 pub mod types;
 
+pub use command_dialog::{CommandDialog, CommandEntry};
 pub use events::{ComponentAction, ComponentEvent, ToastVariant};
 pub use focus::FocusManager;
 pub use footer::Footer;
