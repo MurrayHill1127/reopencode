@@ -225,7 +225,7 @@ impl Sidebar {
         section: SidebarSection,
         items: &[T],
         mut render_item: F,
-        block: Block,
+        _block: Block,
         area: Rect,
         frame: &mut Frame,
     ) where
@@ -285,11 +285,6 @@ impl Sidebar {
             let paragraph = Paragraph::new(content).block(content_block);
             frame.render_widget(paragraph, content_area);
         }
-    }
-
-    /// Get footer text with keyboard shortcuts
-    fn footer_text() -> &'static str {
-        "↑/↓: Navigate | Enter: Toggle | Esc: Close"
     }
 }
 

@@ -27,7 +27,7 @@ use std::io;
 
 use crate::mcp::types::McpStatus;
 use components::mcp_status::McpStatusPanel;
-use components::{Component, ContextInfo, List, Sidebar, TextArea};
+use components::{Component, ContextInfo, Footer, List, Sidebar, TextArea};
 use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
 use std::collections::HashMap;
 use theme::ThemeContext;
@@ -84,21 +84,22 @@ pub struct TuiApp {
     pub pending_permissions: usize,
     pub sidebar: Sidebar,
     pub context_info: ContextInfo,
+    pub footer: Footer,
 }
 
 impl Default for TuiApp {
     fn default() -> Self {
         let current_dir = std::env::current_dir()
             .ok()
-            .and_then(|p| {
+            .map(|p| {
                 let path_str = p.to_string_lossy().to_string();
                 if let Some(home) = dirs::home_dir() {
                     let home_str = home.to_string_lossy();
                     if path_str.starts_with(&*home_str) {
-                        return Some(path_str.replacen(&*home_str, "~", 1));
+                        return path_str.replacen(&*home_str, "~", 1);
                     }
                 }
-                Some(path_str)
+                path_str
             })
             .unwrap_or_else(|| ".".to_string());
 
@@ -122,11 +123,12 @@ impl Default for TuiApp {
             mcp_status_panel: McpStatusPanel::new(),
             mcp_status_expanded: false,
             mcp_statuses: HashMap::new(),
-            current_directory: current_dir,
+            current_directory: current_dir.clone(),
             lsp_count: 0,
             pending_permissions: 0,
             sidebar: Sidebar::new(ThemeContext::default()),
             context_info: ContextInfo::default(),
+            footer: Footer::new(ThemeContext::default()),
         }
     }
 }
@@ -219,6 +221,7 @@ impl TuiApp {
                     match response.json::<SessionInfo>().await {
                         Ok(session) => {
                             self.session_id = Some(session.id.clone());
+                            self.footer.set_session_id(self.session_id.clone());
                             self.status = format!("Connected: {}", session.id);
                             self.messages
                                 .push(format!("[System] Session created: {}", session.id));
@@ -313,6 +316,7 @@ impl TuiApp {
                     match response.json::<Vec<serde_json::Value>>().await {
                         Ok(lsp_list) => {
                             self.lsp_count = lsp_list.len();
+                            self.footer.set_lsp_count(self.lsp_count);
                         }
                         Err(_) => {
                             self.lsp_count = 0;
@@ -340,6 +344,7 @@ impl TuiApp {
                     match response.json::<Vec<PermissionRequest>>().await {
                         Ok(permissions) => {
                             self.pending_permissions = permissions.len();
+                            self.footer.set_pending_permissions(self.pending_permissions);
                         }
                         Err(_) => {
                             self.pending_permissions = 0;
@@ -399,6 +404,7 @@ async fn run_app<B: ratatui::backend::Backend>(
         last_update = now;
 
         app.input_component.update(delta);
+        app.footer.update(delta);
         app.process_expired_toasts();
 
         if crossterm::event::poll(std::time::Duration::from_millis(100))?
@@ -436,72 +442,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(title, chunks[0]);
 
-    let status = Paragraph::new(app.status.as_str())
-        .style(Style::default().fg(theme.success()))
-        .block(Block::default().borders(Borders::NONE));
-    f.render_widget(status, chunks[1]);
-
-    // Render footer with directory on left and MCP/LSP/Permissions status on right
-    let footer_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(chunks[1]);
-
-    // Directory path on the left
-    let directory_paragraph = Paragraph::new(app.current_directory.as_str())
-        .style(Style::default().fg(theme.text_muted()))
-        .block(Block::default().borders(Borders::NONE));
-    f.render_widget(directory_paragraph, footer_chunks[0]);
-
-    // Render permissions indicator (between directory and LSP/MCP)
-    if app.pending_permissions > 0 {
-        let perm_indicator = format!("△ {} Permission(s)", app.pending_permissions);
-        let perm_paragraph = Paragraph::new(perm_indicator)
-            .style(Style::default().fg(theme.warning()))
-            .block(Block::default().borders(Borders::NONE));
-
-        // Position permissions indicator to the left of LSP indicator
-        let perm_area = Rect::new(f.area().width - 45, f.area().y + 1, 20, 1);
-        f.render_widget(perm_paragraph, perm_area);
-    }
-
-    // Render LSP indicator before MCP indicator
-    let lsp_color = if app.lsp_count > 0 {
-        theme.success()
-    } else {
-        theme.text_muted()
-    };
-    let lsp_indicator = format!("• {} LSP", app.lsp_count);
-    let lsp_paragraph = Paragraph::new(lsp_indicator)
-        .style(Style::default().fg(lsp_color))
-        .block(Block::default().borders(Borders::NONE));
-
-    // Position LSP indicator to the left of MCP indicator
-    let lsp_area = Rect::new(f.area().width - 30, f.area().y + 1, 12, 1);
-    f.render_widget(lsp_paragraph, lsp_area);
-
-    // Render MCP status footer indicator
-    let mcp_count = app.mcp_statuses.len();
-    let all_ok = app
-        .mcp_statuses
-        .values()
-        .all(|s| matches!(s, McpStatus::Connected));
-    let mcp_color = if mcp_count == 0 {
-        theme.text_muted()
-    } else if all_ok {
-        theme.success()
-    } else {
-        theme.error()
-    };
-
-    let mcp_indicator = format!("⊙ {} MCP", mcp_count);
-    let mcp_footer = Paragraph::new(mcp_indicator)
-        .style(Style::default().fg(mcp_color))
-        .block(Block::default().borders(Borders::NONE));
-
-    // Position MCP indicator in the bottom right of the status area
-    let mcp_area = Rect::new(f.area().width - 15, f.area().y + 1, 15, 1);
-    f.render_widget(mcp_footer, mcp_area);
+    app.footer.render(f, chunks[1]);
 
     // Render sidebar when expanded
     if app.sidebar.is_expanded() {

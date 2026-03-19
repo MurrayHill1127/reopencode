@@ -8,6 +8,7 @@ pub mod error;
 pub mod events;
 pub mod file_tree;
 pub mod focus;
+pub mod footer;
 pub mod help_dialog;
 pub mod list;
 pub mod mcp_status;
@@ -21,6 +22,7 @@ pub mod types;
 
 pub use events::{ComponentAction, ComponentEvent, ToastVariant};
 pub use focus::FocusManager;
+pub use footer::Footer;
 pub use list::List;
 pub use sidebar::{ContextInfo, DiffInfo, LspServerInfo, McpServerInfo, Sidebar, TodoItem};
 pub use textarea::TextArea;
