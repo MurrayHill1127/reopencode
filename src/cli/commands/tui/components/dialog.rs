@@ -2194,9 +2194,724 @@ impl<T: Send + Sync + 'static> Component for SelectDialog<T> {
     }
 }
 
+// =============================================================================
+// Dialog Result Types
+// =============================================================================
+
+/// Result of a dialog interaction
+///
+/// Used to communicate what action the user took when closing a dialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DialogResult {
+    /// User cancelled the dialog (Escape or Cancel button)
+    Cancelled,
+    /// User confirmed the dialog (Confirm button or Enter)
+    Confirmed,
+    /// User submitted input (Enter in input dialog)
+    Submitted,
+    /// No action taken yet
+    None,
+}
+
+impl Default for DialogResult {
+    fn default() -> Self {
+        DialogResult::None
+    }
+}
+
+// =============================================================================
+// PermissionDialog Component
+// =============================================================================
+
+/// Permission button options for the permission dialog
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PermissionButton {
+    /// Allow the tool permanently
+    Allow,
+    /// Allow the tool for this session only
+    #[default]
+    AllowOnce,
+    /// Deny the tool
+    Deny,
+}
+
+impl PermissionButton {
+    /// Get the label for this button
+    pub fn label(&self) -> &'static str {
+        match self {
+            PermissionButton::Allow => "Allow",
+            PermissionButton::AllowOnce => "Allow Once",
+            PermissionButton::Deny => "Deny",
+        }
+    }
+
+    /// Navigate to the next button (left to right)
+    pub fn next(self) -> Self {
+        match self {
+            PermissionButton::Allow => PermissionButton::AllowOnce,
+            PermissionButton::AllowOnce => PermissionButton::Deny,
+            PermissionButton::Deny => PermissionButton::Allow,
+        }
+    }
+
+    /// Navigate to the previous button (right to left)
+    pub fn prev(self) -> Self {
+        match self {
+            PermissionButton::Allow => PermissionButton::Deny,
+            PermissionButton::AllowOnce => PermissionButton::Allow,
+            PermissionButton::Deny => PermissionButton::AllowOnce,
+        }
+    }
+}
+
+/// Permission dialog for tool execution authorization
+///
+/// A modal dialog that asks for permission to execute a tool with three options:
+/// Allow (permanent), Allow Once (session), and Deny.
+///
+/// # Examples
+///
+/// ```
+/// use crate::cli::commands::tui::components::dialog::{PermissionDialog, PermissionButton};
+///
+/// let mut dialog = PermissionDialog::new(
+///     "Tool Permission",
+///     "Allow execution of bash tool?",
+///     "bash"
+/// );
+/// assert_eq!(dialog.tool_name(), "bash");
+/// assert_eq!(dialog.get_active_button(), PermissionButton::AllowOnce);
+/// ```
+pub struct PermissionDialog {
+    /// Unique component identifier
+    id: ComponentId,
+    /// Dialog title
+    title: String,
+    /// Permission request message
+    message: String,
+    /// Name of the tool requesting permission
+    tool_name: String,
+    /// Currently active button
+    active_button: PermissionButton,
+    /// Whether the dialog is currently visible
+    visible: bool,
+    /// Whether the dialog currently has focus
+    focused: bool,
+    /// Result of the dialog interaction
+    result: DialogResult,
+}
+
+impl PermissionDialog {
+    /// Create a new PermissionDialog
+    ///
+    /// # Arguments
+    ///
+    /// * `title` - The dialog title
+    /// * `message` - The permission request message
+    /// * `tool_name` - Name of the tool requesting permission
+    ///
+    /// # Returns
+    ///
+    /// A new PermissionDialog with AllowOnce as default, hidden by default.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::cli::commands::tui::components::dialog::PermissionDialog;
+    ///
+    /// let dialog = PermissionDialog::new(
+    ///     "Permission Required",
+    ///     "Allow file write?",
+    ///     "write_file"
+    /// );
+    /// assert_eq!(dialog.title(), "Permission Required");
+    /// assert_eq!(dialog.tool_name(), "write_file");
+    /// ```
+    pub fn new(
+        title: impl Into<String>,
+        message: impl Into<String>,
+        tool_name: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: ComponentId::new(),
+            title: title.into(),
+            message: message.into(),
+            tool_name: tool_name.into(),
+            active_button: PermissionButton::AllowOnce,
+            visible: false,
+            focused: false,
+            result: DialogResult::None,
+        }
+    }
+
+    /// Get the dialog title
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    /// Set the dialog title
+    pub fn set_title(&mut self, title: impl Into<String>) {
+        self.title = title.into();
+    }
+
+    /// Get the permission message
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// Set the permission message
+    pub fn set_message(&mut self, message: impl Into<String>) {
+        self.message = message.into();
+    }
+
+    /// Get the tool name
+    pub fn tool_name(&self) -> &str {
+        &self.tool_name
+    }
+
+    /// Set the tool name
+    pub fn set_tool_name(&mut self, tool_name: impl Into<String>) {
+        self.tool_name = tool_name.into();
+    }
+
+    /// Get the currently active button
+    pub fn get_active_button(&self) -> PermissionButton {
+        self.active_button
+    }
+
+    /// Set the active button
+    pub fn set_active_button(&mut self, button: PermissionButton) {
+        self.active_button = button;
+    }
+
+    /// Get the dialog result
+    pub fn result(&self) -> DialogResult {
+        self.result
+    }
+
+    /// Check if permission was allowed (permanent)
+    pub fn is_allowed(&self) -> bool {
+        self.result == DialogResult::Confirmed && self.active_button == PermissionButton::Allow
+    }
+
+    /// Check if permission was allowed once
+    pub fn is_allowed_once(&self) -> bool {
+        self.result == DialogResult::Confirmed
+            && self.active_button == PermissionButton::AllowOnce
+    }
+
+    /// Check if permission was denied
+    pub fn is_denied(&self) -> bool {
+        self.result == DialogResult::Cancelled
+            || (self.result == DialogResult::Confirmed
+                && self.active_button == PermissionButton::Deny)
+    }
+
+    /// Check if the dialog is visible
+    pub fn is_visible(&self) -> bool {
+        self.visible
+    }
+
+    /// Show the dialog
+    pub fn show(&mut self) {
+        self.visible = true;
+        self.focused = true;
+        self.result = DialogResult::None;
+    }
+
+    /// Hide the dialog
+    pub fn hide(&mut self) {
+        self.visible = false;
+        self.focused = false;
+    }
+
+    /// Check if the dialog is focused
+    pub fn is_focused(&self) -> bool {
+        self.focused
+    }
+
+    /// Calculate the centered area for the dialog
+    fn centered_area(&self, frame_area: Rect) -> Rect {
+        let width = (frame_area.width as f32 * 60.0 / 100.0) as u16;
+        let height = (frame_area.height as f32 * 35.0 / 100.0) as u16;
+
+        let x = frame_area.x + (frame_area.width.saturating_sub(width)) / 2;
+        let y = frame_area.y + (frame_area.height.saturating_sub(height)) / 2;
+
+        Rect::new(x, y, width, height)
+    }
+}
+
+impl Component for PermissionDialog {
+    fn id(&self) -> ComponentId {
+        self.id
+    }
+
+    fn render(&self, frame: &mut Frame, area: Rect) {
+        if !self.visible {
+            return;
+        }
+
+        let dialog_area = self.centered_area(area);
+
+        // Clear the area for modal overlay
+        frame.render_widget(Clear, dialog_area);
+
+        // Dialog block with border
+        let border_style = if self.focused {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
+        };
+
+        let block = Block::default()
+            .title(format!(" {} ", self.title))
+            .borders(Borders::ALL)
+            .border_style(border_style);
+
+        // Create message paragraph
+        let paragraph = Paragraph::new(Line::from(vec![
+            Span::styled(&self.message, Style::default().fg(Color::White)),
+            Span::raw("\n\n"),
+            Span::styled(
+                format!("Tool: {}", self.tool_name),
+                Style::default().fg(Color::Yellow),
+            ),
+        ]))
+        .block(block)
+        .wrap(Wrap { trim: true });
+
+        frame.render_widget(paragraph, dialog_area);
+
+        // Render buttons at the bottom
+        let button_y = dialog_area.y + dialog_area.height.saturating_sub(3);
+        let button_width = dialog_area.width / 3;
+
+        // Three buttons: Allow, Allow Once, Deny
+        let buttons = [
+            (PermissionButton::Allow, " Allow "),
+            (PermissionButton::AllowOnce, " Allow Once "),
+            (PermissionButton::Deny, " Deny "),
+        ];
+
+        for (i, (button_type, label)) in buttons.iter().enumerate() {
+            let x = dialog_area.x + (button_width * i as u16);
+            let button_area = Rect::new(x, button_y, button_width, 3);
+
+            let is_active = self.active_button == *button_type;
+            let style = if is_active {
+                Style::default()
+                    .bg(Color::Cyan)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD)
+            } else if *button_type == PermissionButton::Deny {
+                Style::default().bg(Color::DarkGray).fg(Color::Red)
+            } else {
+                Style::default().bg(Color::DarkGray).fg(Color::White)
+            };
+
+            let button_widget = Paragraph::new(Line::from(Span::raw(*label)))
+                .style(style)
+                .alignment(ratatui::layout::Alignment::Center);
+            frame.render_widget(button_widget, button_area);
+        }
+    }
+
+    fn handle_input(&mut self, event: KeyEvent) -> EventPropagation {
+        use crossterm::event::KeyCode;
+
+        if !self.visible {
+            return EventPropagation::Continue;
+        }
+
+        match event.code {
+            KeyCode::Esc => {
+                self.result = DialogResult::Cancelled;
+                self.hide();
+                EventPropagation::Stop
+            }
+            KeyCode::Left => {
+                self.active_button = self.active_button.prev();
+                EventPropagation::Stop
+            }
+            KeyCode::Right => {
+                self.active_button = self.active_button.next();
+                EventPropagation::Stop
+            }
+            KeyCode::Enter => {
+                self.result = DialogResult::Confirmed;
+                self.hide();
+                EventPropagation::Stop
+            }
+            // Tab also cycles through buttons
+            KeyCode::Tab => {
+                self.active_button = self.active_button.next();
+                EventPropagation::Stop
+            }
+            _ => EventPropagation::Stop,
+        }
+    }
+
+    fn update(&mut self, _delta: Duration) {}
+
+    fn is_focusable(&self) -> bool {
+        true
+    }
+
+    fn on_focus(&mut self) {
+        self.focused = true;
+    }
+
+    fn on_blur(&mut self) {
+        self.focused = false;
+    }
+}
+
+impl Default for PermissionDialog {
+    fn default() -> Self {
+        Self::new("Permission", "Allow this action?", "unknown")
+    }
+}
+
+// =============================================================================
+// QuestionDialog Component
+// =============================================================================
+
+/// Question dialog for user text input
+///
+/// A modal dialog that presents a question and accepts text input.
+/// Similar to InputDialog but specifically designed for question/answer flow.
+///
+/// # Examples
+///
+/// ```
+/// use crate::cli::commands::tui::components::dialog::QuestionDialog;
+///
+/// let mut dialog = QuestionDialog::new("What is your name?");
+/// assert_eq!(dialog.question(), "What is your name?");
+/// assert!(dialog.get_answer().is_empty());
+/// ```
+pub struct QuestionDialog {
+    /// Unique component identifier
+    id: ComponentId,
+    /// The question being asked
+    question: String,
+    /// User's input/answer
+    input: String,
+    /// Cursor position in the input
+    cursor_position: usize,
+    /// Placeholder text when input is empty
+    placeholder: String,
+    /// Whether the dialog is visible
+    visible: bool,
+    /// Whether the dialog is focused
+    focused: bool,
+    /// Result of the dialog
+    result: DialogResult,
+}
+
+impl QuestionDialog {
+    /// Create a new QuestionDialog
+    ///
+    /// # Arguments
+    ///
+    /// * `question` - The question to ask the user
+    ///
+    /// # Returns
+    ///
+    /// A new QuestionDialog, hidden by default.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::cli::commands::tui::components::dialog::QuestionDialog;
+    ///
+    /// let dialog = QuestionDialog::new("Enter your name:");
+    /// assert_eq!(dialog.question(), "Enter your name:");
+    /// ```
+    pub fn new(question: impl Into<String>) -> Self {
+        Self {
+            id: ComponentId::new(),
+            question: question.into(),
+            input: String::new(),
+            cursor_position: 0,
+            placeholder: String::new(),
+            visible: false,
+            focused: false,
+            result: DialogResult::None,
+        }
+    }
+
+    /// Builder: Set placeholder text
+    pub fn with_placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        self.placeholder = placeholder.into();
+        self
+    }
+
+    /// Builder: Set initial input value
+    pub fn with_input(mut self, input: impl Into<String>) -> Self {
+        let input = input.into();
+        self.cursor_position = input.len();
+        self.input = input;
+        self
+    }
+
+    /// Get the question
+    pub fn question(&self) -> &str {
+        &self.question
+    }
+
+    /// Set the question
+    pub fn set_question(&mut self, question: impl Into<String>) {
+        self.question = question.into();
+    }
+
+    /// Get the user's answer
+    pub fn get_answer(&self) -> &str {
+        &self.input
+    }
+
+    /// Get the answer as owned String
+    pub fn get_answer_owned(&self) -> String {
+        self.input.clone()
+    }
+
+    /// Clear the input
+    pub fn clear(&mut self) {
+        self.input.clear();
+        self.cursor_position = 0;
+    }
+
+    /// Get the dialog result
+    pub fn result(&self) -> DialogResult {
+        self.result
+    }
+
+    /// Check if the dialog is visible
+    pub fn is_visible(&self) -> bool {
+        self.visible
+    }
+
+    /// Show the dialog
+    pub fn show(&mut self) {
+        self.visible = true;
+        self.focused = true;
+        self.result = DialogResult::None;
+    }
+
+    /// Hide the dialog
+    pub fn hide(&mut self) {
+        self.visible = false;
+        self.focused = false;
+    }
+
+    /// Check if the dialog is focused
+    pub fn is_focused(&self) -> bool {
+        self.focused
+    }
+
+    /// Calculate the centered area for the dialog
+    fn centered_area(&self, frame_area: Rect) -> Rect {
+        let width = (frame_area.width as f32 * 50.0 / 100.0) as u16;
+        let height = (frame_area.height as f32 * 30.0 / 100.0) as u16;
+
+        let x = frame_area.x + (frame_area.width.saturating_sub(width)) / 2;
+        let y = frame_area.y + (frame_area.height.saturating_sub(height)) / 2;
+
+        Rect::new(x, y, width, height)
+    }
+}
+
+impl Component for QuestionDialog {
+    fn id(&self) -> ComponentId {
+        self.id
+    }
+
+    fn render(&self, frame: &mut Frame, area: Rect) {
+        if !self.visible {
+            return;
+        }
+
+        let dialog_area = self.centered_area(area);
+
+        // Clear the area for modal overlay
+        frame.render_widget(Clear, dialog_area);
+
+        // Dialog block with border
+        let border_style = if self.focused {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        let block = Block::default()
+            .title(" Question ")
+            .borders(Borders::ALL)
+            .border_style(border_style);
+
+        let inner = block.inner(dialog_area);
+        frame.render_widget(block, dialog_area);
+
+        // Layout: question, input, help
+        let layout = Layout::default()
+            .direction(ratatui::layout::Direction::Vertical)
+            .constraints([
+                Constraint::Length(2), // Question
+                Constraint::Min(1),    // Input
+                Constraint::Length(1), // Help
+            ])
+            .split(inner);
+
+        // Render question
+        let question_paragraph = Paragraph::new(Line::from(Span::styled(
+            &self.question,
+            Style::default().fg(Color::White),
+        )));
+        frame.render_widget(question_paragraph, layout[0]);
+
+        // Render input field
+        let display_text = if self.input.is_empty() {
+            Line::from(Span::styled(
+                if self.placeholder.is_empty() {
+                    "Type your answer..."
+                } else {
+                    &self.placeholder
+                },
+                Style::default().fg(Color::DarkGray),
+            ))
+        } else {
+            // Build text with cursor indicator
+            let mut text_with_cursor = String::new();
+            for (i, ch) in self.input.chars().enumerate() {
+                if i == self.cursor_position {
+                    text_with_cursor.push('_');
+                }
+                text_with_cursor.push(ch);
+            }
+            if self.cursor_position == self.input.len() {
+                text_with_cursor.push('_');
+            }
+
+            Line::from(Span::styled(
+                text_with_cursor,
+                Style::default().fg(Color::White),
+            ))
+        };
+
+        let input_paragraph = Paragraph::new(display_text)
+            .block(Block::default().borders(Borders::BOTTOM));
+        frame.render_widget(input_paragraph, layout[1]);
+
+        // Render help text
+        let help_text = Line::from(vec![
+            Span::styled(
+                "Enter",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" submit | "),
+            Span::styled(
+                "Esc",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" cancel"),
+        ]);
+        let help_paragraph = Paragraph::new(help_text);
+        frame.render_widget(help_paragraph, layout[2]);
+    }
+
+    fn handle_input(&mut self, event: KeyEvent) -> EventPropagation {
+        use crossterm::event::KeyCode;
+
+        if !self.visible {
+            return EventPropagation::Continue;
+        }
+
+        match event.code {
+            KeyCode::Enter => {
+                self.result = DialogResult::Submitted;
+                self.hide();
+                EventPropagation::Stop
+            }
+            KeyCode::Esc => {
+                self.result = DialogResult::Cancelled;
+                self.hide();
+                EventPropagation::Stop
+            }
+            KeyCode::Char(c) => {
+                self.input.insert(self.cursor_position, c);
+                self.cursor_position += 1;
+                EventPropagation::Stop
+            }
+            KeyCode::Backspace => {
+                if self.cursor_position > 0 {
+                    self.cursor_position -= 1;
+                    self.input.remove(self.cursor_position);
+                }
+                EventPropagation::Stop
+            }
+            KeyCode::Delete => {
+                if self.cursor_position < self.input.len() {
+                    self.input.remove(self.cursor_position);
+                }
+                EventPropagation::Stop
+            }
+            KeyCode::Left => {
+                if self.cursor_position > 0 {
+                    self.cursor_position -= 1;
+                }
+                EventPropagation::Stop
+            }
+            KeyCode::Right => {
+                if self.cursor_position < self.input.len() {
+                    self.cursor_position += 1;
+                }
+                EventPropagation::Stop
+            }
+            KeyCode::Home => {
+                self.cursor_position = 0;
+                EventPropagation::Stop
+            }
+            KeyCode::End => {
+                self.cursor_position = self.input.len();
+                EventPropagation::Stop
+            }
+            _ => EventPropagation::Continue,
+        }
+    }
+
+    fn update(&mut self, _delta: Duration) {}
+
+    fn is_focusable(&self) -> bool {
+        true
+    }
+
+    fn on_focus(&mut self) {
+        self.focused = true;
+    }
+
+    fn on_blur(&mut self) {
+        self.focused = false;
+    }
+}
+
+impl Default for QuestionDialog {
+    fn default() -> Self {
+        Self::new("Enter your answer:")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::{KeyCode, KeyModifiers};
 
     #[test]
     fn test_dialog_new() {
@@ -3640,5 +4355,390 @@ mod tests {
         assert_eq!(dialog_area.height, 30);
         assert_eq!(dialog_area.x, 20);
         assert_eq!(dialog_area.y, 10);
+    }
+
+    // =============================================================================
+    // DialogResult Tests
+    // =============================================================================
+
+    #[test]
+    fn test_dialog_result_default() {
+        let result = DialogResult::default();
+        assert_eq!(result, DialogResult::None);
+    }
+
+    #[test]
+    fn test_dialog_result_variants() {
+        assert_ne!(DialogResult::Cancelled, DialogResult::Confirmed);
+        assert_ne!(DialogResult::Confirmed, DialogResult::Submitted);
+        assert_ne!(DialogResult::Submitted, DialogResult::None);
+    }
+
+    // =============================================================================
+    // PermissionButton Tests
+    // =============================================================================
+
+    #[test]
+    fn test_permission_button_default() {
+        let button = PermissionButton::default();
+        assert_eq!(button, PermissionButton::AllowOnce);
+    }
+
+    #[test]
+    fn test_permission_button_labels() {
+        assert_eq!(PermissionButton::Allow.label(), "Allow");
+        assert_eq!(PermissionButton::AllowOnce.label(), "Allow Once");
+        assert_eq!(PermissionButton::Deny.label(), "Deny");
+    }
+
+    #[test]
+    fn test_permission_button_navigation() {
+        assert_eq!(PermissionButton::Allow.next(), PermissionButton::AllowOnce);
+        assert_eq!(PermissionButton::AllowOnce.next(), PermissionButton::Deny);
+        assert_eq!(PermissionButton::Deny.next(), PermissionButton::Allow);
+
+        assert_eq!(PermissionButton::Allow.prev(), PermissionButton::Deny);
+        assert_eq!(PermissionButton::AllowOnce.prev(), PermissionButton::Allow);
+        assert_eq!(PermissionButton::Deny.prev(), PermissionButton::AllowOnce);
+    }
+
+    // =============================================================================
+    // PermissionDialog Tests
+    // =============================================================================
+
+    #[test]
+    fn test_permission_dialog_new() {
+        let dialog = PermissionDialog::new("Title", "Message", "bash");
+        assert_eq!(dialog.title(), "Title");
+        assert_eq!(dialog.message(), "Message");
+        assert_eq!(dialog.tool_name(), "bash");
+        assert_eq!(dialog.get_active_button(), PermissionButton::AllowOnce);
+        assert!(!dialog.is_visible());
+        assert!(!dialog.is_focused());
+        assert_eq!(dialog.result(), DialogResult::None);
+    }
+
+    #[test]
+    fn test_permission_dialog_default() {
+        let dialog = PermissionDialog::default();
+        assert_eq!(dialog.title(), "Permission");
+        assert_eq!(dialog.tool_name(), "unknown");
+    }
+
+    #[test]
+    fn test_permission_dialog_show_hide() {
+        let mut dialog = PermissionDialog::new("Title", "Message", "tool");
+        assert!(!dialog.is_visible());
+
+        dialog.show();
+        assert!(dialog.is_visible());
+        assert!(dialog.is_focused());
+        assert_eq!(dialog.result(), DialogResult::None);
+
+        dialog.hide();
+        assert!(!dialog.is_visible());
+        assert!(!dialog.is_focused());
+    }
+
+    #[test]
+    fn test_permission_dialog_setters() {
+        let mut dialog = PermissionDialog::new("A", "B", "C");
+        dialog.set_title("New Title");
+        dialog.set_message("New Message");
+        dialog.set_tool_name("new_tool");
+        dialog.set_active_button(PermissionButton::Deny);
+
+        assert_eq!(dialog.title(), "New Title");
+        assert_eq!(dialog.message(), "New Message");
+        assert_eq!(dialog.tool_name(), "new_tool");
+        assert_eq!(dialog.get_active_button(), PermissionButton::Deny);
+    }
+
+    #[test]
+    fn test_permission_dialog_permission_checks() {
+        let mut dialog = PermissionDialog::new("Title", "Message", "tool");
+        dialog.set_active_button(PermissionButton::Allow);
+        dialog.result = DialogResult::Confirmed;
+        assert!(dialog.is_allowed());
+        assert!(!dialog.is_allowed_once());
+        assert!(!dialog.is_denied());
+
+        dialog.set_active_button(PermissionButton::AllowOnce);
+        assert!(!dialog.is_allowed());
+        assert!(dialog.is_allowed_once());
+        assert!(!dialog.is_denied());
+
+        dialog.set_active_button(PermissionButton::Deny);
+        assert!(!dialog.is_allowed());
+        assert!(!dialog.is_allowed_once());
+        assert!(dialog.is_denied());
+
+        dialog.result = DialogResult::Cancelled;
+        assert!(dialog.is_denied());
+    }
+
+    #[test]
+    fn test_permission_dialog_handle_input_escape() {
+        let mut dialog = PermissionDialog::new("Title", "Message", "tool");
+        dialog.show();
+
+        let event = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
+        assert_eq!(dialog.handle_input(event), EventPropagation::Stop);
+        assert!(!dialog.is_visible());
+        assert_eq!(dialog.result(), DialogResult::Cancelled);
+    }
+
+    #[test]
+    fn test_permission_dialog_handle_input_left_right() {
+        let mut dialog = PermissionDialog::new("Title", "Message", "tool");
+        dialog.show();
+
+        assert_eq!(dialog.get_active_button(), PermissionButton::AllowOnce);
+
+        dialog.handle_input(KeyEvent::new(KeyCode::Right, KeyModifiers::empty()));
+        assert_eq!(dialog.get_active_button(), PermissionButton::Deny);
+
+        dialog.handle_input(KeyEvent::new(KeyCode::Left, KeyModifiers::empty()));
+        assert_eq!(dialog.get_active_button(), PermissionButton::AllowOnce);
+
+        dialog.handle_input(KeyEvent::new(KeyCode::Left, KeyModifiers::empty()));
+        assert_eq!(dialog.get_active_button(), PermissionButton::Allow);
+    }
+
+    #[test]
+    fn test_permission_dialog_handle_input_tab() {
+        let mut dialog = PermissionDialog::new("Title", "Message", "tool");
+        dialog.show();
+
+        assert_eq!(dialog.get_active_button(), PermissionButton::AllowOnce);
+
+        dialog.handle_input(KeyEvent::new(KeyCode::Tab, KeyModifiers::empty()));
+        assert_eq!(dialog.get_active_button(), PermissionButton::Deny);
+    }
+
+    #[test]
+    fn test_permission_dialog_handle_input_enter() {
+        let mut dialog = PermissionDialog::new("Title", "Message", "tool");
+        dialog.set_active_button(PermissionButton::Allow);
+        dialog.show();
+
+        let event = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
+        assert_eq!(dialog.handle_input(event), EventPropagation::Stop);
+        assert!(!dialog.is_visible());
+        assert_eq!(dialog.result(), DialogResult::Confirmed);
+    }
+
+    #[test]
+    fn test_permission_dialog_is_focusable() {
+        let dialog = PermissionDialog::new("Title", "Message", "tool");
+        assert!(dialog.is_focusable());
+    }
+
+    #[test]
+    fn test_permission_dialog_focus_transitions() {
+        let mut dialog = PermissionDialog::new("Title", "Message", "tool");
+        assert!(!dialog.is_focused());
+        dialog.on_focus();
+        assert!(dialog.is_focused());
+        dialog.on_blur();
+        assert!(!dialog.is_focused());
+    }
+
+    #[test]
+    fn test_permission_dialog_render_does_not_panic() {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+        let dialog = PermissionDialog::new("Title", "Message", "tool");
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                dialog.render(frame, area);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_permission_dialog_render_visible_does_not_panic() {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+        let mut dialog = PermissionDialog::new("Title", "Message", "tool");
+        dialog.show();
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                dialog.render(frame, area);
+            })
+            .unwrap();
+    }
+
+    // =============================================================================
+    // QuestionDialog Tests
+    // =============================================================================
+
+    #[test]
+    fn test_question_dialog_new() {
+        let dialog = QuestionDialog::new("What is your name?");
+        assert_eq!(dialog.question(), "What is your name?");
+        assert!(dialog.get_answer().is_empty());
+        assert!(!dialog.is_visible());
+        assert!(!dialog.is_focused());
+        assert_eq!(dialog.result(), DialogResult::None);
+    }
+
+    #[test]
+    fn test_question_dialog_default() {
+        let dialog = QuestionDialog::default();
+        assert_eq!(dialog.question(), "Enter your answer:");
+    }
+
+    #[test]
+    fn test_question_dialog_with_placeholder() {
+        let dialog = QuestionDialog::new("Name?").with_placeholder("e.g., John");
+        assert!(dialog.get_answer().is_empty());
+    }
+
+    #[test]
+    fn test_question_dialog_with_input() {
+        let dialog = QuestionDialog::new("Name?").with_input("Initial");
+        assert_eq!(dialog.get_answer(), "Initial");
+    }
+
+    #[test]
+    fn test_question_dialog_show_hide() {
+        let mut dialog = QuestionDialog::new("Question?");
+        assert!(!dialog.is_visible());
+
+        dialog.show();
+        assert!(dialog.is_visible());
+        assert!(dialog.is_focused());
+
+        dialog.hide();
+        assert!(!dialog.is_visible());
+        assert!(!dialog.is_focused());
+    }
+
+    #[test]
+    fn test_question_dialog_clear() {
+        let mut dialog = QuestionDialog::new("Question?").with_input("test");
+        dialog.clear();
+        assert!(dialog.get_answer().is_empty());
+    }
+
+    #[test]
+    fn test_question_dialog_text_input() {
+        let mut dialog = QuestionDialog::new("Question?");
+        dialog.show();
+
+        dialog.handle_input(KeyEvent::from(KeyCode::Char('H')));
+        dialog.handle_input(KeyEvent::from(KeyCode::Char('i')));
+
+        assert_eq!(dialog.get_answer(), "Hi");
+    }
+
+    #[test]
+    fn test_question_dialog_backspace() {
+        let mut dialog = QuestionDialog::new("Question?").with_input("test");
+        dialog.show();
+
+        dialog.handle_input(KeyEvent::from(KeyCode::Backspace));
+        assert_eq!(dialog.get_answer(), "tes");
+    }
+
+    #[test]
+    fn test_question_dialog_cursor_navigation() {
+        let mut dialog = QuestionDialog::new("Question?").with_input("abc");
+        dialog.show();
+
+        dialog.handle_input(KeyEvent::from(KeyCode::Left));
+        dialog.handle_input(KeyEvent::from(KeyCode::Char('x')));
+        assert_eq!(dialog.get_answer(), "abxc");
+
+        dialog.handle_input(KeyEvent::from(KeyCode::Right));
+        dialog.handle_input(KeyEvent::from(KeyCode::Char('y')));
+        assert_eq!(dialog.get_answer(), "abxcy");
+    }
+
+    #[test]
+    fn test_question_dialog_home_end() {
+        let mut dialog = QuestionDialog::new("Question?").with_input("abc");
+        dialog.show();
+
+        dialog.handle_input(KeyEvent::from(KeyCode::Home));
+        dialog.handle_input(KeyEvent::from(KeyCode::Char('x')));
+        assert_eq!(dialog.get_answer(), "xabc");
+
+        dialog.handle_input(KeyEvent::from(KeyCode::End));
+        dialog.handle_input(KeyEvent::from(KeyCode::Char('y')));
+        assert_eq!(dialog.get_answer(), "xabcy");
+    }
+
+    #[test]
+    fn test_question_dialog_enter_submits() {
+        let mut dialog = QuestionDialog::new("Question?").with_input("answer");
+        dialog.show();
+
+        let result = dialog.handle_input(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(result, EventPropagation::Stop);
+        assert!(!dialog.is_visible());
+        assert_eq!(dialog.result(), DialogResult::Submitted);
+        assert_eq!(dialog.get_answer(), "answer");
+    }
+
+    #[test]
+    fn test_question_dialog_esc_cancels() {
+        let mut dialog = QuestionDialog::new("Question?").with_input("answer");
+        dialog.show();
+
+        let result = dialog.handle_input(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(result, EventPropagation::Stop);
+        assert!(!dialog.is_visible());
+        assert_eq!(dialog.result(), DialogResult::Cancelled);
+    }
+
+    #[test]
+    fn test_question_dialog_is_focusable() {
+        let dialog = QuestionDialog::new("Question?");
+        assert!(dialog.is_focusable());
+    }
+
+    #[test]
+    fn test_question_dialog_focus_transitions() {
+        let mut dialog = QuestionDialog::new("Question?");
+        assert!(!dialog.is_focused());
+        dialog.on_focus();
+        assert!(dialog.is_focused());
+        dialog.on_blur();
+        assert!(!dialog.is_focused());
+    }
+
+    #[test]
+    fn test_question_dialog_render_does_not_panic() {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+        let dialog = QuestionDialog::new("Question?");
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                dialog.render(frame, area);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_question_dialog_render_visible_does_not_panic() {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+        let mut dialog = QuestionDialog::new("Question?");
+        dialog.show();
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                dialog.render(frame, area);
+            })
+            .unwrap();
     }
 }
