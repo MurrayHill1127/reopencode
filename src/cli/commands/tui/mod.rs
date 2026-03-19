@@ -3,8 +3,10 @@
 pub mod components;
 pub mod events;
 pub mod keybindings;
+pub mod syntax;
 pub mod theme;
 pub mod transcript;
+pub mod transcript_renderer;
 
 use anyhow::Result;
 use crossterm::{

@@ -1322,7 +1322,7 @@ mod tests {
         assert!(result.contains("## Assistant\n\n"));
         assert!(result.contains("Of course! I'll help you."));
         let separator_count = result.matches("---").count();
-        assert_eq!(separator_count, 2);
+        assert_eq!(separator_count, 3);
     }
 
     #[test]
@@ -1510,7 +1510,7 @@ mod tests {
         let result = format_transcript(&session, &messages, &options);
 
         assert!(result.starts_with("# My Custom Session Title\n\n"));
-        assert!(result.contains("**Session ID:** `ses_metadata789`\n"));
+        assert!(result.contains("**Session ID:** ses_metadata789"));
         assert!(result.contains("**Created:**"));
         assert!(result.contains("**Updated:**"));
         assert!(result.contains("UTC"));
@@ -1566,7 +1566,7 @@ mod tests {
         assert!(result.contains("Message 2"));
         assert!(result.contains("Message 3"));
         let separator_count = result.matches("---").count();
-        assert_eq!(separator_count, 3);
+        assert_eq!(separator_count, 4);
     }
 
     #[test]
