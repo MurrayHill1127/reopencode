@@ -71,6 +71,7 @@ portable-pty = "0.9"
 pulldown-cmark = "0.13"
 syntect = "5"
 syntect-tui = "3"
+rmcp = { version = "1.2.0", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

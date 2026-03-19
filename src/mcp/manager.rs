@@ -103,10 +103,10 @@ impl McpManager {
             let name = entry.key().clone();
             let client = entry.value().read().await;
 
-            if matches!(client.status(), McpStatus::Connected) {
-                if let Ok(tools) = client.list_tools().await {
-                    result.insert(name, tools);
-                }
+            if matches!(client.status(), McpStatus::Connected)
+                && let Ok(tools) = client.list_tools().await
+            {
+                result.insert(name, tools);
             }
         }
 

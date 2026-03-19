@@ -103,11 +103,12 @@ impl Default for ComponentId {
 /// When a component handles an event, it returns one of these values
 /// to indicate whether the event should continue to parent components
 /// or be consumed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EventPropagation {
     /// Continue propagating the event to parent components.
     /// Use this when the component handled the event but wants
     /// parents to also see it (e.g., for logging, analytics).
+    #[default]
     Continue,
 
     /// Stop event propagation - the event has been fully handled.
@@ -118,28 +119,14 @@ pub enum EventPropagation {
 }
 
 impl EventPropagation {
-    /// Check if this is a Stop propagation
-    ///
-    /// # Returns
-    ///
-    /// `true` if this is `EventPropagation::Stop`, `false` otherwise.
+    /// Check if this is Stop state
     pub fn is_stop(&self) -> bool {
         matches!(self, Self::Stop)
     }
 
-    /// Check if this is a Continue propagation
-    ///
-    /// # Returns
-    ///
-    /// `true` if this is `EventPropagation::Continue`, `false` otherwise.
+    /// Check if this is Continue state
     pub fn is_continue(&self) -> bool {
         matches!(self, Self::Continue)
-    }
-}
-
-impl Default for EventPropagation {
-    fn default() -> Self {
-        EventPropagation::Continue
     }
 }
 
