@@ -34,10 +34,7 @@ pub mod validation;
 pub use error::ConfigError;
 
 // Re-export config types
-pub use types::{
-    Config, McpConfig,
-    McpLocalConfig, McpRemoteConfig,
-};
+pub use types::{Config, McpConfig, McpLocalConfig, McpRemoteConfig};
 
 // Re-export CategoryConfig from category module
 

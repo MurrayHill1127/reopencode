@@ -7,4 +7,3 @@ pub mod read;
 pub mod registry;
 pub mod traits;
 pub mod write;
-

@@ -6,7 +6,7 @@
 use crate::cli::commands::tui::components::Component;
 use crate::mcp::types::McpStatus;
 use crate::mcp::types::McpTool;
-use ratatui::{backend::TestBackend, layout::Rect, Terminal};
+use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 use std::collections::HashMap;
 
 use super::McpStatusPanel;

@@ -10,6 +10,5 @@ pub mod types;
 
 pub use manager::McpManager;
 pub use types::{
-    AuthCallback, AuthStartResponse, McpAddRequest, McpConfigRequest, McpStatus,
-    RemoveAuthResponse,
+    AuthCallback, AuthStartResponse, McpAddRequest, McpConfigRequest, McpStatus, RemoveAuthResponse,
 };

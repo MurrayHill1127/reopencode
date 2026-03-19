@@ -20,9 +20,7 @@ mod types;
 // Re-export error types
 
 // Re-export types
-pub use types::{
-    BuiltinCategoryName, CategoryConfig,
-};
+pub use types::{BuiltinCategoryName, CategoryConfig};
 
 // Re-export defaults
 pub use defaults::is_builtin_category;

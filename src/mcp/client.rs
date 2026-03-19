@@ -8,12 +8,12 @@ use std::process::Stdio;
 use std::sync::Arc;
 
 use rmcp::{
+    RoleClient, ServiceExt,
     model::{
         CallToolRequestParams, GetPromptRequestParams, PromptMessageContent,
         ReadResourceRequestParams, ResourceContents,
     },
     transport::{StreamableHttpClientTransport, TokioChildProcess},
-    RoleClient, ServiceExt,
 };
 use tokio::process::Command;
 use tracing::{debug, info, warn};
@@ -22,8 +22,8 @@ use crate::config::{McpConfig, McpLocalConfig, McpRemoteConfig};
 
 use super::error::{McpError, Result};
 use super::types::{
-    McpContent, McpPrompt, McpPromptArgument, McpResource, McpResourceContent, McpStatus,
-    McpTool, McpToolResult,
+    McpContent, McpPrompt, McpPromptArgument, McpResource, McpResourceContent, McpStatus, McpTool,
+    McpToolResult,
 };
 
 type McpService = rmcp::service::RunningService<RoleClient, ()>;
@@ -73,14 +73,17 @@ impl McpClient {
 
         cmd.stderr(Stdio::inherit());
 
-        let transport = TokioChildProcess::new(cmd)
-            .map_err(|e| McpError::ProcessSpawnFailed(e.to_string()))?;
+        let transport =
+            TokioChildProcess::new(cmd).map_err(|e| McpError::ProcessSpawnFailed(e.to_string()))?;
 
         match ().serve(transport).await {
             Ok(service) => {
                 self.service = Some(service);
                 self.status = McpStatus::Connected;
-                info!("MCP client '{}' connected successfully via stdio", self.name);
+                info!(
+                    "MCP client '{}' connected successfully via stdio",
+                    self.name
+                );
                 Ok(())
             }
             Err(e) => {
@@ -110,10 +113,7 @@ impl McpClient {
             Ok(service) => {
                 self.service = Some(service);
                 self.status = McpStatus::Connected;
-                info!(
-                    "MCP client '{}' connected successfully via HTTP",
-                    self.name
-                );
+                info!("MCP client '{}' connected successfully via HTTP", self.name);
                 Ok(())
             }
             Err(e) => {
@@ -289,7 +289,10 @@ impl McpClient {
         if let Some(content) = result.contents.into_iter().next() {
             match content {
                 ResourceContents::TextResourceContents {
-                    uri, mime_type, text, ..
+                    uri,
+                    mime_type,
+                    text,
+                    ..
                 } => Ok(McpResourceContent {
                     uri,
                     mime_type,
@@ -297,7 +300,10 @@ impl McpClient {
                     blob: None,
                 }),
                 ResourceContents::BlobResourceContents {
-                    uri, mime_type, blob, ..
+                    uri,
+                    mime_type,
+                    blob,
+                    ..
                 } => Ok(McpResourceContent {
                     uri,
                     mime_type,
@@ -339,9 +345,7 @@ impl McpClient {
             .messages
             .into_iter()
             .filter_map(|msg| match msg.content {
-                PromptMessageContent::Text { text } => {
-                    Some(format!("{:?}: {}", msg.role, text))
-                }
+                PromptMessageContent::Text { text } => Some(format!("{:?}: {}", msg.role, text)),
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -397,7 +401,10 @@ fn convert_content(content: rmcp::model::RawContent) -> Option<McpContent> {
         rmcp::model::RawContent::Resource(res) => {
             let resource_content = match res.resource {
                 ResourceContents::TextResourceContents {
-                    uri, mime_type, text, ..
+                    uri,
+                    mime_type,
+                    text,
+                    ..
                 } => McpResourceContent {
                     uri,
                     mime_type,
@@ -405,7 +412,10 @@ fn convert_content(content: rmcp::model::RawContent) -> Option<McpContent> {
                     blob: None,
                 },
                 ResourceContents::BlobResourceContents {
-                    uri, mime_type, blob, ..
+                    uri,
+                    mime_type,
+                    blob,
+                    ..
                 } => McpResourceContent {
                     uri,
                     mime_type,
@@ -458,10 +468,7 @@ mod tests {
         let client = McpClient::new("test");
         let result = client.list_tools().await;
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            McpError::ConnectionFailed(_)
-        ));
+        assert!(matches!(result.unwrap_err(), McpError::ConnectionFailed(_)));
     }
 
     #[tokio::test]
@@ -469,10 +476,7 @@ mod tests {
         let client = McpClient::new("test");
         let result = client.call_tool("test", None).await;
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            McpError::ConnectionFailed(_)
-        ));
+        assert!(matches!(result.unwrap_err(), McpError::ConnectionFailed(_)));
     }
 
     #[tokio::test]

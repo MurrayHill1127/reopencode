@@ -2,6 +2,7 @@ pub mod command;
 pub mod config;
 pub mod file;
 pub mod global;
+pub mod lsp;
 pub mod mcp;
 pub mod path;
 pub mod permission;

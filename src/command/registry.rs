@@ -247,9 +247,11 @@ mod tests {
 
         let builtin_cmds = registry.list_by_scope(CommandScope::Builtin);
         assert_eq!(builtin_cmds.len(), 2);
-        assert!(builtin_cmds
-            .iter()
-            .all(|cmd| cmd.scope == CommandScope::Builtin));
+        assert!(
+            builtin_cmds
+                .iter()
+                .all(|cmd| cmd.scope == CommandScope::Builtin)
+        );
 
         let user_cmds = registry.list_by_scope(CommandScope::User);
         assert_eq!(user_cmds.len(), 1);

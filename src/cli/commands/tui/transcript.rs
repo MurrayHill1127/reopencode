@@ -145,11 +145,15 @@ pub fn format_part(part: &PartType, options: &TranscriptOptions) -> String {
                     result.push_str(&format!("\n**Input:**\n```json\n{}\n```\n", input));
                 }
 
-                if status == &ToolStatus::Completed && let Some(output) = output {
+                if status == &ToolStatus::Completed
+                    && let Some(output) = output
+                {
                     result.push_str(&format!("\n**Output:**\n```\n{}\n```\n", output));
                 }
 
-                if status == &ToolStatus::Error && let Some(error) = error {
+                if status == &ToolStatus::Error
+                    && let Some(error) = error
+                {
                     result.push_str(&format!("\n**Error:**\n```\n{}\n```\n", error));
                 }
             }

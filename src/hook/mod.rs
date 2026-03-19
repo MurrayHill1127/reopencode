@@ -53,8 +53,7 @@ pub use error::HookError;
 
 // Re-export types
 pub use types::{
-    HookConfig, HookEvent, HookId, HookOutput,
-    HookPriority, HookResult, SessionEventType,
+    HookConfig, HookEvent, HookId, HookOutput, HookPriority, HookResult, SessionEventType,
 };
 
 // Re-export context types

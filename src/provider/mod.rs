@@ -15,6 +15,4 @@ pub mod zhipu;
 pub use config::ProviderConfig;
 pub use message::{Message, MessageRole};
 pub use openai::OpenAiProvider;
-pub use provider_trait::{
-    Provider, ToolDefinition,
-};
+pub use provider_trait::{Provider, ToolDefinition};

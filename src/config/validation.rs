@@ -88,7 +88,8 @@ impl Validator {
     fn validate_provider(name: &str, provider: &ProviderConfig) -> Result<(), ValidationError> {
         // API URL format check (if set)
         if let Some(url) = &provider.api_url
-            && !url.starts_with("http://") && !url.starts_with("https://")
+            && !url.starts_with("http://")
+            && !url.starts_with("https://")
         {
             return Err(ValidationError::InvalidFormat {
                 field: format!("provider.{}.api_url", name),

@@ -27,11 +27,11 @@ use super::{Component, ComponentId, EventPropagation};
 use crate::mcp::types::McpStatus;
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
-    Frame,
 };
 use std::collections::HashMap;
 use std::time::Duration;

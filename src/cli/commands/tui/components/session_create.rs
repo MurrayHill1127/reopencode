@@ -14,11 +14,11 @@
 use super::{Component, ComponentEvent, ComponentId, EventPropagation};
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
-    Frame,
 };
 use std::time::Duration;
 

@@ -40,9 +40,7 @@ pub mod types;
 pub use error::SkillError;
 
 // Re-export types
-pub use types::{
-    DiscoveryOptions, DiscoveryResult, SkillInfo, SkillMetadata, SkillScope,
-};
+pub use types::{DiscoveryOptions, DiscoveryResult, SkillInfo, SkillMetadata, SkillScope};
 
 // Re-export parser functions
 

@@ -1,11 +1,13 @@
 use axum::{
-    extract::{Json, Path},
+    extract::{Json, Path, State},
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-#[derive(Debug, Serialize, Deserialize)]
+use crate::server::AppState;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionRequest {
     pub id: String,
     pub session_id: String,
@@ -17,7 +19,7 @@ pub struct PermissionRequest {
     pub tool: Option<PermissionTool>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionTool {
     pub message_id: String,
     pub call_id: String,
@@ -31,9 +33,14 @@ pub struct PermissionReply {
 }
 
 /// GET /permission - List pending permission requests
-pub async fn list() -> Json<Vec<PermissionRequest>> {
+pub async fn list(State(state): State<AppState>) -> Json<Vec<PermissionRequest>> {
     info!("Listing pending permission requests");
-    Json(vec![])
+    let pending = state.permission_store.pending.read().await;
+    let mut result = Vec::new();
+    for requests in pending.values() {
+        result.extend(requests.iter().cloned());
+    }
+    Json(result)
 }
 
 /// POST /permission/:id/reply - Reply to a permission request

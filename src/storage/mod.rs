@@ -48,9 +48,8 @@ pub use cache::{CacheConfig, CacheStats, MemoryCache};
 
 // Re-export schema types
 pub use schema::{
-    MessageInfo, MessagePart, MessageRecord, MessageRole, MessageTime,
-    MessageWithParts, Page, ProjectRecord, SessionRecord,
-    TodoItem, TodoPriority, TodoStatus, WorkspaceRecord,
+    MessageInfo, MessagePart, MessageRecord, MessageRole, MessageTime, MessageWithParts, Page,
+    ProjectRecord, SessionRecord, TodoItem, TodoPriority, TodoStatus, WorkspaceRecord,
 };
 
 // Re-export backend types
@@ -61,9 +60,7 @@ pub use database::Database;
 
 // Re-export session types
 #[allow(unused_imports)]
-pub use session::{
-    MessageStore, SessionCreateInput, SessionStore, TodoStore,
-};
+pub use session::{MessageStore, SessionCreateInput, SessionStore, TodoStore};
 
 // Re-export project types
 #[allow(unused_imports)]
@@ -182,9 +179,9 @@ mod tests {
     #[allow(unused_imports)]
     use crate::storage::path::CACHE_VERSION;
     #[allow(unused_imports)]
-    use crate::storage::session::SessionCreateInput;
-    #[allow(unused_imports)]
     use crate::storage::project::ProjectCreateInput;
+    #[allow(unused_imports)]
+    use crate::storage::session::SessionCreateInput;
     use tempfile::TempDir;
 
     #[tokio::test]

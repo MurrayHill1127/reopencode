@@ -68,6 +68,7 @@ pub fn create_router() -> Router<AppState> {
             axum::routing::post(handlers::question::reject),
         )
         .route("/mcp", get(handlers::mcp::status).post(handlers::mcp::add))
+        .route("/lsp", get(handlers::lsp::list))
         .route(
             "/mcp/{name}/auth",
             axum::routing::post(handlers::mcp::auth_start),

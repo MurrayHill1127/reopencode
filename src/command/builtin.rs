@@ -344,24 +344,32 @@ mod tests {
 
     #[test]
     fn test_builtin_command_name_description() {
-        assert!(BuiltinCommandName::InitDeep
-            .description()
-            .contains("Initialize"));
-        assert!(BuiltinCommandName::RalphLoop
-            .description()
-            .contains("self-referential"));
-        assert!(BuiltinCommandName::Handoff
-            .description()
-            .contains("context summary"));
+        assert!(
+            BuiltinCommandName::InitDeep
+                .description()
+                .contains("Initialize")
+        );
+        assert!(
+            BuiltinCommandName::RalphLoop
+                .description()
+                .contains("self-referential")
+        );
+        assert!(
+            BuiltinCommandName::Handoff
+                .description()
+                .contains("context summary")
+        );
     }
 
     #[test]
     fn test_builtin_command_name_argument_hint() {
         assert!(BuiltinCommandName::InitDeep.argument_hint().is_some());
         assert!(BuiltinCommandName::CancelRalph.argument_hint().is_none());
-        assert!(BuiltinCommandName::StopContinuation
-            .argument_hint()
-            .is_none());
+        assert!(
+            BuiltinCommandName::StopContinuation
+                .argument_hint()
+                .is_none()
+        );
     }
 
     #[test]
@@ -418,9 +426,11 @@ mod tests {
 
         // cancel-ralph and stop-continuation don't have agents
         assert!(get_builtin_command("cancel-ralph").unwrap().agent.is_none());
-        assert!(get_builtin_command("stop-continuation")
-            .unwrap()
-            .agent
-            .is_none());
+        assert!(
+            get_builtin_command("stop-continuation")
+                .unwrap()
+                .agent
+                .is_none()
+        );
     }
 }
