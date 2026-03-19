@@ -1,13 +1,13 @@
 mod event;
 mod global;
 
-pub use event::{Event, EventDefinition, EventProperties};
 pub use event::definitions::*;
+pub use event::{Event, EventDefinition, EventProperties};
 pub use global::{GlobalBus, GlobalEvent};
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 
 const BUS_CAPACITY: usize = 256;
 
@@ -38,7 +38,7 @@ impl Bus {
         properties: T,
     ) {
         let event = Event::new(definition.event_type, properties);
-        
+
         tracing::info!("publishing event: {}", definition.event_type);
 
         let subs = self.subscriptions.read().await;
@@ -55,11 +55,15 @@ impl Bus {
         }
 
         let _ = self.tx.send(event.clone());
-        
+
         GlobalBus::emit(&self.directory, event);
     }
 
-    pub async fn subscribe<T: EventProperties, F>(&self, definition: &EventDefinition<T>, callback: F) -> impl Fn()
+    pub async fn subscribe<T: EventProperties, F>(
+        &self,
+        definition: &EventDefinition<T>,
+        callback: F,
+    ) -> impl Fn()
     where
         F: Fn(&Event) + Send + Sync + 'static,
     {
@@ -74,7 +78,7 @@ impl Bus {
         tracing::info!("subscribing to event: {}", event_type);
 
         let handler: EventHandler = Box::new(callback);
-        
+
         let mut subs = self.subscriptions.write().await;
         subs.entry(event_type.clone())
             .or_insert_with(Vec::new)
@@ -105,7 +109,7 @@ impl Bus {
         };
 
         let handler: EventHandler = Box::new(callback);
-        
+
         let mut subs = self.subscriptions.write().await;
         subs.entry("*".to_string())
             .or_insert_with(Vec::new)
@@ -144,12 +148,16 @@ mod tests {
         let counter = Arc::new(AtomicUsize::new(0));
         let counter_clone = Arc::clone(&counter);
 
-        let _unsub = bus.subscribe(&SERVER_CONNECTED, move |_| {
-            counter_clone.fetch_add(1, Ordering::SeqCst);
-        }).await;
+        let _unsub = bus
+            .subscribe(&SERVER_CONNECTED, move |_| {
+                counter_clone.fetch_add(1, Ordering::SeqCst);
+            })
+            .await;
 
-        bus.publish(&SERVER_CONNECTED, ServerConnectedProperties {}).await;
-        bus.publish(&SERVER_CONNECTED, ServerConnectedProperties {}).await;
+        bus.publish(&SERVER_CONNECTED, ServerConnectedProperties {})
+            .await;
+        bus.publish(&SERVER_CONNECTED, ServerConnectedProperties {})
+            .await;
 
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
@@ -162,18 +170,22 @@ mod tests {
         let counter = Arc::new(AtomicUsize::new(0));
         let counter_clone = Arc::clone(&counter);
 
-        let unsub = bus.subscribe(&SERVER_CONNECTED, move |_| {
-            counter_clone.fetch_add(1, Ordering::SeqCst);
-        }).await;
+        let unsub = bus
+            .subscribe(&SERVER_CONNECTED, move |_| {
+                counter_clone.fetch_add(1, Ordering::SeqCst);
+            })
+            .await;
 
-        bus.publish(&SERVER_CONNECTED, ServerConnectedProperties {}).await;
+        bus.publish(&SERVER_CONNECTED, ServerConnectedProperties {})
+            .await;
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
         assert_eq!(counter.load(Ordering::SeqCst), 1);
 
         unsub();
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
-        bus.publish(&SERVER_CONNECTED, ServerConnectedProperties {}).await;
+        bus.publish(&SERVER_CONNECTED, ServerConnectedProperties {})
+            .await;
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
         assert_eq!(counter.load(Ordering::SeqCst), 1);
     }
@@ -184,20 +196,29 @@ mod tests {
         let counter = Arc::new(AtomicUsize::new(0));
         let counter_clone = Arc::clone(&counter);
 
-        let _unsub = bus.subscribe_all(move |_| {
-            counter_clone.fetch_add(1, Ordering::SeqCst);
-        }).await;
+        let _unsub = bus
+            .subscribe_all(move |_| {
+                counter_clone.fetch_add(1, Ordering::SeqCst);
+            })
+            .await;
 
-        bus.publish(&SERVER_CONNECTED, ServerConnectedProperties {}).await;
-        bus.publish(&PTY_CREATED, PtyCreatedProperties { info: PtyInfo {
-            id: "test".to_string(),
-            title: "Test".to_string(),
-            command: "bash".to_string(),
-            args: vec![],
-            cwd: "/".to_string(),
-            status: "running".to_string(),
-            pid: 1,
-        }}).await;
+        bus.publish(&SERVER_CONNECTED, ServerConnectedProperties {})
+            .await;
+        bus.publish(
+            &PTY_CREATED,
+            PtyCreatedProperties {
+                info: PtyInfo {
+                    id: "test".to_string(),
+                    title: "Test".to_string(),
+                    command: "bash".to_string(),
+                    args: vec![],
+                    cwd: "/".to_string(),
+                    status: "running".to_string(),
+                    pid: 1,
+                },
+            },
+        )
+        .await;
 
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 

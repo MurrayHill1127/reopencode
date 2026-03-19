@@ -10,44 +10,37 @@
 //! - `unspecified-high` - High complexity general tasks
 //! - `writing` - Documentation, prose
 
-mod error;
-mod types;
 mod defaults;
+mod error;
+mod merge;
 mod requirements;
 mod resolver;
-mod merge;
+mod types;
 
 // Re-export error types
 pub use error::{CategoryError, ResolutionError};
 
 // Re-export types
 pub use types::{
-    BuiltinCategoryName, CategoryName, CategoryConfig,
-    ModelVariant, ThinkingConfig, ThinkingType,
-    ReasoningEffort, TextVerbosity,
-    FallbackEntry, ModelRequirement,
-    CategoryResolutionResult, ResolvedModel, ModelInfo,
-    ModelSourceType, ModelSource,
+    BuiltinCategoryName, CategoryConfig, CategoryName, CategoryResolutionResult, FallbackEntry,
+    ModelInfo, ModelRequirement, ModelSource, ModelSourceType, ModelVariant, ReasoningEffort,
+    ResolvedModel, TextVerbosity, ThinkingConfig, ThinkingType,
 };
 
 // Re-export defaults
 pub use defaults::{
-    DEFAULT_CATEGORIES, CATEGORY_DESCRIPTIONS,
-    get_default_model, get_default_variant,
-    is_builtin_category, builtin_category_names,
+    CATEGORY_DESCRIPTIONS, DEFAULT_CATEGORIES, builtin_category_names, get_default_model,
+    get_default_variant, is_builtin_category,
 };
 
 // Re-export requirements
 pub use requirements::{
-    CATEGORY_MODEL_REQUIREMENTS, AGENT_MODEL_REQUIREMENTS,
-    get_category_requirement, get_agent_requirement,
+    AGENT_MODEL_REQUIREMENTS, CATEGORY_MODEL_REQUIREMENTS, get_agent_requirement,
+    get_category_requirement,
 };
 
 // Re-export resolver
-pub use resolver::{
-    CategoryResolver, ResolveOptions,
-    resolve_model_for_category,
-};
+pub use resolver::{CategoryResolver, ResolveOptions, resolve_model_for_category};
 
 // Re-export merge
 pub use merge::{merge_categories, merge_single_category};
@@ -65,7 +58,9 @@ pub fn category_exists(
     if is_builtin_category(name) {
         return true;
     }
-    user_categories.map(|c| c.contains_key(name)).unwrap_or(false)
+    user_categories
+        .map(|c| c.contains_key(name))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

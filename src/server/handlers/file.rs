@@ -1,8 +1,4 @@
-use axum::{
-    extract::Query,
-    http::StatusCode,
-    Json,
-};
+use axum::{Json, extract::Query, http::StatusCode};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -32,7 +28,7 @@ pub struct FindFileQuery {
 /// GET /find?pattern=... - Search for text in files
 pub async fn find(Query(query): Query<FindQuery>) -> Result<Json<Vec<FindMatch>>, StatusCode> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    
+
     let results = search_with_ripgrep(&cwd, &query.pattern)
         .or_else(|| search_with_grep(&cwd, &query.pattern))
         .unwrap_or_default();
@@ -41,9 +37,11 @@ pub async fn find(Query(query): Query<FindQuery>) -> Result<Json<Vec<FindMatch>>
 }
 
 /// GET /find/file?query=... - Find files by name
-pub async fn find_file(Query(query): Query<FindFileQuery>) -> Result<Json<Vec<FindFileResult>>, StatusCode> {
+pub async fn find_file(
+    Query(query): Query<FindFileQuery>,
+) -> Result<Json<Vec<FindFileResult>>, StatusCode> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    
+
     let results = find_files_by_name(&cwd, &query.query);
     Ok(Json(results))
 }
@@ -99,7 +97,7 @@ fn parse_grep_output(output: &str) -> Vec<FindMatch> {
 
 fn find_files_by_name(dir: &Path, query: &str) -> Vec<FindFileResult> {
     let mut results = Vec::new();
-    
+
     for entry in walkdir::WalkDir::new(dir)
         .max_depth(5)
         .into_iter()

@@ -1,5 +1,5 @@
 //! Configuration error types
-//! 
+//!
 //! Provides user-friendly error messages for config parsing, validation, and loading failures.
 
 use std::path::PathBuf;
@@ -42,7 +42,11 @@ pub enum ValidationError {
     InvalidValue { field: String, message: String },
 
     #[error("字段 '{field}' 超出范围：{actual} (期望：{expected})")]
-    OutOfRange { field: String, actual: String, expected: String },
+    OutOfRange {
+        field: String,
+        actual: String,
+        expected: String,
+    },
 
     #[error("字段 '{field}' 格式错误：{message}")]
     InvalidFormat { field: String, message: String },

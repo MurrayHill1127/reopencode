@@ -72,15 +72,13 @@ pub async fn create(
     Json(body): Json<CreateSessionRequest>,
 ) -> Result<Json<SessionInfo>, StatusCode> {
     match state.session_manager.create_session(body.title).await {
-        Ok(id) => {
-            match state.session_manager.get_session(&id).await {
-                Ok(session) => Ok(Json(SessionInfo::from(session))),
-                Err(e) => {
-                    error!("Failed to fetch created session: {}", e);
-                    Err(StatusCode::INTERNAL_SERVER_ERROR)
-                }
+        Ok(id) => match state.session_manager.get_session(&id).await {
+            Ok(session) => Ok(Json(SessionInfo::from(session))),
+            Err(e) => {
+                error!("Failed to fetch created session: {}", e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
             }
-        }
+        },
         Err(e) => {
             error!("Failed to create session: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
@@ -110,20 +108,32 @@ pub async fn send_message(
     Path(session_id): Path<String>,
     Json(body): Json<SendMessageRequest>,
 ) -> Result<Json<SendMessageResponse>, StatusCode> {
-    info!("Processing message for session {}: {}", session_id, body.content);
-    
-    if state.session_manager.get_session(&session_id).await.is_err() {
+    info!(
+        "Processing message for session {}: {}",
+        session_id, body.content
+    );
+
+    if state
+        .session_manager
+        .get_session(&session_id)
+        .await
+        .is_err()
+    {
         return Err(StatusCode::NOT_FOUND);
     }
-    
-    let user_msg_id = match state.session_manager.add_message(&session_id, "user", &body.content).await {
+
+    let user_msg_id = match state
+        .session_manager
+        .add_message(&session_id, "user", &body.content)
+        .await
+    {
         Ok(id) => id,
         Err(e) => {
             error!("Failed to store user message: {}", e);
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
-    
+
     let messages = match state.session_manager.get_messages(&session_id).await {
         Ok(msgs) => msgs,
         Err(e) => {
@@ -131,26 +141,35 @@ pub async fn send_message(
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
-    
+
     let agent_messages: Vec<Message> = messages
         .iter()
         .map(|m| Message {
-            role: if m.role == "user" { Role::User } else { Role::Assistant },
+            role: if m.role == "user" {
+                Role::User
+            } else {
+                Role::Assistant
+            },
             content: m.content.clone(),
         })
         .collect();
-    
+
     match state.agent.execute(agent_messages, vec![]).await {
         Ok(response) => {
-            info!("Agent response: {} tokens used", response.usage.total_tokens);
-            
-            match state.session_manager.add_message(&session_id, "assistant", &response.content).await {
-                Ok(_) => {
-                    Ok(Json(SendMessageResponse {
-                        message_id: user_msg_id,
-                        response: response.content,
-                    }))
-                }
+            info!(
+                "Agent response: {} tokens used",
+                response.usage.total_tokens
+            );
+
+            match state
+                .session_manager
+                .add_message(&session_id, "assistant", &response.content)
+                .await
+            {
+                Ok(_) => Ok(Json(SendMessageResponse {
+                    message_id: user_msg_id,
+                    response: response.content,
+                })),
                 Err(e) => {
                     error!("Failed to store assistant response: {}", e);
                     Err(StatusCode::INTERNAL_SERVER_ERROR)
@@ -169,13 +188,16 @@ pub async fn stream_message(
     Path(session_id): Path<String>,
     Json(body): Json<SendMessageRequest>,
 ) -> Sse<impl futures::Stream<Item = Result<Event, Infallible>>> {
-    info!("Streaming message for session {}: {}", session_id, body.content);
-    
+    info!(
+        "Streaming message for session {}: {}",
+        session_id, body.content
+    );
+
     let provider_messages = vec![ProviderMessage::new(
         ProviderMessageRole::User,
         body.content,
     )];
-    
+
     let config = state.agent.config();
     let stream = state.provider.chat_stream(
         provider_messages,
@@ -184,16 +206,14 @@ pub async fn stream_message(
         config.max_tokens,
         &[],
     );
-    
-    let sse_stream = futures::stream::StreamExt::map(stream, |result| {
-        match result {
-            Ok(content) => Ok(Event::default().data(content)),
-            Err(e) => {
-                error!("Stream error: {}", e);
-                Ok(Event::default().data(format!("[ERROR] {}", e)))
-            }
+
+    let sse_stream = futures::stream::StreamExt::map(stream, |result| match result {
+        Ok(content) => Ok(Event::default().data(content)),
+        Err(e) => {
+            error!("Stream error: {}", e);
+            Ok(Event::default().data(format!("[ERROR] {}", e)))
         }
     });
-    
+
     Sse::new(sse_stream)
 }

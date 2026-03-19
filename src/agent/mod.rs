@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, error, info};
 
-use crate::provider::{Message as ProviderMessage, MessageRole as ProviderMessageRole, Provider, ProviderToolCall, ProviderToolCallFunction, ToolDefinition as ProviderToolDefinition};
+use crate::provider::{
+    Message as ProviderMessage, MessageRole as ProviderMessageRole, Provider, ProviderToolCall,
+    ProviderToolCallFunction, ToolDefinition as ProviderToolDefinition,
+};
 use crate::tool::registry::ToolRegistry;
 use crate::tool::traits::Tool;
 
@@ -82,13 +85,13 @@ pub struct AgentResponse {
 pub enum AgentError {
     #[error("Provider error: {0}")]
     Provider(String),
-    
+
     #[error("Model error: {0}")]
     Model(String),
-    
+
     #[error("Tool error: {0}")]
     Tool(String),
-    
+
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
 }
@@ -98,10 +101,10 @@ pub enum AgentError {
 pub trait Agent: Send + Sync {
     /// Get agent name
     fn name(&self) -> &str;
-    
+
     /// Get agent configuration
     fn config(&self) -> &AgentConfig;
-    
+
     /// Execute the agent with messages and tools
     async fn execute(
         &self,
@@ -161,25 +164,30 @@ impl Sisyphus {
         max_iterations: usize,
     ) -> Result<AgentResponse, AgentError> {
         let mut current_messages: Vec<ProviderMessage> = Self::convert_messages(messages);
-        let provider_tools: Vec<ProviderToolDefinition> = tools.iter().map(ProviderToolDefinition::from).collect();
-        
+        let provider_tools: Vec<ProviderToolDefinition> =
+            tools.iter().map(ProviderToolDefinition::from).collect();
+
         let mut total_usage = Usage {
             prompt_tokens: 0,
             completion_tokens: 0,
             total_tokens: 0,
         };
-        
+
         let mut iterations = 0;
-        
+
         loop {
             iterations += 1;
             if iterations > max_iterations {
                 debug!("Max iterations ({}) reached, stopping", max_iterations);
                 break;
             }
-            
-            debug!("Iteration {}: calling provider with {} messages", iterations, current_messages.len());
-            
+
+            debug!(
+                "Iteration {}: calling provider with {} messages",
+                iterations,
+                current_messages.len()
+            );
+
             let response = self
                 .provider
                 .chat(
@@ -194,11 +202,11 @@ impl Sisyphus {
                     error!("Provider error: {}", e);
                     AgentError::Provider(e.to_string())
                 })?;
-            
+
             total_usage.prompt_tokens += response.usage.prompt_tokens;
             total_usage.completion_tokens += response.usage.completion_tokens;
             total_usage.total_tokens += response.usage.total_tokens;
-            
+
             if !response.has_tool_calls() {
                 debug!("No tool calls, returning final response");
                 return Ok(AgentResponse {
@@ -207,22 +215,22 @@ impl Sisyphus {
                     usage: total_usage,
                 });
             }
-            
+
             debug!("Provider returned {} tool calls", response.tool_calls.len());
-            
+
             let assistant_msg = ProviderMessage::assistant_with_tool_calls(
                 response.content.clone(),
                 response.tool_calls.clone(),
             );
             current_messages.push(assistant_msg);
-            
+
             for tool_call in &response.tool_calls {
                 let tool_name = &tool_call.function.name;
                 let tool_args: Value = serde_json::from_str(&tool_call.function.arguments)
                     .unwrap_or(Value::Object(serde_json::Map::new()));
-                
+
                 info!("Executing tool: {} with args: {:?}", tool_name, tool_args);
-                
+
                 let tool_result = if let Some(tool) = tool_registry.get(tool_name) {
                     match tool.execute(tool_args).await {
                         Ok(result) => result.output,
@@ -235,14 +243,14 @@ impl Sisyphus {
                     error!("Tool not found: {}", tool_name);
                     format!("Error: Tool '{}' not found", tool_name)
                 };
-                
+
                 debug!("Tool {} result: {}", tool_name, tool_result);
-                
+
                 let tool_msg = ProviderMessage::tool(tool_result, &tool_call.id);
                 current_messages.push(tool_msg);
             }
         }
-        
+
         Ok(AgentResponse {
             content: "Max iterations reached without final response".to_string(),
             tool_calls: vec![],
@@ -256,11 +264,11 @@ impl Agent for Sisyphus {
     fn name(&self) -> &str {
         "sisyphus"
     }
-    
+
     fn config(&self) -> &AgentConfig {
         &self.config
     }
-    
+
     async fn execute(
         &self,
         messages: Vec<Message>,
@@ -269,8 +277,9 @@ impl Agent for Sisyphus {
         debug!("Sisyphus executing with {} messages", messages.len());
 
         let provider_messages = Self::convert_messages(messages);
-        let provider_tools: Vec<ProviderToolDefinition> = tools.iter().map(ProviderToolDefinition::from).collect();
-        
+        let provider_tools: Vec<ProviderToolDefinition> =
+            tools.iter().map(ProviderToolDefinition::from).collect();
+
         let response = self
             .provider
             .chat(
@@ -286,7 +295,10 @@ impl Agent for Sisyphus {
                 AgentError::Provider(e.to_string())
             })?;
 
-        debug!("Provider response: {} tokens used", response.usage.total_tokens);
+        debug!(
+            "Provider response: {} tokens used",
+            response.usage.total_tokens
+        );
 
         let tool_calls: Vec<ToolCall> = response
             .tool_calls

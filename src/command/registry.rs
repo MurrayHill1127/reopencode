@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use super::types::{CommandDefinition, CommandInfo, CommandMetadata, CommandScope};
+use std::collections::HashMap;
 
 pub type TemplateContext = HashMap<String, String>;
 
@@ -79,7 +79,11 @@ impl CommandInfo {
     }
 }
 
-fn render_template(template: &str, arguments: &Option<String>, context: &TemplateContext) -> String {
+fn render_template(
+    template: &str,
+    arguments: &Option<String>,
+    context: &TemplateContext,
+) -> String {
     let mut result = template.to_string();
 
     if let Some(args) = arguments {
@@ -226,14 +230,27 @@ mod tests {
     #[test]
     fn test_registry_list_by_scope() {
         let mut registry = CommandRegistry::new();
-        registry.register(create_test_command_with_scope("builtin1", CommandScope::Builtin));
+        registry.register(create_test_command_with_scope(
+            "builtin1",
+            CommandScope::Builtin,
+        ));
         registry.register(create_test_command_with_scope("user1", CommandScope::User));
-        registry.register(create_test_command_with_scope("builtin2", CommandScope::Builtin));
-        registry.register(create_test_command_with_scope("project1", CommandScope::Project));
+        registry.register(create_test_command_with_scope(
+            "builtin2",
+            CommandScope::Builtin,
+        ));
+        registry.register(create_test_command_with_scope(
+            "project1",
+            CommandScope::Project,
+        ));
 
         let builtin_cmds = registry.list_by_scope(CommandScope::Builtin);
         assert_eq!(builtin_cmds.len(), 2);
-        assert!(builtin_cmds.iter().all(|cmd| cmd.scope == CommandScope::Builtin));
+        assert!(
+            builtin_cmds
+                .iter()
+                .all(|cmd| cmd.scope == CommandScope::Builtin)
+        );
 
         let user_cmds = registry.list_by_scope(CommandScope::User);
         assert_eq!(user_cmds.len(), 1);
@@ -243,8 +260,14 @@ mod tests {
     #[test]
     fn test_registry_list_by_scope_excludes_disabled() {
         let mut registry = CommandRegistry::new();
-        registry.register(create_test_command_with_scope("builtin1", CommandScope::Builtin));
-        registry.register(create_test_command_with_scope("builtin2", CommandScope::Builtin));
+        registry.register(create_test_command_with_scope(
+            "builtin1",
+            CommandScope::Builtin,
+        ));
+        registry.register(create_test_command_with_scope(
+            "builtin2",
+            CommandScope::Builtin,
+        ));
 
         registry.disable("builtin1");
 

@@ -3,14 +3,16 @@
 //! Defines all core types for the skill system including scopes,
 //! metadata, configuration, and discovery types.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 
 // ==================== Skill Scope ====================
 
 /// Skill scope defining where a skill can be used
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum SkillScope {
     /// Project-level skill (local to current project)
@@ -245,7 +247,7 @@ mod tests {
     #[test]
     fn test_skill_metadata_default() {
         let metadata = SkillMetadata::default();
-        
+
         assert!(metadata.model.is_none());
         assert!(metadata.argument_hint.is_none());
         assert!(metadata.agent.is_none());
@@ -265,14 +267,12 @@ mod tests {
             subtask: Some(true),
             license: Some("MIT".to_string()),
             compatibility: Some(">=1.0.0".to_string()),
-            metadata: Some(HashMap::from([
-                ("version".to_string(), "1.0".to_string()),
-            ])),
+            metadata: Some(HashMap::from([("version".to_string(), "1.0".to_string())])),
             allowed_tools: Some(vec!["read".to_string(), "write".to_string()]),
         };
 
         let json = serde_json::to_string(&metadata).unwrap();
-        
+
         assert!(json.contains("\"model\""));
         assert!(json.contains("\"argument-hint\""));
         assert!(json.contains("\"agent\""));
@@ -285,7 +285,7 @@ mod tests {
     fn test_skill_metadata_skip_none() {
         let metadata = SkillMetadata::default();
         let json = serde_json::to_string(&metadata).unwrap();
-        
+
         // All optional fields should be skipped
         assert_eq!(json, "{}");
     }
@@ -307,7 +307,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&info).unwrap();
-        
+
         assert!(json.contains("\"name\":\"test-skill\""));
         assert!(json.contains("\"description\":\"A test skill\""));
         assert!(json.contains("\"scope\":\"project\""));
@@ -326,7 +326,7 @@ mod tests {
         }"#;
 
         let info: SkillInfo = serde_json::from_str(json).unwrap();
-        
+
         assert_eq!(info.name, "my-skill");
         assert_eq!(info.description, "A sample skill");
         assert_eq!(info.scope, SkillScope::User);
@@ -349,7 +349,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&info).unwrap();
-        
+
         // agent should appear at top level (flattened)
         assert!(json.contains("\"agent\":\"explore\""));
         assert!(!json.contains("\"metadata\":"));
@@ -360,7 +360,7 @@ mod tests {
     #[test]
     fn test_skill_config_default() {
         let config = SkillConfig::default();
-        
+
         assert!(config.paths.is_empty());
         assert!(config.urls.is_empty());
     }
@@ -373,7 +373,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&config).unwrap();
-        
+
         assert!(json.contains("\"paths\""));
         assert!(json.contains("\"urls\""));
     }
@@ -386,7 +386,7 @@ mod tests {
         }"#;
 
         let config: SkillConfig = serde_json::from_str(json).unwrap();
-        
+
         assert_eq!(config.paths.len(), 2);
         assert_eq!(config.urls.len(), 1);
     }
@@ -396,7 +396,7 @@ mod tests {
     #[test]
     fn test_discovery_options_default() {
         let options = DiscoveryOptions::default();
-        
+
         assert!(options.directory.is_none());
         assert!(options.include_claude_paths);
         assert!(!options.disable_external);
@@ -423,7 +423,7 @@ mod tests {
     #[test]
     fn test_discovery_result_default() {
         let result = DiscoveryResult::default();
-        
+
         assert!(result.skills.is_empty());
         assert!(result.directories.is_empty());
         assert!(result.warnings.is_empty());

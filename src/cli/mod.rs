@@ -23,14 +23,14 @@ pub enum Commands {
         #[arg(short, long)]
         cwd: Option<String>,
     },
-    
+
     /// Start HTTP server
     Serve {
         /// Port to listen on
         #[arg(short, long, default_value = "8080")]
         port: u16,
     },
-    
+
     /// Show version
     Version,
 }

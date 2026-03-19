@@ -40,8 +40,8 @@
 
 use std::collections::VecDeque;
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::{Mutex, Notify};
 use tokio::time::timeout;
@@ -627,13 +627,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_with_timeout_failure() {
-        let result = with_timeout(
-            Duration::from_millis(10),
-            async {
-                sleep(Duration::from_millis(100)).await;
-                42
-            }
-        ).await;
+        let result = with_timeout(Duration::from_millis(10), async {
+            sleep(Duration::from_millis(100)).await;
+            42
+        })
+        .await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, TimeoutError::Elapsed(_)));
@@ -656,7 +654,7 @@ mod tests {
     async fn test_cancellation_token_clone() {
         let token1 = CancellationToken::new();
         let token2 = token1.clone();
-        
+
         token1.cancel();
         assert!(token2.is_cancelled());
     }
@@ -664,19 +662,19 @@ mod tests {
     #[tokio::test]
     async fn test_cancellation_token_cancelled() {
         let token = CancellationToken::new();
-        
+
         // Spawn a task that will cancel after a delay
         let token_clone = token.clone();
         tokio::spawn(async move {
             sleep(Duration::from_millis(50)).await;
             token_clone.cancel();
         });
-        
+
         // Wait should complete after cancellation
         let start = std::time::Instant::now();
         token.cancelled().await;
         let elapsed = start.elapsed();
-        
+
         assert!(token.is_cancelled());
         assert!(elapsed >= Duration::from_millis(40)); // Should have waited
     }
@@ -685,7 +683,7 @@ mod tests {
     async fn test_cancellation_token_already_cancelled() {
         let token = CancellationToken::new();
         token.cancel();
-        
+
         // Should resolve immediately
         token.cancelled().await;
         assert!(token.is_cancelled());
@@ -702,7 +700,7 @@ mod tests {
     async fn test_abort_controller_abort() {
         let controller = AbortController::new();
         let token = controller.token();
-        
+
         controller.abort();
         assert!(token.is_cancelled());
     }
@@ -712,7 +710,7 @@ mod tests {
         let controller = AbortController::new();
         let token1 = controller.token();
         let token2 = controller.token();
-        
+
         controller.abort();
         assert!(token1.is_cancelled());
         assert!(token2.is_cancelled());
@@ -728,30 +726,30 @@ mod tests {
     #[tokio::test]
     async fn test_async_queue_push_pop() {
         let queue = AsyncQueue::new();
-        
+
         queue.push(1).await;
         queue.push(2).await;
         queue.push(3).await;
-        
+
         assert_eq!(queue.len().await, 3);
         assert!(!queue.is_empty().await);
-        
+
         assert_eq!(queue.pop().await, 1);
         assert_eq!(queue.pop().await, 2);
         assert_eq!(queue.pop().await, 3);
-        
+
         assert!(queue.is_empty().await);
     }
 
     #[tokio::test]
     async fn test_async_queue_try_pop() {
         let queue = AsyncQueue::new();
-        
+
         assert!(queue.try_pop().await.is_none());
-        
+
         queue.push("hello").await;
         queue.push("world").await;
-        
+
         assert_eq!(queue.try_pop().await, Some("hello"));
         assert_eq!(queue.try_pop().await, Some("world"));
         assert!(queue.try_pop().await.is_none());
@@ -760,19 +758,17 @@ mod tests {
     #[tokio::test]
     async fn test_async_queue_pop_waits() {
         let queue = AsyncQueue::new();
-        
+
         // Start a consumer that will wait
         let queue_clone = queue.clone();
-        let consumer = tokio::spawn(async move {
-            queue_clone.pop().await
-        });
-        
+        let consumer = tokio::spawn(async move { queue_clone.pop().await });
+
         // Give consumer time to start waiting
         sleep(Duration::from_millis(50)).await;
-        
+
         // Now push an item
         queue.push(42).await;
-        
+
         // Consumer should receive it
         let result = consumer.await.unwrap();
         assert_eq!(result, 42);
@@ -782,7 +778,7 @@ mod tests {
     async fn test_async_queue_clone() {
         let queue1 = AsyncQueue::new();
         let queue2 = queue1.clone();
-        
+
         queue1.push(1).await;
         assert_eq!(queue2.pop().await, 1);
     }
@@ -796,13 +792,13 @@ mod tests {
     #[tokio::test]
     async fn test_async_lock_acquire_release() {
         let lock = AsyncLock::new();
-        
+
         {
             let _guard = lock.acquire().await;
             // Lock held
         }
         // Lock released
-        
+
         // Can acquire again
         let _guard = lock.acquire().await;
     }
@@ -810,16 +806,16 @@ mod tests {
     #[tokio::test]
     async fn test_async_lock_try_acquire() {
         let lock = AsyncLock::new();
-        
+
         let guard1 = lock.try_acquire().await;
         assert!(guard1.is_some());
-        
+
         let guard2 = lock.try_acquire().await;
         assert!(guard2.is_none());
-        
+
         // Drop first guard
         drop(guard1);
-        
+
         // Can acquire again
         let guard3 = lock.try_acquire().await;
         assert!(guard3.is_some());
@@ -829,9 +825,9 @@ mod tests {
     async fn test_async_lock_multiple_tasks() {
         let lock = AsyncLock::new();
         let counter = Arc::new(AtomicUsize::new(0));
-        
+
         let mut handles = vec![];
-        
+
         for _ in 0..5 {
             let lock = lock.clone();
             let counter = counter.clone();
@@ -844,11 +840,11 @@ mod tests {
             });
             handles.push(handle);
         }
-        
+
         for handle in handles {
             handle.await.unwrap();
         }
-        
+
         assert_eq!(counter.load(Ordering::SeqCst), 5);
     }
 

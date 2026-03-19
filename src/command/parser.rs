@@ -1,6 +1,6 @@
+use super::types::CommandParseResult;
 use lazy_static::lazy_static;
 use regex::Regex;
-use super::types::CommandParseResult;
 
 const SLASH_COMMAND_PATTERN: &str = r"^/([a-zA-Z][a-zA-Z0-9_-]*)(?:\s+(.*))?$";
 
@@ -40,14 +40,15 @@ pub fn parse_slash_command(input: &str) -> Option<CommandParseResult> {
         let start = match_str.start();
         let end = match_str.end();
 
-        CommandParseResult::new(full_match, command_name, start, end).with_arguments_optional(arguments)
+        CommandParseResult::new(full_match, command_name, start, end)
+            .with_arguments_optional(arguments)
     })
 }
 
 pub fn find_commands_in_text(text: &str) -> Vec<CommandParseResult> {
     let mut results = Vec::new();
     let mut i = 0;
-    
+
     while i < text.len() {
         if text.as_bytes()[i] == b'/' {
             let at_line_start = i == 0 || text.as_bytes()[i - 1].is_ascii_whitespace();
@@ -55,7 +56,7 @@ pub fn find_commands_in_text(text: &str) -> Vec<CommandParseResult> {
                 if let Some((name, name_end)) = looks_like_command(text, i) {
                     let start = i;
                     i = name_end;
-                    
+
                     let arg_start = i;
                     let mut arg_end = i;
                     while i < text.len() {
@@ -70,14 +71,18 @@ pub fn find_commands_in_text(text: &str) -> Vec<CommandParseResult> {
                         i += 1;
                         arg_end = i;
                     }
-                    
+
                     let args = text[arg_start..arg_end].trim();
-                    let args = if args.is_empty() { None } else { Some(args.to_string()) };
+                    let args = if args.is_empty() {
+                        None
+                    } else {
+                        Some(args.to_string())
+                    };
                     let full_match = text[start..arg_end].to_string();
-                    
+
                     results.push(
                         CommandParseResult::new(full_match, name, start, arg_end)
-                            .with_arguments_optional(args)
+                            .with_arguments_optional(args),
                     );
                 } else {
                     i += 1;
@@ -89,7 +94,7 @@ pub fn find_commands_in_text(text: &str) -> Vec<CommandParseResult> {
             i += 1;
         }
     }
-    
+
     results
 }
 

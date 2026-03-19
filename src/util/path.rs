@@ -305,10 +305,7 @@ mod tests {
     #[test]
     fn test_truncate_middle() {
         // No truncation needed
-        assert_eq!(
-            truncate_middle("/short/path.txt", 50),
-            "/short/path.txt"
-        );
+        assert_eq!(truncate_middle("/short/path.txt", 50), "/short/path.txt");
 
         // Truncation with ...
         let truncated = truncate_middle("/very/long/path/to/some/deep/file.txt", 25);
@@ -323,10 +320,7 @@ mod tests {
         assert_eq!(truncate_middle("/long/path", 1), ".");
 
         // Edge case: exact fit
-        assert_eq!(
-            truncate_middle("/path/file.txt", 14),
-            "/path/file.txt"
-        );
+        assert_eq!(truncate_middle("/path/file.txt", 14), "/path/file.txt");
     }
 
     #[test]
@@ -377,10 +371,7 @@ mod tests {
         );
 
         // Root path
-        assert_eq!(
-            manual_normalize(Utf8Path::new("/")),
-            Utf8PathBuf::from("/")
-        );
+        assert_eq!(manual_normalize(Utf8Path::new("/")), Utf8PathBuf::from("/"));
 
         // Relative with parent beyond root
         assert_eq!(

@@ -9,7 +9,9 @@ use tracing::{debug, error, info};
 use crate::provider::config::ProviderConfig;
 use crate::provider::error::{ProviderError, Result};
 use crate::provider::message::Message;
-use crate::provider::provider_trait::{Provider, ProviderResponse, ProviderToolCall, ToolDefinition, Usage};
+use crate::provider::provider_trait::{
+    Provider, ProviderResponse, ProviderToolCall, ToolDefinition, Usage,
+};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -155,7 +157,11 @@ impl Provider for OpenAiProvider {
         tools: &[ToolDefinition],
     ) -> Result<ProviderResponse> {
         info!("调用 OpenAI API, 模型: {}", model);
-        debug!("请求参数: messages={}, temp={}", messages.len(), temperature);
+        debug!(
+            "请求参数: messages={}, temp={}",
+            messages.len(),
+            temperature
+        );
 
         let url = format!("{}/chat/completions", self.get_base_url());
 
@@ -187,16 +193,20 @@ impl Provider for OpenAiProvider {
             return Err(ProviderError::Authentication);
         }
         if !status.is_success() {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             error!("API 错误: {}", error_text);
             return Err(ProviderError::Api(error_text));
         }
 
         let json: OpenAiResponse = response.json().await?;
 
-        let choice = json.choices.first().ok_or_else(|| {
-            ProviderError::Api("No choices in response".to_string())
-        })?;
+        let choice = json
+            .choices
+            .first()
+            .ok_or_else(|| ProviderError::Api("No choices in response".to_string()))?;
 
         let content = choice
             .message
@@ -222,11 +232,14 @@ impl Provider for OpenAiProvider {
             })
             .unwrap_or_default();
 
-        let usage = json.usage.map(|u| Usage {
-            prompt_tokens: u.prompt_tokens,
-            completion_tokens: u.completion_tokens,
-            total_tokens: u.total_tokens,
-        }).unwrap_or_default();
+        let usage = json
+            .usage
+            .map(|u| Usage {
+                prompt_tokens: u.prompt_tokens,
+                completion_tokens: u.completion_tokens,
+                total_tokens: u.total_tokens,
+            })
+            .unwrap_or_default();
 
         Ok(ProviderResponse {
             content,
@@ -341,8 +354,8 @@ mod tests {
 
     #[test]
     fn test_openai_provider_custom_base_url() {
-        let config = ProviderConfig::new("openai", "sk-test")
-            .with_base_url("https://custom.api.com/v1");
+        let config =
+            ProviderConfig::new("openai", "sk-test").with_base_url("https://custom.api.com/v1");
         let provider = OpenAiProvider::new(config);
         assert_eq!(provider.get_base_url(), "https://custom.api.com/v1");
     }
@@ -386,7 +399,10 @@ mod tests {
 
         let response: OpenAiResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.choices.len(), 1);
-        assert_eq!(response.choices[0].message.as_ref().unwrap().content, Some("Hello!".to_string()));
+        assert_eq!(
+            response.choices[0].message.as_ref().unwrap().content,
+            Some("Hello!".to_string())
+        );
         assert_eq!(response.usage.unwrap().total_tokens, 15);
     }
 
@@ -415,6 +431,9 @@ mod tests {
         assert_eq!(msg.tool_calls.len(), 1);
         assert_eq!(msg.tool_calls[0].id, "call_123");
         assert_eq!(msg.tool_calls[0].function.name, "get_weather");
-        assert_eq!(msg.tool_calls[0].function.arguments, r#"{"location": "Beijing"}"#);
+        assert_eq!(
+            msg.tool_calls[0].function.arguments,
+            r#"{"location": "Beijing"}"#
+        );
     }
 }

@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
 use dashmap::DashMap;
+use tokio::sync::RwLock;
 
 use crate::config::{Config, McpConfig};
 
@@ -41,7 +41,7 @@ impl McpManager {
         }
 
         let mut client = McpClient::new(name);
-        
+
         match client.connect(&config).await {
             Ok(()) => {
                 tracing::info!("MCP server '{}' added and connected", name);
@@ -56,7 +56,8 @@ impl McpManager {
 
         let status = client.status().clone();
         self.statuses.write().await.insert(name.to_string(), status);
-        self.clients.insert(name.to_string(), Arc::new(RwLock::new(client)));
+        self.clients
+            .insert(name.to_string(), Arc::new(RwLock::new(client)));
 
         Ok(())
     }
@@ -79,7 +80,10 @@ impl McpManager {
         if let Some(client) = self.clients.get(name) {
             let mut client = client.write().await;
             client.disconnect().await?;
-            self.statuses.write().await.insert(name.to_string(), McpStatus::Disabled);
+            self.statuses
+                .write()
+                .await
+                .insert(name.to_string(), McpStatus::Disabled);
         }
         Ok(())
     }
@@ -94,25 +98,32 @@ impl McpManager {
 
     pub async fn list_tools(&self) -> HashMap<String, Vec<super::types::McpTool>> {
         let mut result = HashMap::new();
-        
+
         for entry in self.clients.iter() {
             let name = entry.key().clone();
             let client = entry.value().read().await;
-            
+
             if matches!(client.status(), McpStatus::Connected) {
                 if let Ok(tools) = client.list_tools().await {
                     result.insert(name, tools);
                 }
             }
         }
-        
+
         result
     }
 
-    pub async fn call_tool(&self, client_name: &str, tool_name: &str, arguments: Option<serde_json::Value>) -> Result<super::types::McpToolResult> {
-        let client = self.clients.get(client_name)
+    pub async fn call_tool(
+        &self,
+        client_name: &str,
+        tool_name: &str,
+        arguments: Option<serde_json::Value>,
+    ) -> Result<super::types::McpToolResult> {
+        let client = self
+            .clients
+            .get(client_name)
             .ok_or_else(|| McpError::ToolNotFound(client_name.to_string()))?;
-        
+
         let client = client.read().await;
         client.call_tool(tool_name, arguments).await
     }

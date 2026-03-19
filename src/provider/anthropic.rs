@@ -118,7 +118,11 @@ impl Provider for AnthropicProvider {
         _tools: &[ToolDefinition],
     ) -> Result<ProviderResponse> {
         info!("调用 Anthropic API, 模型: {}", model);
-        debug!("请求参数: messages={}, temp={}", messages.len(), temperature);
+        debug!(
+            "请求参数: messages={}, temp={}",
+            messages.len(),
+            temperature
+        );
 
         let url = format!("{}/messages", self.get_base_url());
 
@@ -153,7 +157,10 @@ impl Provider for AnthropicProvider {
             return Err(ProviderError::Authentication);
         }
         if !status.is_success() {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             error!("API 错误: {}", error_text);
             return Err(ProviderError::Api(error_text));
         }

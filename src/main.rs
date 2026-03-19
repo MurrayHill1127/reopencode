@@ -32,12 +32,12 @@ async fn main() -> Result<()> {
                 .add_directive("reopencode=info".parse().unwrap()),
         )
         .init();
-    
+
     tracing::info!("ReOpenCode v{}", VERSION);
-    
+
     // Parse CLI arguments
     let args = cli::Args::parse();
-    
+
     // Execute command
     match args.command {
         Some(cli::Commands::Run { cwd }) => {
@@ -54,6 +54,6 @@ async fn main() -> Result<()> {
             cli::commands::run(None).await?;
         }
     }
-    
+
     Ok(())
 }

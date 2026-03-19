@@ -6,31 +6,32 @@
 //! - 模板变量替换 (`$ARGUMENTS`, `$SESSION_ID`, `$TIMESTAMP`)
 //! - 命令优先级管理 (项目 > 用户 > OpenCode > 内置 > 插件)
 
-mod error;
-mod types;
-mod registry;
-mod discovery;
-mod parser;
-mod template;
 mod builtin;
+mod discovery;
+mod error;
+mod parser;
+mod registry;
+mod template;
+mod types;
 
 pub use error::{CommandError, ParseError, RenderError};
 
 pub use types::{
-    CommandDefinition, CommandMetadata, CommandInfo, CommandScope,
-    HandoffDefinition, CommandParseResult,
+    CommandDefinition, CommandInfo, CommandMetadata, CommandParseResult, CommandScope,
+    HandoffDefinition,
 };
 
 pub use registry::CommandRegistry;
 
-pub use discovery::{CommandDiscovery, discover_commands, DiscoveryOptions};
+pub use discovery::{CommandDiscovery, DiscoveryOptions, discover_commands};
 
-pub use parser::{parse_slash_command, find_commands_in_text};
+pub use parser::{find_commands_in_text, parse_slash_command};
 
-pub use template::{render_template, TemplateContext};
+pub use template::{TemplateContext, render_template};
 
 pub use builtin::{
-    BUILTIN_COMMANDS, BuiltinCommandName, get_builtin_command, is_builtin_command, builtin_command_names,
+    BUILTIN_COMMANDS, BuiltinCommandName, builtin_command_names, get_builtin_command,
+    is_builtin_command,
 };
 
 /// 快捷方法：解析并执行斜杠命令

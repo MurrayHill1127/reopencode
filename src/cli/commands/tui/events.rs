@@ -135,7 +135,8 @@ impl TuiEventSubscriber {
     /// * `app` - Mutable reference to TUI application state
     /// * `props` - Prompt append properties (prompt text)
     pub fn handle_prompt_append(app: &mut TuiApp, props: TuiPromptAppendProperties) {
-        app.input.push_str(&props.prompt);
+        let current = app.input_component.text();
+        app.input_component.set_text(current + &props.prompt);
     }
 
     /// Handle TUI_COMMAND_EXECUTE event - log command to messages
@@ -257,14 +258,14 @@ mod tests {
     #[tokio::test]
     async fn test_handle_prompt_append() {
         let mut app = TuiApp::new();
-        app.input = "existing ".to_string();
+        app.input_component.set_text("existing ");
         let props = TuiPromptAppendProperties {
             prompt: "appended text".to_string(),
         };
 
         TuiEventSubscriber::handle_prompt_append(&mut app, props);
 
-        assert_eq!(app.input, "existing appended text");
+        assert_eq!(app.input_component.text(), "existing appended text");
     }
 
     #[tokio::test]
@@ -276,7 +277,7 @@ mod tests {
 
         TuiEventSubscriber::handle_prompt_append(&mut app, props);
 
-        assert_eq!(app.input, "new prompt");
+        assert_eq!(app.input_component.text(), "new prompt");
     }
 
     #[tokio::test]
@@ -444,7 +445,7 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
         let app = app.read().await;
-        assert_eq!(app.input, "test input");
+        assert_eq!(app.input_component.text(), "test input");
     }
 
     #[tokio::test]

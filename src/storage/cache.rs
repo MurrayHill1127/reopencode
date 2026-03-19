@@ -14,10 +14,10 @@ use tokio::sync::RwLock;
 pub struct CacheConfig {
     /// Maximum memory usage in bytes
     pub max_memory: usize,
-    
+
     /// Entry time-to-live in seconds
     pub ttl_seconds: u64,
-    
+
     /// Maximum number of entries
     pub max_entries: usize,
 }
@@ -26,7 +26,7 @@ impl Default for CacheConfig {
     fn default() -> Self {
         Self {
             max_memory: 64 * 1024 * 1024, // 64MB
-            ttl_seconds: 300,              // 5 minutes
+            ttl_seconds: 300,             // 5 minutes
             max_entries: 1000,
         }
     }
@@ -61,17 +61,17 @@ pub struct CacheStats {
 }
 
 /// In-memory cache with LRU eviction and TTL support
-/// 
+///
 /// Thread-safe through `Arc<RwLock<>>`. Uses serialized bytes internally
 /// to support any serializable type.
-/// 
+///
 /// # Example
-/// 
+///
 /// ```rust
 /// use reopencode::storage::{MemoryCache, CacheConfig};
-/// 
+///
 /// let cache = MemoryCache::new(CacheConfig::default());
-/// 
+///
 /// cache.set("user:123", serde_json::json!({"name": "Alice"}));
 /// let value: Option<serde_json::Value> = cache.get("user:123");
 /// assert!(value.is_some());
@@ -105,33 +105,33 @@ impl MemoryCache {
     }
 
     /// Set a cache entry
-    /// 
+    ///
     /// Serializes the value to JSON and stores it with the given key.
     /// Evicts entries if memory or count limits are exceeded.
     pub fn set<T: serde::Serialize + Clone>(&self, key: impl Into<String>, value: T) {
         let key = key.into();
         let serialized = serde_json::to_vec(&value).unwrap_or_default();
         let size = serialized.len();
-        
+
         let entry = CacheEntry {
             data: serialized,
             created_at: Instant::now(),
             accessed_at: Instant::now(),
             size,
         };
-        
+
         // Synchronous write for simplicity
         if let Ok(mut inner) = self.inner.try_write() {
             // Evict entries if needed
             while inner.total_size + size > self.config.max_memory && !inner.entries.is_empty() {
                 self.evict_lru(&mut inner);
             }
-            
+
             // Evict if too many entries
             while inner.entries.len() >= self.config.max_entries && !inner.entries.is_empty() {
                 self.evict_lru(&mut inner);
             }
-            
+
             // Insert new entry
             if let Some(old) = inner.entries.insert(key.clone(), entry) {
                 inner.total_size -= old.size;
@@ -143,15 +143,16 @@ impl MemoryCache {
     }
 
     /// Get a cache entry
-    /// 
+    ///
     /// Returns `None` if the key doesn't exist or the entry has expired.
     /// Updates the access time on hit.
     pub fn get<T: serde::de::DeserializeOwned + Clone>(&self, key: &str) -> Option<T> {
         if let Ok(mut inner) = self.inner.try_write() {
-            let entry_info = inner.entries.get(key).map(|e| {
-                (e.data.clone(), e.created_at.elapsed(), e.size)
-            });
-            
+            let entry_info = inner
+                .entries
+                .get(key)
+                .map(|e| (e.data.clone(), e.created_at.elapsed(), e.size));
+
             match entry_info {
                 Some((data, elapsed, size)) => {
                     if elapsed > Duration::from_secs(self.config.ttl_seconds) {
@@ -162,12 +163,12 @@ impl MemoryCache {
                         inner.stats.total_size = inner.total_size;
                         return None;
                     }
-                    
+
                     if let Some(entry) = inner.entries.get_mut(key) {
                         entry.accessed_at = Instant::now();
                     }
                     inner.stats.hits += 1;
-                    
+
                     return serde_json::from_slice(&data).ok();
                 }
                 None => {
@@ -244,7 +245,7 @@ mod tests {
     #[test]
     fn test_cache_set_get() {
         let cache = MemoryCache::new(CacheConfig::default());
-        
+
         cache.set("test-key", "test-value");
         let value: Option<String> = cache.get("test-key");
         assert_eq!(value, Some("test-value".to_string()));
@@ -253,10 +254,10 @@ mod tests {
     #[test]
     fn test_cache_remove() {
         let cache = MemoryCache::new(CacheConfig::default());
-        
+
         cache.set("test-key", "test-value");
         assert!(cache.contains("test-key"));
-        
+
         cache.remove("test-key");
         assert!(!cache.contains("test-key"));
     }
@@ -264,12 +265,12 @@ mod tests {
     #[test]
     fn test_cache_clear() {
         let cache = MemoryCache::new(CacheConfig::default());
-        
+
         cache.set("key1", "value1");
         cache.set("key2", "value2");
-        
+
         cache.clear();
-        
+
         assert!(!cache.contains("key1"));
         assert!(!cache.contains("key2"));
     }
@@ -277,10 +278,10 @@ mod tests {
     #[test]
     fn test_cache_stats() {
         let cache = MemoryCache::new(CacheConfig::default());
-        
+
         cache.set("key1", "value1");
         cache.set("key2", "value2");
-        
+
         let stats = cache.stats();
         assert_eq!(stats.entries, 2);
         assert!(stats.total_size > 0);
@@ -293,12 +294,12 @@ mod tests {
             ..Default::default()
         };
         let cache = MemoryCache::new(config);
-        
+
         cache.set("test-key", "test-value");
-        
+
         // Wait a tiny bit for expiration
         std::thread::sleep(std::time::Duration::from_millis(10));
-        
+
         let value: Option<String> = cache.get("test-key");
         assert!(value.is_none());
     }
@@ -311,12 +312,12 @@ mod tests {
             ..Default::default()
         };
         let cache = MemoryCache::new(config);
-        
+
         // Add entries that exceed limits
         cache.set("key1", "x".repeat(50));
         cache.set("key2", "x".repeat(50));
         cache.set("key3", "x".repeat(50)); // Should trigger eviction
-        
+
         let stats = cache.stats();
         assert!(stats.entries <= 2);
     }
@@ -324,31 +325,31 @@ mod tests {
     #[test]
     fn test_cache_json_values() {
         let cache = MemoryCache::new(CacheConfig::default());
-        
+
         let value = serde_json::json!({
             "name": "Alice",
             "age": 30,
             "active": true
         });
-        
+
         cache.set("user:123", value.clone());
         let retrieved: Option<serde_json::Value> = cache.get("user:123");
-        
+
         assert_eq!(retrieved, Some(value));
     }
 
     #[test]
     fn test_cache_hit_miss_stats() {
         let cache = MemoryCache::new(CacheConfig::default());
-        
+
         cache.set("key1", "value1");
-        
+
         // Hit
         let _: Option<String> = cache.get("key1");
-        
+
         // Miss
         let _: Option<String> = cache.get("nonexistent");
-        
+
         let stats = cache.stats();
         assert_eq!(stats.hits, 1);
         assert_eq!(stats.misses, 1);

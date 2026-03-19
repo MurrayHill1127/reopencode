@@ -29,12 +29,12 @@
 //! }
 //! ```
 
-pub mod error;
-pub mod types;
-pub mod parser;
 pub mod discovery;
-pub mod registry;
+pub mod error;
 pub mod loader;
+pub mod parser;
+pub mod registry;
+pub mod types;
 
 // Re-export error types
 pub use error::{ParseError, SkillError};
@@ -54,7 +54,7 @@ pub use discovery::{discover_skills, discover_skills_with_options};
 pub use registry::SkillRegistry;
 
 // Re-export loader
-pub use loader::{pull_skills_from_url, SkillLoader};
+pub use loader::{SkillLoader, pull_skills_from_url};
 
 /// Get a skill by name from the global registry
 pub async fn get(name: &str) -> Option<SkillInfo> {
@@ -91,7 +91,10 @@ pub fn format_skills(skills: &[SkillInfo], verbose: bool) -> String {
             })
             .collect();
 
-        format!("<available_skills>\n{}\n</available_skills>", items.join("\n"))
+        format!(
+            "<available_skills>\n{}\n</available_skills>",
+            items.join("\n")
+        )
     } else {
         let items: Vec<String> = skills
             .iter()
@@ -146,7 +149,11 @@ mod tests {
         // Clear first to ensure clean state
         registry.clear().await;
 
-        let skill = SkillInfo::new("global-test".to_string(), "Test".to_string(), SkillScope::Project);
+        let skill = SkillInfo::new(
+            "global-test".to_string(),
+            "Test".to_string(),
+            SkillScope::Project,
+        );
         registry.register(skill).await.unwrap();
 
         let retrieved = get("global-test").await;

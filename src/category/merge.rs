@@ -4,8 +4,8 @@
 
 use std::collections::HashMap;
 
-use super::types::CategoryConfig;
 use super::defaults::DEFAULT_CATEGORIES;
+use super::types::CategoryConfig;
 
 /// Merge user categories with defaults
 ///
@@ -36,15 +36,11 @@ pub fn merge_single_category(
     user_config: Option<&CategoryConfig>,
 ) -> Option<CategoryConfig> {
     let default = DEFAULT_CATEGORIES.get(category_name).cloned();
-    
+
     match (default, user_config) {
         (Some(mut base), Some(override_config)) => {
             base.merge(override_config);
-            if base.disable {
-                None
-            } else {
-                Some(base)
-            }
+            if base.disable { None } else { Some(base) }
         }
         (Some(base), None) => {
             if base.disable {

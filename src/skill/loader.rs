@@ -38,10 +38,7 @@ impl SkillLoader {
     ///
     /// Returns [`SkillError::RemoteLoadError`] indicating that remote loading
     /// is not yet implemented.
-    pub async fn pull_from_url(
-        &self,
-        _url: &str,
-    ) -> Result<Vec<SkillInfo>, SkillError> {
+    pub async fn pull_from_url(&self, _url: &str) -> Result<Vec<SkillInfo>, SkillError> {
         // MVP stub: return error
         Err(SkillError::RemoteLoadError(
             "Remote skill loading not implemented in MVP".to_string(),
@@ -111,7 +108,7 @@ mod tests {
         // Use a blocking runtime for testing async function
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(pull_skills_from_url("https://example.com/skills"));
-        
+
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }
@@ -119,10 +116,10 @@ mod tests {
     #[test]
     fn test_pull_from_url_returns_error() {
         let loader = SkillLoader::new();
-        
+
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(loader.pull_from_url("https://example.com/skills"));
-        
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, SkillError::RemoteLoadError(_)));

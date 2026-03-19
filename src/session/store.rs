@@ -186,7 +186,10 @@ impl SessionStore {
 
     /// Create a new message
     pub async fn create_message(&self, message: &SessionMessage) -> Result<()> {
-        debug!("Creating message: {} in session: {}", message.id, message.session_id);
+        debug!(
+            "Creating message: {} in session: {}",
+            message.id, message.session_id
+        );
 
         sqlx::query(
             r#"
@@ -413,7 +416,11 @@ mod tests {
         store.create_session(&session).await.unwrap();
 
         let msg1 = SessionMessage::new(session_id.clone(), "user".to_string(), "Hello".to_string());
-        let msg2 = SessionMessage::new(session_id.clone(), "assistant".to_string(), "Hi".to_string());
+        let msg2 = SessionMessage::new(
+            session_id.clone(),
+            "assistant".to_string(),
+            "Hi".to_string(),
+        );
 
         store.create_message(&msg1).await.unwrap();
         store.create_message(&msg2).await.unwrap();

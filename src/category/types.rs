@@ -2,10 +2,10 @@
 //!
 //! Defines all types used for task classification and model selection.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
-use serde::{Deserialize, Serialize};
 
 /// Built-in category names for task classification
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -97,7 +97,8 @@ impl BuiltinCategoryName {
             Self::UnspecifiedLow,
             Self::UnspecifiedHigh,
             Self::Writing,
-        ].into_iter()
+        ]
+        .into_iter()
     }
 }
 
@@ -543,7 +544,10 @@ mod tests {
 
     #[test]
     fn test_builtin_category_name_str() {
-        assert_eq!(BuiltinCategoryName::VisualEngineering.as_str(), "visual-engineering");
+        assert_eq!(
+            BuiltinCategoryName::VisualEngineering.as_str(),
+            "visual-engineering"
+        );
         assert_eq!(BuiltinCategoryName::Ultrabrain.as_str(), "ultrabrain");
         assert_eq!(BuiltinCategoryName::Quick.as_str(), "quick");
     }
@@ -592,8 +596,9 @@ mod tests {
         let entry = FallbackEntry::new(
             vec!["google".to_string(), "opencode".to_string()],
             "gemini-3.1-pro",
-        ).with_variant(ModelVariant::High);
-        
+        )
+        .with_variant(ModelVariant::High);
+
         assert_eq!(entry.providers.len(), 2);
         assert_eq!(entry.model, "gemini-3.1-pro");
         assert_eq!(entry.variant, Some(ModelVariant::High));
@@ -601,8 +606,8 @@ mod tests {
 
     #[test]
     fn test_resolved_model() {
-        let model = ResolvedModel::new("anthropic", "claude-opus-4-6")
-            .with_variant(ModelVariant::Max);
+        let model =
+            ResolvedModel::new("anthropic", "claude-opus-4-6").with_variant(ModelVariant::Max);
         assert_eq!(model.full_model(), "anthropic/claude-opus-4-6");
         assert_eq!(model.variant, Some(ModelVariant::Max));
     }
@@ -616,10 +621,10 @@ mod tests {
             disable: false,
             ..Default::default()
         };
-        
+
         let json = serde_json::to_string(&config).unwrap();
         let parsed: CategoryConfig = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(parsed.model, config.model);
         assert_eq!(parsed.variant, config.variant);
         assert_eq!(parsed.temperature, config.temperature);

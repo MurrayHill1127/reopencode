@@ -3,10 +3,10 @@
 //! Provides registration, unregistration, and query capabilities
 //! for hooks organized by event type and priority.
 
+use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use chrono::{DateTime, Utc};
 
 use super::{Hook, HookError, HookEventType, HookId};
 
@@ -301,7 +301,10 @@ mod tests {
         let mut registry = HookRegistry::new();
 
         let hook1 = TestHook::new("hook1", vec![HookEventType::ChatMessage]);
-        let hook2 = TestHook::new("hook2", vec![HookEventType::ChatMessage, HookEventType::ToolExecuteBefore]);
+        let hook2 = TestHook::new(
+            "hook2",
+            vec![HookEventType::ChatMessage, HookEventType::ToolExecuteBefore],
+        );
 
         registry.register(Box::new(hook1)).unwrap();
         registry.register(Box::new(hook2)).unwrap();

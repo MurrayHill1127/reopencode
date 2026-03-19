@@ -1,8 +1,8 @@
- use async_trait::async_trait;
+use async_trait::async_trait;
 use serde_json::Value;
 use std::process::Command;
 
-use crate::tool::error::{ToolError, Result};
+use crate::tool::error::{Result, ToolError};
 use crate::tool::traits::{Tool, ToolResult};
 
 /// Bash tool - execute shell commands

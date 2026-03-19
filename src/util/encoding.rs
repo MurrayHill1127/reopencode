@@ -20,7 +20,7 @@
 //! assert_eq!(hex, "48656c6c6f");
 //! ```
 
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use fnv::FnvHasher;
 use std::hash::Hasher;
 

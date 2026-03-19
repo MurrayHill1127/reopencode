@@ -21,7 +21,11 @@ pub async fn add(
     Json(body): Json<crate::mcp::McpAddRequest>,
 ) -> Json<serde_json::Value> {
     let config = match body.config {
-        McpConfigRequest::Local { command, environment, timeout: _ } => {
+        McpConfigRequest::Local {
+            command,
+            environment,
+            timeout: _,
+        } => {
             let mut args = vec![];
             if command.len() > 1 {
                 args = command[1..].to_vec();
@@ -33,7 +37,11 @@ pub async fn add(
                 cwd: None,
             })
         }
-        McpConfigRequest::Remote { url, headers, timeout } => {
+        McpConfigRequest::Remote {
+            url,
+            headers,
+            timeout,
+        } => {
             let token = headers.and_then(|h| h.get("Authorization").cloned());
             crate::config::McpConfig::Remote(crate::config::McpRemoteConfig {
                 url,
@@ -87,19 +95,13 @@ pub async fn auth_remove(
 }
 
 /// POST /mcp/:name/connect - Connect to MCP server
-pub async fn connect(
-    State(state): State<AppState>,
-    Path(name): Path<String>,
-) -> Json<bool> {
+pub async fn connect(State(state): State<AppState>, Path(name): Path<String>) -> Json<bool> {
     let client = state.mcp_manager.get_client(&name).await;
     Json(client.is_some())
 }
 
 /// POST /mcp/:name/disconnect - Disconnect from MCP server
-pub async fn disconnect(
-    State(state): State<AppState>,
-    Path(name): Path<String>,
-) -> Json<bool> {
+pub async fn disconnect(State(state): State<AppState>, Path(name): Path<String>) -> Json<bool> {
     if let Err(e) = state.mcp_manager.disconnect(&name).await {
         tracing::error!("Failed to disconnect MCP server '{}': {}", name, e);
         Json(false)

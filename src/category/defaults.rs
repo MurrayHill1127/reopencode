@@ -2,73 +2,73 @@
 //!
 //! Contains built-in category configurations with model mappings.
 
+use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::str::FromStr;
-use lazy_static::lazy_static;
 
-use super::types::{CategoryConfig, ModelVariant, BuiltinCategoryName};
+use super::types::{BuiltinCategoryName, CategoryConfig, ModelVariant};
 
 lazy_static! {
     /// Default category configurations
     pub static ref DEFAULT_CATEGORIES: HashMap<String, CategoryConfig> = {
         let mut m = HashMap::new();
-        
+
         m.insert("visual-engineering".to_string(), CategoryConfig {
             model: Some("google/gemini-3.1-pro".to_string()),
             variant: Some(ModelVariant::High),
             description: Some("Frontend, UI/UX, design, styling, animation".to_string()),
             ..Default::default()
         });
-        
+
         m.insert("ultrabrain".to_string(), CategoryConfig {
             model: Some("openai/gpt-5.4".to_string()),
             variant: Some(ModelVariant::Xhigh),
             description: Some("Hard logic tasks, architecture decisions".to_string()),
             ..Default::default()
         });
-        
+
         m.insert("deep".to_string(), CategoryConfig {
             model: Some("openai/gpt-5.3-codex".to_string()),
             variant: Some(ModelVariant::Medium),
             description: Some("Autonomous problem-solving with deep understanding".to_string()),
             ..Default::default()
         });
-        
+
         m.insert("artistry".to_string(), CategoryConfig {
             model: Some("google/gemini-3.1-pro".to_string()),
             variant: Some(ModelVariant::High),
             description: Some("Creative approaches, unconventional solutions".to_string()),
             ..Default::default()
         });
-        
+
         m.insert("quick".to_string(), CategoryConfig {
             model: Some("anthropic/claude-haiku-4-5".to_string()),
             description: Some("Trivial tasks - single file changes, typo fixes".to_string()),
             ..Default::default()
         });
-        
+
         m.insert("unspecified-low".to_string(), CategoryConfig {
             model: Some("anthropic/claude-sonnet-4-6".to_string()),
             description: Some("General tasks with low complexity".to_string()),
             ..Default::default()
         });
-        
+
         m.insert("unspecified-high".to_string(), CategoryConfig {
             model: Some("anthropic/claude-opus-4-6".to_string()),
             variant: Some(ModelVariant::Max),
             description: Some("General tasks with high complexity".to_string()),
             ..Default::default()
         });
-        
+
         m.insert("writing".to_string(), CategoryConfig {
             model: Some("kimi-for-coding/k2p5".to_string()),
             description: Some("Documentation, prose, technical writing".to_string()),
             ..Default::default()
         });
-        
+
         m
     };
-    
+
     /// Category descriptions
     pub static ref CATEGORY_DESCRIPTIONS: HashMap<&'static str, &'static str> = {
         let mut m = HashMap::new();
@@ -86,7 +86,9 @@ lazy_static! {
 
 /// Get default model for a category
 pub fn get_default_model(category: &str) -> Option<&'static str> {
-    DEFAULT_CATEGORIES.get(category).and_then(|c| c.model.as_deref())
+    DEFAULT_CATEGORIES
+        .get(category)
+        .and_then(|c| c.model.as_deref())
 }
 
 /// Get default variant for a category
@@ -142,14 +144,20 @@ mod tests {
 
     #[test]
     fn test_get_default_model() {
-        assert_eq!(get_default_model("quick"), Some("anthropic/claude-haiku-4-5"));
+        assert_eq!(
+            get_default_model("quick"),
+            Some("anthropic/claude-haiku-4-5")
+        );
         assert_eq!(get_default_model("ultrabrain"), Some("openai/gpt-5.4"));
         assert_eq!(get_default_model("invalid"), None);
     }
 
     #[test]
     fn test_get_default_variant() {
-        assert_eq!(get_default_variant("visual-engineering"), Some(ModelVariant::High));
+        assert_eq!(
+            get_default_variant("visual-engineering"),
+            Some(ModelVariant::High)
+        );
         assert_eq!(get_default_variant("ultrabrain"), Some(ModelVariant::Xhigh));
         assert_eq!(get_default_variant("quick"), None);
     }

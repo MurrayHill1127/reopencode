@@ -131,7 +131,10 @@ pub enum RelativeTimeStyle {
 ///     "3 hours ago"
 /// );
 /// ```
-pub fn format_relative_time(datetime: chrono::DateTime<chrono::Utc>, style: RelativeTimeStyle) -> String {
+pub fn format_relative_time(
+    datetime: chrono::DateTime<chrono::Utc>,
+    style: RelativeTimeStyle,
+) -> String {
     let now = chrono::Utc::now();
     let diff = now.signed_duration_since(datetime);
 
@@ -378,10 +381,22 @@ mod tests {
         let ago_3h = now - Duration::hours(3);
         let ago_2d = now - Duration::days(2);
 
-        assert_eq!(format_relative_time(ago_30s, RelativeTimeStyle::Chinese), "刚刚");
-        assert_eq!(format_relative_time(ago_5m, RelativeTimeStyle::Chinese), "5 分钟前");
-        assert_eq!(format_relative_time(ago_3h, RelativeTimeStyle::Chinese), "3 小时前");
-        assert_eq!(format_relative_time(ago_2d, RelativeTimeStyle::Chinese), "2 天前");
+        assert_eq!(
+            format_relative_time(ago_30s, RelativeTimeStyle::Chinese),
+            "刚刚"
+        );
+        assert_eq!(
+            format_relative_time(ago_5m, RelativeTimeStyle::Chinese),
+            "5 分钟前"
+        );
+        assert_eq!(
+            format_relative_time(ago_3h, RelativeTimeStyle::Chinese),
+            "3 小时前"
+        );
+        assert_eq!(
+            format_relative_time(ago_2d, RelativeTimeStyle::Chinese),
+            "2 天前"
+        );
     }
 
     #[test]
@@ -394,10 +409,22 @@ mod tests {
         let ago_3h = now - Duration::hours(3);
         let ago_2d = now - Duration::days(2);
 
-        assert_eq!(format_relative_time(ago_30s, RelativeTimeStyle::English), "just now");
-        assert_eq!(format_relative_time(ago_5m, RelativeTimeStyle::English), "5 minutes ago");
-        assert_eq!(format_relative_time(ago_3h, RelativeTimeStyle::English), "3 hours ago");
-        assert_eq!(format_relative_time(ago_2d, RelativeTimeStyle::English), "2 days ago");
+        assert_eq!(
+            format_relative_time(ago_30s, RelativeTimeStyle::English),
+            "just now"
+        );
+        assert_eq!(
+            format_relative_time(ago_5m, RelativeTimeStyle::English),
+            "5 minutes ago"
+        );
+        assert_eq!(
+            format_relative_time(ago_3h, RelativeTimeStyle::English),
+            "3 hours ago"
+        );
+        assert_eq!(
+            format_relative_time(ago_2d, RelativeTimeStyle::English),
+            "2 days ago"
+        );
     }
 
     #[test]
@@ -409,8 +436,17 @@ mod tests {
         let ago_5m = now - Duration::minutes(5);
         let ago_3h = now - Duration::hours(3);
 
-        assert_eq!(format_relative_time(ago_30s, RelativeTimeStyle::Iso8601), "PT30S");
-        assert_eq!(format_relative_time(ago_5m, RelativeTimeStyle::Iso8601), "PT5M");
-        assert_eq!(format_relative_time(ago_3h, RelativeTimeStyle::Iso8601), "PT3H");
+        assert_eq!(
+            format_relative_time(ago_30s, RelativeTimeStyle::Iso8601),
+            "PT30S"
+        );
+        assert_eq!(
+            format_relative_time(ago_5m, RelativeTimeStyle::Iso8601),
+            "PT5M"
+        );
+        assert_eq!(
+            format_relative_time(ago_3h, RelativeTimeStyle::Iso8601),
+            "PT3H"
+        );
     }
 }

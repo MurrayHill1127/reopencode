@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::builtin::BUILTIN_COMMANDS;
-use super::types::{CommandInfo, CommandScope, CommandMetadata};
+use super::types::{CommandInfo, CommandMetadata, CommandScope};
 
 /// Discovery options for command loading
 #[derive(Debug, Clone, Default)]
@@ -33,7 +33,9 @@ impl DiscoveryOptions {
 
     /// Set plugin override map
     pub fn with_plugin_override(mut self, plugin: impl Into<String>, enabled: bool) -> Self {
-        let overrides = self.enabled_plugins_override.get_or_insert_with(HashMap::new);
+        let overrides = self
+            .enabled_plugins_override
+            .get_or_insert_with(HashMap::new);
         overrides.insert(plugin.into(), enabled);
         self
     }
@@ -193,7 +195,10 @@ mod tests {
         assert!(opts.plugins_enabled);
         assert!(opts.enabled_plugins_override.is_some());
         assert_eq!(
-            opts.enabled_plugins_override.as_ref().unwrap().get("test-plugin"),
+            opts.enabled_plugins_override
+                .as_ref()
+                .unwrap()
+                .get("test-plugin"),
             Some(&true)
         );
     }

@@ -134,7 +134,11 @@ impl Provider for ZhipuProvider {
         _tools: &[ToolDefinition],
     ) -> Result<ProviderResponse> {
         info!("调用智谱 AI API, 模型: {}", model);
-        debug!("请求参数: messages={}, temp={}", messages.len(), temperature);
+        debug!(
+            "请求参数: messages={}, temp={}",
+            messages.len(),
+            temperature
+        );
 
         let url = format!("{}/chat/completions", self.get_base_url());
 
@@ -165,7 +169,10 @@ impl Provider for ZhipuProvider {
             return Err(ProviderError::Authentication);
         }
         if !status.is_success() {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             error!("API 错误: {}", error_text);
             return Err(ProviderError::Api(error_text));
         }
@@ -178,9 +185,9 @@ impl Provider for ZhipuProvider {
         }
 
         let choices = json.choices.unwrap_or_default();
-        let choice = choices.first().ok_or_else(|| {
-            ProviderError::Api("No choices in response".to_string())
-        })?;
+        let choice = choices
+            .first()
+            .ok_or_else(|| ProviderError::Api("No choices in response".to_string()))?;
 
         let content = choice
             .message
@@ -188,11 +195,14 @@ impl Provider for ZhipuProvider {
             .map(|m| m.content.clone())
             .unwrap_or_default();
 
-        let usage = json.usage.map(|u| Usage {
-            prompt_tokens: u.prompt_tokens,
-            completion_tokens: u.completion_tokens,
-            total_tokens: u.total_tokens,
-        }).unwrap_or_default();
+        let usage = json
+            .usage
+            .map(|u| Usage {
+                prompt_tokens: u.prompt_tokens,
+                completion_tokens: u.completion_tokens,
+                total_tokens: u.total_tokens,
+            })
+            .unwrap_or_default();
 
         Ok(ProviderResponse {
             content,

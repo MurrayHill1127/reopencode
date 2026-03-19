@@ -27,11 +27,17 @@ impl ProviderRegistry {
         let name = provider.name().to_string();
         info!("注册 Provider: {}", name);
 
-        let mut providers = self.providers.write().expect("Failed to acquire write lock");
+        let mut providers = self
+            .providers
+            .write()
+            .expect("Failed to acquire write lock");
         providers.insert(name.clone(), provider);
 
         if providers.len() == 1 {
-            let mut default = self.default_provider.write().expect("Failed to acquire write lock");
+            let mut default = self
+                .default_provider
+                .write()
+                .expect("Failed to acquire write lock");
             *default = name;
             debug!("设置默认 Provider: {}", *default);
         }
@@ -45,7 +51,10 @@ impl ProviderRegistry {
 
     /// Get the default provider
     pub fn get_default(&self) -> Option<Arc<dyn Provider>> {
-        let default = self.default_provider.read().expect("Failed to acquire read lock");
+        let default = self
+            .default_provider
+            .read()
+            .expect("Failed to acquire read lock");
         self.get(&default)
     }
 
@@ -60,7 +69,10 @@ impl ProviderRegistry {
     }
 
     pub fn default_provider(&self) -> String {
-        self.default_provider.read().expect("Failed to acquire read lock").clone()
+        self.default_provider
+            .read()
+            .expect("Failed to acquire read lock")
+            .clone()
     }
 
     pub fn set_default(&self, name: &str) -> Result<()> {
@@ -71,7 +83,10 @@ impl ProviderRegistry {
         }
         drop(providers);
 
-        let mut default = self.default_provider.write().expect("Failed to acquire write lock");
+        let mut default = self
+            .default_provider
+            .write()
+            .expect("Failed to acquire write lock");
         *default = name.to_string();
         info!("设置默认 Provider: {}", name);
         Ok(())
@@ -83,7 +98,10 @@ impl ProviderRegistry {
     }
 
     pub fn remove(&self, name: &str) -> Option<String> {
-        let mut providers = self.providers.write().expect("Failed to acquire write lock");
+        let mut providers = self
+            .providers
+            .write()
+            .expect("Failed to acquire write lock");
         providers.remove(name).map(|_| {
             info!("移除 Provider: {}", name);
             name.to_string()
@@ -91,7 +109,10 @@ impl ProviderRegistry {
     }
 
     pub fn clear(&self) {
-        let mut providers = self.providers.write().expect("Failed to acquire write lock");
+        let mut providers = self
+            .providers
+            .write()
+            .expect("Failed to acquire write lock");
         providers.clear();
         info!("清空所有 Provider");
     }
@@ -169,9 +190,9 @@ mod tests {
         let registry = ProviderRegistry::new();
         let config = ProviderConfig::new("openai", "sk-test");
         let provider = OpenAiProvider::new(config);
-        
+
         registry.register(Arc::new(provider));
-        
+
         assert_eq!(registry.len(), 1);
         assert!(registry.list().contains(&"openai".to_string()));
     }
@@ -198,10 +219,10 @@ mod tests {
     #[test]
     fn test_registry_set_default() {
         let registry = ProviderRegistry::new();
-        
+
         let config1 = ProviderConfig::new("openai", "sk-test1");
         let config2 = ProviderConfig::new("anthropic", "sk-ant-test2");
-        
+
         registry.register(Arc::new(OpenAiProvider::new(config1)));
         registry.register(Arc::new(AnthropicProvider::new(config2)));
 
@@ -232,8 +253,13 @@ mod tests {
     #[test]
     fn test_registry_clear() {
         let registry = ProviderRegistry::new();
-        registry.register(Arc::new(OpenAiProvider::new(ProviderConfig::new("openai", "sk-test"))));
-        registry.register(Arc::new(AnthropicProvider::new(ProviderConfig::new("anthropic", "sk-ant-test"))));
+        registry.register(Arc::new(OpenAiProvider::new(ProviderConfig::new(
+            "openai", "sk-test",
+        ))));
+        registry.register(Arc::new(AnthropicProvider::new(ProviderConfig::new(
+            "anthropic",
+            "sk-ant-test",
+        ))));
 
         assert_eq!(registry.len(), 2);
         registry.clear();
@@ -267,7 +293,9 @@ models = ["claude-3-opus"]
     #[test]
     fn test_registry_clone() {
         let registry = ProviderRegistry::new();
-        registry.register(Arc::new(OpenAiProvider::new(ProviderConfig::new("openai", "sk-test"))));
+        registry.register(Arc::new(OpenAiProvider::new(ProviderConfig::new(
+            "openai", "sk-test",
+        ))));
 
         let cloned = registry.clone();
         assert_eq!(cloned.len(), 1);

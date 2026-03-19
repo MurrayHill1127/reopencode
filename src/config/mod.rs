@@ -23,11 +23,11 @@
 //! ```
 
 pub mod error;
-pub mod types;
 pub mod loader;
+pub mod merge;
 pub mod paths;
 pub mod substitution;
-pub mod merge;
+pub mod types;
 pub mod validation;
 
 // Re-export error types
@@ -35,21 +35,16 @@ pub use error::{ConfigError, MergeError, ValidationError};
 
 // Re-export config types
 pub use types::{
-    Config, 
-    ServerConfig, 
-    AgentConfig, AgentConfigs, AgentMode,
-    ProviderConfig,
-    McpConfig, McpLocalConfig, McpRemoteConfig,
-    PermissionConfig, PermissionPolicy, PermissionRule,
-    CommandConfig, SkillsConfig, StorageConfig, StorageType,
-    HookConfig,
+    AgentConfig, AgentConfigs, AgentMode, CommandConfig, Config, HookConfig, McpConfig,
+    McpLocalConfig, McpRemoteConfig, PermissionConfig, PermissionPolicy, PermissionRule,
+    ProviderConfig, ServerConfig, SkillsConfig, StorageConfig, StorageType,
 };
 
 // Re-export CategoryConfig from category module
 pub use crate::category::CategoryConfig;
 
 // Re-export loader
-pub use loader::{ConfigLoader, ConfigLayer};
+pub use loader::{ConfigLayer, ConfigLoader};
 
 // Re-export paths
 pub use paths::ConfigPaths;
@@ -62,7 +57,7 @@ pub use validation::Validator;
 
 impl Config {
     /// 快捷方法：加载完整配置
-    /// 
+    ///
     /// 等价于 `ConfigLoader::new().load()`
     pub fn load() -> Result<Self, ConfigError> {
         ConfigLoader::new().load()

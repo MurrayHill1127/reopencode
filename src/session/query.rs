@@ -38,7 +38,10 @@ impl SessionQuery {
         }
 
         if let Some(ref title) = filter.title_contains {
-            query.push_str(&format!(" AND title LIKE '%{}%'", title.replace('\'', "''")));
+            query.push_str(&format!(
+                " AND title LIKE '%{}%'",
+                title.replace('\'', "''")
+            ));
         }
 
         if let Some(after) = filter.created_after {

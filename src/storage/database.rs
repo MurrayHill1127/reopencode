@@ -11,7 +11,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use crate::storage::{DatabaseError, StorageError};
 
 /// Database manager
-/// 
+///
 /// Manages SQLite connection pool with optimized settings for ROC.
 pub struct Database {
     pool: SqlitePool,
@@ -20,7 +20,7 @@ pub struct Database {
 
 impl Database {
     /// Open database at the given path
-    /// 
+    ///
     /// Creates the database file if it doesn't exist.
     /// Configures WAL mode and optimized PRAGMA settings.
     pub async fn open(path: &Path) -> Result<Self, DatabaseError> {
@@ -29,7 +29,7 @@ impl Database {
                 .await
                 .map_err(|e| DatabaseError::ConnectionFailed(e.to_string()))?;
         }
-        
+
         let options = SqliteConnectOptions::new()
             .filename(path)
             .create_if_missing(true)
@@ -37,21 +37,21 @@ impl Database {
             .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
             .busy_timeout(Duration::from_secs(5))
             .foreign_keys(true);
-        
+
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
             .connect_with(options)
             .await?;
-        
+
         // Set performance PRAGMAs
         sqlx::query("PRAGMA cache_size = -64000")
             .execute(&pool)
             .await?;
-        
+
         sqlx::query("PRAGMA wal_checkpoint(PASSIVE)")
             .execute(&pool)
             .await?;
-        
+
         Ok(Self {
             pool,
             path: path.to_path_buf(),
@@ -81,13 +81,12 @@ impl Database {
 
     /// Check if a table exists
     pub async fn table_exists(&self, name: &str) -> Result<bool, DatabaseError> {
-        let result: Option<(i32,)> = sqlx::query_as(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?"
-        )
-        .bind(name)
-        .fetch_optional(&self.pool)
-        .await?;
-        
+        let result: Option<(i32,)> =
+            sqlx::query_as("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+                .bind(name)
+                .fetch_optional(&self.pool)
+                .await?;
+
         Ok(result.is_some())
     }
 
@@ -96,26 +95,24 @@ impl Database {
         if !self.table_exists("_migrations").await? {
             return Ok(0);
         }
-        
-        let result: Option<(Option<i32>,)> = sqlx::query_as(
-            "SELECT MAX(version) FROM _migrations"
-        )
-        .fetch_optional(&self.pool)
-        .await?;
-        
+
+        let result: Option<(Option<i32>,)> = sqlx::query_as("SELECT MAX(version) FROM _migrations")
+            .fetch_optional(&self.pool)
+            .await?;
+
         Ok(result.and_then(|r| r.0).unwrap_or(0))
     }
 
     /// Record a migration
     pub async fn record_migration(&self, version: i32, name: &str) -> Result<(), DatabaseError> {
         sqlx::query(
-            "INSERT INTO _migrations (version, name, applied_at) VALUES (?, ?, datetime('now'))"
+            "INSERT INTO _migrations (version, name, applied_at) VALUES (?, ?, datetime('now'))",
         )
         .bind(version)
         .bind(name)
         .execute(&self.pool)
         .await?;
-        
+
         Ok(())
     }
 }
@@ -127,9 +124,8 @@ impl From<DatabaseError> for StorageError {
 }
 
 /// SQL migrations for creating tables
-pub const MIGRATIONS: &[(&str, &str)] = &[
-    ("001_initial", include_str!("migrations/001_initial.sql")),
-];
+pub const MIGRATIONS: &[(&str, &str)] =
+    &[("001_initial", include_str!("migrations/001_initial.sql"))];
 
 #[cfg(test)]
 mod tests {
@@ -140,11 +136,11 @@ mod tests {
     async fn test_database_open() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("test.db");
-        
+
         let db = Database::open(&db_path).await.unwrap();
         assert!(db_path.exists());
         assert_eq!(db.path(), db_path);
-        
+
         db.close().await;
     }
 
@@ -152,14 +148,16 @@ mod tests {
     async fn test_database_table_exists() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("test.db");
-        
+
         let db = Database::open(&db_path).await.unwrap();
-        
+
         assert!(!db.table_exists("nonexistent").await.unwrap());
-        
-        db.execute("CREATE TABLE test_table (id INTEGER PRIMARY KEY)").await.unwrap();
+
+        db.execute("CREATE TABLE test_table (id INTEGER PRIMARY KEY)")
+            .await
+            .unwrap();
         assert!(db.table_exists("test_table").await.unwrap());
-        
+
         db.close().await;
     }
 
@@ -167,13 +165,13 @@ mod tests {
     async fn test_database_schema_version() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("test.db");
-        
+
         let db = Database::open(&db_path).await.unwrap();
-        
+
         // No migrations table yet
         let version = db.schema_version().await.unwrap();
         assert_eq!(version, 0);
-        
+
         db.close().await;
     }
 
@@ -181,23 +179,25 @@ mod tests {
     async fn test_database_record_migration() {
         let temp = TempDir::new().unwrap();
         let db_path = temp.path().join("test.db");
-        
+
         let db = Database::open(&db_path).await.unwrap();
-        
+
         // Create migrations table first
         db.execute(
             "CREATE TABLE _migrations (
                 version INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
                 applied_at TEXT NOT NULL
-            )"
-        ).await.unwrap();
-        
+            )",
+        )
+        .await
+        .unwrap();
+
         db.record_migration(1, "initial").await.unwrap();
-        
+
         let version = db.schema_version().await.unwrap();
         assert_eq!(version, 1);
-        
+
         db.close().await;
     }
 }

@@ -15,10 +15,7 @@ pub enum CategoryError {
 
     /// Required model not available
     #[error("Model unavailable: category '{category}' requires model '{model}'")]
-    ModelUnavailable {
-        category: String,
-        model: String,
-    },
+    ModelUnavailable { category: String, model: String },
 
     /// Required provider not available
     #[error("Provider unavailable: category '{category}' requires one of {providers:?}")]

@@ -4,13 +4,13 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::error::CategoryError;
+use super::merge::merge_categories;
+use super::requirements::get_category_requirement;
 use super::types::{
     CategoryConfig, CategoryResolutionResult, FallbackEntry, ModelInfo, ModelSource,
     ModelSourceType, ModelVariant, ResolvedModel,
 };
-use super::error::CategoryError;
-use super::merge::merge_categories;
-use super::requirements::get_category_requirement;
 
 /// Options for category resolution
 #[derive(Debug, Clone, Default)]
@@ -76,9 +76,9 @@ impl CategoryResolver {
         let merged = merge_categories(Some(&self.user_categories));
 
         // Check if category exists
-        let config = merged.get(category_name).ok_or_else(|| {
-            CategoryError::unknown(category_name)
-        })?;
+        let config = merged
+            .get(category_name)
+            .ok_or_else(|| CategoryError::unknown(category_name))?;
 
         // Check if disabled
         if config.disable {
@@ -98,12 +98,8 @@ impl CategoryResolver {
             system_default_model: self.system_default_model.clone(),
         };
 
-        let (resolved_model, model_info) = resolve_model(
-            &options,
-            config,
-            fallback_chain.as_deref(),
-            category_name,
-        );
+        let (resolved_model, model_info) =
+            resolve_model(&options, config, fallback_chain.as_deref(), category_name);
 
         let actual_model = resolved_model.as_ref().map(|m| m.full_model());
 
@@ -174,9 +170,10 @@ fn resolve_model(
     if let Some(chain) = fallback_chain {
         for entry in chain {
             // Check if any provider is connected
-            let provider_available = entry.providers.iter().any(|p| {
-                options.connected_providers.contains(p)
-            });
+            let provider_available = entry
+                .providers
+                .iter()
+                .any(|p| options.connected_providers.contains(p));
 
             if !provider_available {
                 continue;
@@ -370,17 +367,10 @@ mod tests {
 
     #[test]
     fn test_resolve_model_for_category_user_override() {
-        let available: HashSet<String> =
-            vec!["custom/model".to_string()].into_iter().collect();
+        let available: HashSet<String> = vec!["custom/model".to_string()].into_iter().collect();
 
-        let result = resolve_model_for_category(
-            Some("custom/model"),
-            None,
-            None,
-            &[],
-            &available,
-            None,
-        );
+        let result =
+            resolve_model_for_category(Some("custom/model"), None, None, &[], &available, None);
 
         assert!(result.is_some());
         let (model, _) = result.unwrap();

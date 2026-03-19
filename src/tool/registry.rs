@@ -107,12 +107,12 @@ mod tests {
 
         let registry = ToolRegistry::new();
         let tool = Box::new(BashTool::new());
-        
+
         registry.register(tool);
-        
+
         assert_eq!(registry.len(), 1);
         assert!(registry.contains("bash"));
-        
+
         let retrieved = registry.get("bash");
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().name(), "bash");
@@ -123,9 +123,9 @@ mod tests {
         use crate::tool::bash::BashTool;
 
         let registry = ToolRegistry::new();
-        
+
         registry.register(Box::new(BashTool::new()));
-        
+
         let list = registry.list();
         assert_eq!(list.len(), 1);
         assert!(list.contains(&"bash".to_string()));
@@ -136,11 +136,11 @@ mod tests {
         use crate::tool::bash::BashTool;
 
         let registry = ToolRegistry::new();
-        
+
         assert!(!registry.contains("bash"));
-        
+
         registry.register(Box::new(BashTool::new()));
-        
+
         assert!(registry.contains("bash"));
         assert!(!registry.contains("nonexistent"));
     }
@@ -153,11 +153,11 @@ mod tests {
         registry.register(Box::new(BashTool::new()));
 
         assert_eq!(registry.len(), 1);
-        
+
         let removed = registry.remove("bash");
         assert_eq!(removed, Some("bash".to_string()));
         assert!(registry.is_empty());
-        
+
         // Removing again should return None
         let removed_again = registry.remove("bash");
         assert!(removed_again.is_none());
@@ -188,7 +188,7 @@ mod tests {
         let cloned = registry.clone();
         assert_eq!(cloned.len(), 1);
         assert!(cloned.contains("bash"));
-        
+
         // Changes to original should be visible in clone (Arc shares data)
         let original = registry.clone();
         original.register(Box::new(ReadTool::new()));
@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn test_registry_get_nonexistent() {
         let registry = ToolRegistry::new();
-        
+
         let result = registry.get("nonexistent");
         assert!(result.is_none());
     }
@@ -219,11 +219,11 @@ mod tests {
         use crate::tool::bash::BashTool;
 
         let registry = ToolRegistry::new();
-        
+
         // Register multiple tools with different names would require different tool types
         // For now, test with multiple registrations
         registry.register(Box::new(BashTool::new()));
-        
+
         let list = registry.list();
         assert_eq!(list.len(), 1);
     }

@@ -220,7 +220,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_session() {
         let (manager, _tmp) = setup_test_manager().await;
-        let id = manager.create_session(Some("Test".to_string())).await.unwrap();
+        let id = manager
+            .create_session(Some("Test".to_string()))
+            .await
+            .unwrap();
 
         let session = manager.get_session(&id).await.unwrap();
         assert_eq!(session.title, "Test");
@@ -306,9 +309,15 @@ mod tests {
     #[tokio::test]
     async fn test_set_title() {
         let (manager, _tmp) = setup_test_manager().await;
-        let id = manager.create_session(Some("Original".to_string())).await.unwrap();
+        let id = manager
+            .create_session(Some("Original".to_string()))
+            .await
+            .unwrap();
 
-        let updated = manager.set_title(&id, "New Title".to_string()).await.unwrap();
+        let updated = manager
+            .set_title(&id, "New Title".to_string())
+            .await
+            .unwrap();
         assert_eq!(updated.title, "New Title");
 
         let session = manager.get_session(&id).await.unwrap();
@@ -320,7 +329,10 @@ mod tests {
         let (manager, _tmp) = setup_test_manager().await;
         let id = manager.create_session(None).await.unwrap();
 
-        let updated = manager.set_status(&id, SessionStatus::Paused).await.unwrap();
+        let updated = manager
+            .set_status(&id, SessionStatus::Paused)
+            .await
+            .unwrap();
         assert_eq!(updated.status, SessionStatus::Paused);
 
         let session = manager.get_session(&id).await.unwrap();
@@ -348,7 +360,10 @@ mod tests {
         assert_eq!(manager.count_messages(&id).await.unwrap(), 0);
 
         for i in 0..3 {
-            manager.add_message(&id, "user", &format!("Msg {}", i)).await.unwrap();
+            manager
+                .add_message(&id, "user", &format!("Msg {}", i))
+                .await
+                .unwrap();
         }
 
         assert_eq!(manager.count_messages(&id).await.unwrap(), 3);
@@ -358,7 +373,10 @@ mod tests {
     async fn test_in_memory() {
         let manager = SessionManager::in_memory().await.unwrap();
 
-        let id = manager.create_session(Some("In-Memory Test".to_string())).await.unwrap();
+        let id = manager
+            .create_session(Some("In-Memory Test".to_string()))
+            .await
+            .unwrap();
         let session = manager.get_session(&id).await.unwrap();
 
         assert_eq!(session.title, "In-Memory Test");

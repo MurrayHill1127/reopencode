@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tokio::fs;
 
-use crate::tool::error::{ToolError, Result};
+use crate::tool::error::{Result, ToolError};
 use crate::tool::traits::{Tool, ToolResult};
 
 /// Read tool - read file contents
@@ -123,6 +123,11 @@ mod tests {
         assert!(params["properties"]["path"].is_object());
         assert_eq!(params["properties"]["path"]["type"], "string");
         assert!(params["required"].is_array());
-        assert!(params["required"].as_array().unwrap().contains(&serde_json::json!("path")));
+        assert!(
+            params["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("path"))
+        );
     }
 }

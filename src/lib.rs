@@ -32,9 +32,9 @@ pub async fn init() -> Result<()> {
                 .add_directive("reopencode=info".parse().unwrap()),
         )
         .init();
-    
+
     tracing::info!("ReOpenCode v{}", VERSION);
     tracing::info!("Initializing...");
-    
+
     Ok(())
 }

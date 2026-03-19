@@ -1,0 +1,95 @@
+//! TUI Component System
+//!
+//! This module provides a modular component architecture for the TUI.
+
+pub mod composite;
+pub mod dialog;
+pub mod error;
+pub mod events;
+pub mod focus;
+pub mod list;
+pub mod textarea;
+pub mod toast;
+pub mod types;
+
+pub use composite::{event_pump, event_pump_with_focus, render_all, update_all, ComponentRegistry};
+pub use dialog::{Dialog, DialogSize};
+pub use error::{ComponentError, Result};
+pub use events::{ComponentAction, ComponentEvent, ToastVariant};
+pub use focus::{FocusError, FocusManager};
+pub use list::List;
+pub use textarea::TextArea;
+pub use toast::Toast;
+pub use types::{ComponentId, EventPropagation, FocusState};
+
+use crossterm::event::KeyEvent;
+use ratatui::{layout::Rect, Frame};
+use std::time::Duration;
+
+/// Component trait - all TUI components implement this
+pub trait Component: Send + Sync {
+    fn id(&self) -> ComponentId;
+    fn render(&self, frame: &mut Frame, area: Rect);
+    fn handle_input(&mut self, _event: KeyEvent) -> EventPropagation {
+        EventPropagation::Continue
+    }
+    /// Handle component events (keyboard, mouse, focus, tick, etc.)
+    fn handle_event(&mut self, event: &ComponentEvent) -> EventPropagation {
+        match event {
+            ComponentEvent::Key(key) => self.handle_input(*key),
+            _ => EventPropagation::Continue,
+        }
+    }
+    fn update(&mut self, _delta: Duration) {}
+    fn is_focusable(&self) -> bool {
+        true
+    }
+    /// Check if this component is currently focused
+    fn focused(&self) -> bool {
+        false
+    }
+    fn on_focus(&mut self) {}
+    fn on_blur(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct MockComponent {
+        id: ComponentId,
+    }
+
+    impl MockComponent {
+        fn new() -> Self {
+            Self {
+                id: ComponentId::new(),
+            }
+        }
+    }
+
+    impl Component for MockComponent {
+        fn id(&self) -> ComponentId {
+            self.id
+        }
+        fn render(&self, _frame: &mut Frame, _area: Rect) {}
+        fn handle_input(&mut self, _event: KeyEvent) -> EventPropagation {
+            EventPropagation::Stop
+        }
+    }
+
+    #[test]
+    fn test_component_id_uniqueness() {
+        let comp1 = MockComponent::new();
+        let comp2 = MockComponent::new();
+        assert_ne!(comp1.id(), comp2.id());
+    }
+
+    #[test]
+    fn test_component_is_send_sync() {
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+        assert_send::<MockComponent>();
+        assert_sync::<MockComponent>();
+    }
+}

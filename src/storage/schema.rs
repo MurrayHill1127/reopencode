@@ -256,7 +256,10 @@ impl ProjectRecord {
     pub fn new(worktree: String) -> Self {
         let now = chrono::Utc::now().timestamp_millis();
         Self {
-            id: format!("proj_{}", &crate::util::generate_uuid().replace('-', "")[..12]),
+            id: format!(
+                "proj_{}",
+                &crate::util::generate_uuid().replace('-', "")[..12]
+            ),
             worktree,
             time_created: now,
             time_updated: now,

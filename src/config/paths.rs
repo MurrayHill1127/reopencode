@@ -2,9 +2,9 @@
 //!
 //! Cross-platform path resolution for global and project configs.
 
-use std::path::{Path, PathBuf};
-use std::fs;
 use crate::config::error::ConfigError;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 /// Configuration path resolver
 pub struct ConfigPaths;

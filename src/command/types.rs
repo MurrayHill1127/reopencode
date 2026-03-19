@@ -2,10 +2,10 @@
 //!
 //! 定义命令相关的所有类型，包括命令定义、元数据、作用域等。
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
-use serde::{Deserialize, Serialize};
 
 /// 命令定义
 /// 对应 TypeScript: CommandDefinition (features/claude-code-command-loader/types.ts:19-29)
@@ -116,7 +116,11 @@ pub struct HandoffDefinition {
 
 impl HandoffDefinition {
     /// 创建一个新的 Handoff 定义
-    pub fn new(label: impl Into<String>, agent: impl Into<String>, prompt: impl Into<String>) -> Self {
+    pub fn new(
+        label: impl Into<String>,
+        agent: impl Into<String>,
+        prompt: impl Into<String>,
+    ) -> Self {
         Self {
             label: label.into(),
             agent: agent.into(),
@@ -267,7 +271,10 @@ impl CommandScope {
 
     /// 是否为用户定义作用域
     pub fn is_user_defined(&self) -> bool {
-        matches!(self, Self::User | Self::Project | Self::Opencode | Self::OpencodeProject)
+        matches!(
+            self,
+            Self::User | Self::Project | Self::Opencode | Self::OpencodeProject
+        )
     }
 
     /// 是否为项目级作用域
@@ -489,11 +496,8 @@ mod tests {
 
     #[test]
     fn test_handoff_definition() {
-        let handoff = HandoffDefinition::new(
-            "Review",
-            "reviewer-agent",
-            "Please review this code",
-        ).with_send(true);
+        let handoff = HandoffDefinition::new("Review", "reviewer-agent", "Please review this code")
+            .with_send(true);
 
         assert_eq!(handoff.label, "Review");
         assert_eq!(handoff.agent, "reviewer-agent");
@@ -540,7 +544,10 @@ mod tests {
     fn test_command_scope_from_str() {
         assert_eq!("builtin".parse::<CommandScope>(), Ok(CommandScope::Builtin));
         assert_eq!("config".parse::<CommandScope>(), Ok(CommandScope::Config));
-        assert_eq!("opencode-project".parse::<CommandScope>(), Ok(CommandScope::OpencodeProject));
+        assert_eq!(
+            "opencode-project".parse::<CommandScope>(),
+            Ok(CommandScope::OpencodeProject)
+        );
         assert!("invalid".parse::<CommandScope>().is_err());
     }
 
@@ -585,8 +592,8 @@ mod tests {
 
     #[test]
     fn test_command_parse_result() {
-        let result = CommandParseResult::new("/init --force", "init", 0, 13)
-            .with_arguments("--force");
+        let result =
+            CommandParseResult::new("/init --force", "init", 0, 13).with_arguments("--force");
 
         assert_eq!(result.full_match, "/init --force");
         assert_eq!(result.command_name, "init");
@@ -616,8 +623,7 @@ mod tests {
 
     #[test]
     fn test_kebab_case_serialization() {
-        let cmd = CommandDefinition::new("my-cmd", "Test")
-            .with_argument_hint("my-arg");
+        let cmd = CommandDefinition::new("my-cmd", "Test").with_argument_hint("my-arg");
 
         let json = serde_json::to_string(&cmd).unwrap();
         assert!(json.contains("argument-hint"));

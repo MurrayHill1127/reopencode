@@ -22,11 +22,10 @@ const KIMI_MODEL: &str = "moonshot-v1-8k";
 /// Test basic Kimi API connectivity with a simple message
 #[tokio::test]
 async fn test_kimi_api_basic_chat() {
-    let api_key = std::env::var("KIMI_API_KEY")
-        .expect("KIMI_API_KEY environment variable must be set");
+    let api_key =
+        std::env::var("KIMI_API_KEY").expect("KIMI_API_KEY environment variable must be set");
 
-    let config = ProviderConfig::new("kimi", api_key)
-        .with_base_url(KIMI_BASE_URL);
+    let config = ProviderConfig::new("kimi", api_key).with_base_url(KIMI_BASE_URL);
 
     let provider = OpenAiProvider::new(config);
 
@@ -41,13 +40,18 @@ async fn test_kimi_api_basic_chat() {
             println!("=== Kimi API Response ===");
             println!("Model: {}", response.model);
             println!("Content: {}", response.content);
-            println!("Tokens: prompt={}, completion={}, total={}",
+            println!(
+                "Tokens: prompt={}, completion={}, total={}",
                 response.usage.prompt_tokens,
                 response.usage.completion_tokens,
-                response.usage.total_tokens);
+                response.usage.total_tokens
+            );
             println!("Finish Reason: {:?}", response.finish_reason);
-            
-            assert!(!response.content.is_empty(), "Response content should not be empty");
+
+            assert!(
+                !response.content.is_empty(),
+                "Response content should not be empty"
+            );
         }
         Err(e) => {
             panic!("API call failed: {:?}", e);
@@ -58,11 +62,10 @@ async fn test_kimi_api_basic_chat() {
 /// Test Kimi API with system message
 #[tokio::test]
 async fn test_kimi_api_with_system_message() {
-    let api_key = std::env::var("KIMI_API_KEY")
-        .expect("KIMI_API_KEY environment variable must be set");
+    let api_key =
+        std::env::var("KIMI_API_KEY").expect("KIMI_API_KEY environment variable must be set");
 
-    let config = ProviderConfig::new("kimi", api_key)
-        .with_base_url(KIMI_BASE_URL);
+    let config = ProviderConfig::new("kimi", api_key).with_base_url(KIMI_BASE_URL);
 
     let provider = OpenAiProvider::new(config);
 
@@ -79,8 +82,11 @@ async fn test_kimi_api_with_system_message() {
         Ok(response) => {
             println!("=== Kimi API Response (with system) ===");
             println!("Content: {}", response.content);
-            
-            assert!(!response.content.is_empty(), "Response content should not be empty");
+
+            assert!(
+                !response.content.is_empty(),
+                "Response content should not be empty"
+            );
         }
         Err(e) => {
             panic!("API call failed: {:?}", e);
@@ -93,11 +99,10 @@ async fn test_kimi_api_with_system_message() {
 async fn test_kimi_api_streaming() {
     use futures::StreamExt;
 
-    let api_key = std::env::var("KIMI_API_KEY")
-        .expect("KIMI_API_KEY environment variable must be set");
+    let api_key =
+        std::env::var("KIMI_API_KEY").expect("KIMI_API_KEY environment variable must be set");
 
-    let config = ProviderConfig::new("kimi", api_key)
-        .with_base_url(KIMI_BASE_URL);
+    let config = ProviderConfig::new("kimi", api_key).with_base_url(KIMI_BASE_URL);
 
     let provider = OpenAiProvider::new(config);
 
@@ -107,7 +112,7 @@ async fn test_kimi_api_streaming() {
 
     println!("=== Kimi API Streaming Response ===");
     let mut full_response = String::new();
-    
+
     while let Some(chunk_result) = stream.next().await {
         match chunk_result {
             Ok(chunk) => {
@@ -122,5 +127,8 @@ async fn test_kimi_api_streaming() {
     }
     println!();
 
-    assert!(!full_response.is_empty(), "Streamed response should not be empty");
+    assert!(
+        !full_response.is_empty(),
+        "Streamed response should not be empty"
+    );
 }

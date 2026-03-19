@@ -28,11 +28,13 @@ pub async fn discover_skills_with_options(
     // Get the base directory (use current dir if not specified)
     let base_dir = match options.directory {
         Some(ref dir) => dir.clone(),
-        None => std::env::current_dir()
-            .map_err(|e| SkillError::IoError(PathBuf::from("."), e))?,
+        None => std::env::current_dir().map_err(|e| SkillError::IoError(PathBuf::from("."), e))?,
     };
 
-    debug!("Starting skill discovery from base directory: {:?}", base_dir);
+    debug!(
+        "Starting skill discovery from base directory: {:?}",
+        base_dir
+    );
 
     // 1. Project scope: <directory>/.opencode/skills/
     let project_path = base_dir.join(".opencode/skills");
@@ -59,7 +61,10 @@ pub async fn discover_skills_with_options(
         // Project-local Claude paths
         let project_claude_skills = base_dir.join(".claude/skills");
         if project_claude_skills.exists() {
-            debug!("Discovering project Claude skills from: {:?}", project_claude_skills);
+            debug!(
+                "Discovering project Claude skills from: {:?}",
+                project_claude_skills
+            );
             let found = discover_from_directory(&project_claude_skills, SkillScope::User).await;
             merge_skills(&mut skills, found, &mut warnings);
             directories.push(project_claude_skills);
@@ -67,7 +72,10 @@ pub async fn discover_skills_with_options(
 
         let project_agents_skills = base_dir.join(".agents/skills");
         if project_agents_skills.exists() {
-            debug!("Discovering project agents skills from: {:?}", project_agents_skills);
+            debug!(
+                "Discovering project agents skills from: {:?}",
+                project_agents_skills
+            );
             let found = discover_from_directory(&project_agents_skills, SkillScope::User).await;
             merge_skills(&mut skills, found, &mut warnings);
             directories.push(project_agents_skills);
@@ -77,7 +85,10 @@ pub async fn discover_skills_with_options(
         if let Some(home_dir) = dirs::home_dir() {
             let user_claude_skills = home_dir.join(".claude/skills");
             if user_claude_skills.exists() {
-                debug!("Discovering user Claude skills from: {:?}", user_claude_skills);
+                debug!(
+                    "Discovering user Claude skills from: {:?}",
+                    user_claude_skills
+                );
                 let found = discover_from_directory(&user_claude_skills, SkillScope::User).await;
                 merge_skills(&mut skills, found, &mut warnings);
                 directories.push(user_claude_skills);
@@ -85,7 +96,10 @@ pub async fn discover_skills_with_options(
 
             let user_agents_skills = home_dir.join(".agents/skills");
             if user_agents_skills.exists() {
-                debug!("Discovering user agents skills from: {:?}", user_agents_skills);
+                debug!(
+                    "Discovering user agents skills from: {:?}",
+                    user_agents_skills
+                );
                 let found = discover_from_directory(&user_agents_skills, SkillScope::User).await;
                 merge_skills(&mut skills, found, &mut warnings);
                 directories.push(user_agents_skills);
@@ -224,7 +238,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_discover_from_directory_nonexistent() {
-        let skills = discover_from_directory(Path::new("/nonexistent/path"), SkillScope::Project).await;
+        let skills =
+            discover_from_directory(Path::new("/nonexistent/path"), SkillScope::Project).await;
         assert!(skills.is_empty());
     }
 
@@ -245,7 +260,9 @@ description: A test skill
 
 This is a test.
 "#;
-        fs::write(skill_dir.join("SKILL.md"), skill_content).await.unwrap();
+        fs::write(skill_dir.join("SKILL.md"), skill_content)
+            .await
+            .unwrap();
 
         let result = discover_skills(Some(temp.path().to_path_buf())).await;
         assert!(result.is_ok());

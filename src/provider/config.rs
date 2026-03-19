@@ -100,8 +100,7 @@ impl ProvidersConfig {
     }
 
     pub fn from_toml(toml_str: &str) -> Result<Self> {
-        toml::from_str(toml_str)
-            .map_err(|e| ProviderError::Config(format!("配置格式错误：{}", e)))
+        toml::from_str(toml_str).map_err(|e| ProviderError::Config(format!("配置格式错误：{}", e)))
     }
 
     pub fn config_path() -> PathBuf {
@@ -139,9 +138,12 @@ mod tests {
 
     #[test]
     fn test_provider_config_with_base_url() {
-        let config = ProviderConfig::new("openai", "sk-test")
-            .with_base_url("https://api.example.com/v1");
-        assert_eq!(config.base_url, Some("https://api.example.com/v1".to_string()));
+        let config =
+            ProviderConfig::new("openai", "sk-test").with_base_url("https://api.example.com/v1");
+        assert_eq!(
+            config.base_url,
+            Some("https://api.example.com/v1".to_string())
+        );
     }
 
     #[test]

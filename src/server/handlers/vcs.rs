@@ -11,7 +11,7 @@ pub struct VcsInfo {
 /// GET /vcs - Return git/VCS information
 pub async fn get() -> Json<VcsInfo> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    
+
     let is_git_repo = is_inside_git_repo(&cwd);
     let branch = if is_git_repo {
         get_current_branch(&cwd)
@@ -31,8 +31,7 @@ fn is_inside_git_repo(dir: &Path) -> bool {
         .current_dir(dir)
         .output()
         .map(|output| {
-            output.status.success() 
-                && String::from_utf8_lossy(&output.stdout).trim() == "true"
+            output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "true"
         })
         .unwrap_or(false)
 }

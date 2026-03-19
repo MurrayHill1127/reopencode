@@ -3,9 +3,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
 
-use portable_pty::{native_pty_system, PtySize};
+use portable_pty::{PtySize, native_pty_system};
 
-use super::types::{PtyInfo, PtyStatus, BUFFER_LIMIT};
+use super::types::{BUFFER_LIMIT, PtyInfo, PtyStatus};
 
 pub struct PtyState {
     pub info: PtyInfo,
@@ -52,14 +52,14 @@ impl PtyHandle {
     pub async fn write(&self, data: &[u8]) -> Result<(), super::types::PtyError> {
         if self.exited.load(Ordering::SeqCst) {
             return Err(super::types::PtyError::AlreadyExited(
-                self.state.lock().await.info.id.clone()
+                self.state.lock().await.info.id.clone(),
             ));
         }
 
         let mut writer = self.writer.lock().map_err(|_| {
             super::types::PtyError::WriteFailed("Failed to lock writer".to_string())
         })?;
-        
+
         if let Some(w) = writer.as_mut() {
             w.write_all(data)
                 .map_err(|e| super::types::PtyError::WriteFailed(e.to_string()))?;
@@ -74,7 +74,7 @@ impl PtyHandle {
 
     pub async fn mark_exited(&self, exit_code: i32) {
         self.exited.store(true, Ordering::SeqCst);
-        
+
         let mut state = self.state.lock().await;
         state.info.status = PtyStatus::Exited;
         state.info.exit_code = Some(exit_code);
@@ -98,7 +98,7 @@ pub fn spawn_pty(
     title: Option<String>,
 ) -> Result<(PtyHandle, std::thread::JoinHandle<()>), super::types::PtyError> {
     let pty_system = native_pty_system();
-    
+
     let size = PtySize {
         rows,
         cols,
@@ -117,11 +117,11 @@ pub fn spawn_pty(
     let mut final_env = std::collections::HashMap::new();
     final_env.insert("TERM".to_string(), "xterm-256color".to_string());
     final_env.insert("OPENCODE_TERMINAL".to_string(), "1".to_string());
-    
+
     if let Some(custom_env) = env {
         final_env.extend(custom_env);
     }
-    
+
     for (key, value) in &final_env {
         cmd.env(key, value);
     }
@@ -134,7 +134,7 @@ pub fn spawn_pty(
     drop(pair.slave);
 
     let pid: u32 = 0;
-    
+
     let mut info = PtyInfo::new(id, command, args, cwd, pid);
     if let Some(t) = title {
         info = info.with_title(t);
@@ -183,7 +183,7 @@ pub fn spawn_pty(
                 }
             }
         }
-        
+
         let rt = tokio::runtime::Handle::current();
         rt.block_on(async {
             let mut s = state.lock().await;

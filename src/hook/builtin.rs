@@ -5,8 +5,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Hook, HookConfig, HookContext, HookEventType, HookId, HookPriority,
-    HookRegistry, HookResult, SessionEventType,
+    Hook, HookConfig, HookContext, HookEventType, HookId, HookPriority, HookRegistry, HookResult,
+    SessionEventType,
 };
 
 // ==================== Model Fallback Hook ====================
@@ -244,17 +244,18 @@ impl Hook for CommentCheckerHook {
     }
 
     async fn execute(&self, ctx: &mut HookContext) -> HookResult {
-        if let super::HookEvent::ToolExecuteAfter { tool_name, tool_output, .. } = &ctx.event
+        if let super::HookEvent::ToolExecuteAfter {
+            tool_name,
+            tool_output,
+            ..
+        } = &ctx.event
             && (tool_name == "write" || tool_name == "edit")
             && let Some(content) = tool_output.get("content").and_then(|c| c.as_str())
         {
             let ai_patterns = ["我是AI", "我是一个AI", "I am an AI", "作为AI"];
             for pattern in ai_patterns {
                 if content.contains(pattern) {
-                    tracing::warn!(
-                        pattern = pattern,
-                        "Detected AI self-reference in output"
-                    );
+                    tracing::warn!(pattern = pattern, "Detected AI self-reference in output");
                 }
             }
         }
@@ -289,10 +290,7 @@ pub fn register_all(registry: &mut HookRegistry, config: &HookConfig) {
 
     for hook in hooks {
         if config.disabled_hooks.contains(&hook.id().0) {
-            tracing::debug!(
-                hook_id = hook.id().as_str(),
-                "Skipping disabled hook"
-            );
+            tracing::debug!(hook_id = hook.id().as_str(), "Skipping disabled hook");
             continue;
         }
 
@@ -365,8 +363,16 @@ mod tests {
 
         assert!(!registry.is_empty());
         assert!(registry.get_hook(&HookId::new("model-fallback")).is_some());
-        assert!(registry.get_hook(&HookId::new("session-recovery")).is_some());
-        assert!(registry.get_hook(&HookId::new("context-window-monitor")).is_some());
+        assert!(
+            registry
+                .get_hook(&HookId::new("session-recovery"))
+                .is_some()
+        );
+        assert!(
+            registry
+                .get_hook(&HookId::new("context-window-monitor"))
+                .is_some()
+        );
     }
 
     #[test]
@@ -380,6 +386,10 @@ mod tests {
         register_all(&mut registry, &config);
 
         assert!(registry.get_hook(&HookId::new("model-fallback")).is_none());
-        assert!(registry.get_hook(&HookId::new("session-recovery")).is_some());
+        assert!(
+            registry
+                .get_hook(&HookId::new("session-recovery"))
+                .is_some()
+        );
     }
 }

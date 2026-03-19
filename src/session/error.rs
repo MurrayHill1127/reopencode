@@ -89,7 +89,8 @@ mod tests {
     #[test]
     fn test_from_serialization_error() {
         let invalid_json = "not valid json";
-        let result: std::result::Result<serde_json::Value, serde_json::Error> = serde_json::from_str(invalid_json);
+        let result: std::result::Result<serde_json::Value, serde_json::Error> =
+            serde_json::from_str(invalid_json);
         assert!(result.is_err());
     }
 }

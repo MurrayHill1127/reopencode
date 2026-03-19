@@ -1,3 +1,4 @@
+use crate::bus::GlobalBus;
 use axum::{
     extract::Json,
     response::sse::{Event, Sse},
@@ -5,7 +6,6 @@ use axum::{
 use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
-use crate::bus::GlobalBus;
 
 #[derive(Debug, Serialize)]
 pub struct HealthStatus {
@@ -61,8 +61,9 @@ pub async fn event() -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
             }
         }
     };
-    Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::new()
-        .interval(std::time::Duration::from_secs(15)))
+    Sse::new(stream).keep_alive(
+        axum::response::sse::KeepAlive::new().interval(std::time::Duration::from_secs(15)),
+    )
 }
 
 pub async fn config_get() -> Json<GlobalConfig> {

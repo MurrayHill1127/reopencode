@@ -1,34 +1,35 @@
 //! CLI commands
 
+pub mod clipboard;
 pub mod tui;
 
-use anyhow::Result;
 use crate::server::{self, ServerConfig};
+use anyhow::Result;
 
 /// Run command - start server and TUI
 pub async fn run(cwd: Option<String>) -> Result<()> {
     if let Some(cwd) = cwd {
         println!("Working directory: {}", cwd);
     }
-    
+
     let server_config = ServerConfig::default();
     let server_addr = format!("{}:{}", server_config.host, server_config.port);
-    
+
     let server_handle = tokio::spawn(async move {
         if let Err(e) = server::start(server_config).await {
             eprintln!("Server error: {}", e);
         }
     });
-    
+
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    
+
     println!("Server started at http://{}", server_addr);
     println!("Starting TUI...");
-    
+
     tui::run().await?;
-    
+
     server_handle.abort();
-    
+
     Ok(())
 }
 

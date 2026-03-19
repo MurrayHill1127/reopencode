@@ -48,8 +48,7 @@ fn parse_metadata(frontmatter: &serde_yaml::Value) -> Result<SkillMetadata, Skil
         if let Some(serde_yaml::Value::Mapping(m)) = map.get("metadata") {
             let mut meta = std::collections::HashMap::new();
             for (k, v) in m {
-                if let (serde_yaml::Value::String(key), serde_yaml::Value::String(value)) = (k, v)
-                {
+                if let (serde_yaml::Value::String(key), serde_yaml::Value::String(value)) = (k, v) {
                     meta.insert(key.clone(), value.clone());
                 }
             }
@@ -105,10 +104,7 @@ pub fn parse_skill_content(content: &str) -> Result<(String, String, SkillMetada
     Ok((name, description, metadata))
 }
 
-pub async fn parse_skill_file(
-    path: &Path,
-    scope: SkillScope,
-) -> Result<SkillInfo, SkillError> {
+pub async fn parse_skill_file(path: &Path, scope: SkillScope) -> Result<SkillInfo, SkillError> {
     let content = tokio::fs::read_to_string(path)
         .await
         .map_err(|e| SkillError::IoError(path.to_path_buf(), e))?;
@@ -174,7 +170,11 @@ This is the body content.
         );
         assert_eq!(
             meta.allowed_tools,
-            Some(vec!["read".to_string(), "write".to_string(), "grep".to_string()])
+            Some(vec![
+                "read".to_string(),
+                "write".to_string(),
+                "grep".to_string()
+            ])
         );
     }
 

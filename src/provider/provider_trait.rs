@@ -171,8 +171,7 @@ mod tests {
 
     #[test]
     fn test_provider_response_with_finish_reason() {
-        let response = ProviderResponse::new("Hello", "gpt-4")
-            .with_finish_reason("stop");
+        let response = ProviderResponse::new("Hello", "gpt-4").with_finish_reason("stop");
         assert_eq!(response.finish_reason, Some("stop".to_string()));
     }
 }

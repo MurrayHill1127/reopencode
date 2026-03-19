@@ -2,9 +2,9 @@
 //!
 //! Provides variable substitution for command templates.
 
+use chrono::Utc;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use chrono::Utc;
 
 /// Context for template rendering
 #[derive(Debug, Clone, Default)]

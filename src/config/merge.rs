@@ -69,13 +69,19 @@ impl MergeStrategy {
             temperature: override_.temperature,
             top_p: override_.top_p.or(base.top_p),
             prompt: override_.prompt.clone().or_else(|| base.prompt.clone()),
-            description: override_.description.clone().or_else(|| base.description.clone()),
+            description: override_
+                .description
+                .clone()
+                .or_else(|| base.description.clone()),
             category: override_.category.clone().or_else(|| base.category.clone()),
             skills: override_.skills.clone().or_else(|| base.skills.clone()),
             disable: override_.disable.clone().or_else(|| base.disable.clone()),
             mode: override_.mode.clone().or(base.mode.clone()),
             color: override_.color.clone().or_else(|| base.color.clone()),
-            permission: override_.permission.clone().or_else(|| base.permission.clone()),
+            permission: override_
+                .permission
+                .clone()
+                .or_else(|| base.permission.clone()),
         }
     }
 
@@ -99,8 +105,14 @@ impl MergeStrategy {
             api_key: override_.api_key.clone().or_else(|| base.api_key.clone()),
             api_url: override_.api_url.clone().or_else(|| base.api_url.clone()),
             models: override_.models.clone().or_else(|| base.models.clone()),
-            whitelist: override_.whitelist.clone().or_else(|| base.whitelist.clone()),
-            blacklist: override_.blacklist.clone().or_else(|| base.blacklist.clone()),
+            whitelist: override_
+                .whitelist
+                .clone()
+                .or_else(|| base.whitelist.clone()),
+            blacklist: override_
+                .blacklist
+                .clone()
+                .or_else(|| base.blacklist.clone()),
         }
     }
 
@@ -190,8 +202,18 @@ mod tests {
 
         let merged = MergeStrategy::merge(&base, &override_);
         assert_eq!(merged.server.port, 8080);
-        assert!(merged.server.cors_origin.contains(&"http://localhost:3000".to_string()));
-        assert!(merged.server.cors_origin.contains(&"http://example.com".to_string()));
+        assert!(
+            merged
+                .server
+                .cors_origin
+                .contains(&"http://localhost:3000".to_string())
+        );
+        assert!(
+            merged
+                .server
+                .cors_origin
+                .contains(&"http://example.com".to_string())
+        );
     }
 
     #[test]

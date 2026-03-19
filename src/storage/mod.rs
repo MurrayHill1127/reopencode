@@ -26,21 +26,21 @@
 //! }
 //! ```
 
-pub mod error;
-pub mod path;
-pub mod cache;
-pub mod schema;
 pub mod backend;
+pub mod cache;
 pub mod database;
-pub mod session;
-pub mod project;
+pub mod error;
 pub mod migration;
+pub mod path;
+pub mod project;
+pub mod schema;
+pub mod session;
 
 // Re-export error types
 pub use error::{DatabaseError, MigrationError, StorageError};
 
 // Re-export path types
-pub use path::{GlobalPath, CACHE_VERSION};
+pub use path::{CACHE_VERSION, GlobalPath};
 
 // Re-export cache types
 pub use cache::{CacheConfig, CacheStats, MemoryCache};
@@ -48,8 +48,8 @@ pub use cache::{CacheConfig, CacheStats, MemoryCache};
 // Re-export schema types
 pub use schema::{
     ImageSource, MessageInfo, MessagePart, MessageRecord, MessageRole, MessageTime,
-    MessageWithParts, Page, PartRecord, PermissionRecord, ProjectRecord, SessionRecord,
-    Timestamps, TodoItem, TodoPriority, TodoRecord, TodoStatus, WorkspaceRecord,
+    MessageWithParts, Page, PartRecord, PermissionRecord, ProjectRecord, SessionRecord, Timestamps,
+    TodoItem, TodoPriority, TodoRecord, TodoStatus, WorkspaceRecord,
 };
 
 // Re-export backend types
@@ -60,14 +60,12 @@ pub use database::Database;
 
 // Re-export session types
 pub use session::{
-    generate_message_id, generate_part_id, generate_session_id, MessageStore,
-    SessionCreateInput, SessionListOptions, SessionStore, TodoStore,
+    MessageStore, SessionCreateInput, SessionListOptions, SessionStore, TodoStore,
+    generate_message_id, generate_part_id, generate_session_id,
 };
 
 // Re-export project types
-pub use project::{
-    ProjectCreateInput, ProjectStore, WorkspaceCreateInput, WorkspaceStore,
-};
+pub use project::{ProjectCreateInput, ProjectStore, WorkspaceCreateInput, WorkspaceStore};
 
 // Re-export migration types
 pub use migration::{Migration, MigrationRunner};
@@ -89,11 +87,9 @@ impl Storage {
     pub async fn new(backend_type: BackendType) -> Result<Self, StorageError> {
         let path = GlobalPath::get();
         path.init().await?;
-        
+
         let backend: Arc<dyn StorageBackend> = match backend_type {
-            BackendType::Json => {
-                Arc::new(JsonBackend::new(&path.data)?)
-            }
+            BackendType::Json => Arc::new(JsonBackend::new(&path.data)?),
             BackendType::Sqlite => {
                 // For now, fall back to JSON backend
                 // SQLite backend will be implemented separately
@@ -101,7 +97,7 @@ impl Storage {
                 Arc::new(JsonBackend::new(&path.data)?)
             }
         };
-        
+
         Ok(Self {
             backend,
             cache: MemoryCache::new(CacheConfig::default()),
@@ -189,11 +185,11 @@ mod tests {
         unsafe {
             std::env::set_var("OPENCODE_TEST_HOME", temp.path());
         }
-        
+
         let storage = Storage::new(BackendType::Json).await.unwrap();
-        
+
         assert_eq!(storage.backend_type(), BackendType::Json);
-        
+
         unsafe {
             std::env::remove_var("OPENCODE_TEST_HOME");
         }
@@ -205,18 +201,22 @@ mod tests {
         unsafe {
             std::env::set_var("OPENCODE_TEST_HOME", temp.path());
         }
-        
+
         let storage = Storage::new(BackendType::Json).await.unwrap();
-        
-        let session = storage.sessions().create(SessionCreateInput {
-            project_id: "test".to_string(),
-            slug: "test".to_string(),
-            directory: "/tmp".to_string(),
-            ..Default::default()
-        }).await.unwrap();
-        
+
+        let session = storage
+            .sessions()
+            .create(SessionCreateInput {
+                project_id: "test".to_string(),
+                slug: "test".to_string(),
+                directory: "/tmp".to_string(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
         assert!(session.id.starts_with("ses_"));
-        
+
         unsafe {
             std::env::remove_var("OPENCODE_TEST_HOME");
         }
@@ -228,16 +228,20 @@ mod tests {
         unsafe {
             std::env::set_var("OPENCODE_TEST_HOME", temp.path());
         }
-        
+
         let storage = Storage::new(BackendType::Json).await.unwrap();
-        
-        let project = storage.projects().create(ProjectCreateInput {
-            worktree: "/test/project".to_string(),
-            vcs: Some("git".to_string()),
-        }).await.unwrap();
-        
+
+        let project = storage
+            .projects()
+            .create(ProjectCreateInput {
+                worktree: "/test/project".to_string(),
+                vcs: Some("git".to_string()),
+            })
+            .await
+            .unwrap();
+
         assert!(project.id.starts_with("proj_"));
-        
+
         unsafe {
             std::env::remove_var("OPENCODE_TEST_HOME");
         }

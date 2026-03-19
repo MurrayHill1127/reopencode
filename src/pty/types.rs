@@ -98,22 +98,22 @@ pub struct PtyOutput {
 pub enum PtyError {
     #[error("PTY session not found: {0}")]
     NotFound(String),
-    
+
     #[error("PTY spawn failed: {0}")]
     SpawnFailed(String),
-    
+
     #[error("PTY resize failed: {0}")]
     ResizeFailed(String),
-    
+
     #[error("PTY write failed: {0}")]
     WriteFailed(String),
-    
+
     #[error("PTY read failed: {0}")]
     ReadFailed(String),
-    
+
     #[error("PTY already exited: {0}")]
     AlreadyExited(String),
-    
+
     #[error("Invalid size: rows={rows}, cols={cols}")]
     InvalidSize { rows: u16, cols: u16 },
 }
@@ -181,7 +181,8 @@ mod tests {
             vec![],
             "/".to_string(),
             1,
-        ).with_title("My Terminal".to_string());
+        )
+        .with_title("My Terminal".to_string());
 
         assert_eq!(info.title, "My Terminal");
     }
@@ -216,7 +217,7 @@ mod tests {
     fn test_generate_pty_id() {
         let id1 = generate_pty_id();
         let id2 = generate_pty_id();
-        
+
         assert!(id1.starts_with("pty_"));
         assert!(id2.starts_with("pty_"));
         assert_ne!(id1, id2);

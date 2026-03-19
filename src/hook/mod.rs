@@ -41,21 +41,21 @@
 //! registry.register(Box::new(MyHook::new())).unwrap();
 //! ```
 
-pub mod error;
-pub mod types;
-pub mod context;
-pub mod registry;
-pub mod executor;
 pub mod builtin;
+pub mod context;
+pub mod error;
+pub mod executor;
+pub mod registry;
+pub mod types;
 
 // Re-export error types
 pub use error::{ExecutionError, HookError};
 
 // Re-export types
 pub use types::{
-    BuiltinHookName, ChatMessage, HookConfig, HookEvent, HookId, HookOutput,
-    HookOverride, HookPriority, HookResult, ImageSource, MessageContent,
-    ResolvedModel, SessionEventType, ToastRequest, ToastVariant, TokenUsage,
+    BuiltinHookName, ChatMessage, HookConfig, HookEvent, HookId, HookOutput, HookOverride,
+    HookPriority, HookResult, ImageSource, MessageContent, ResolvedModel, SessionEventType,
+    ToastRequest, ToastVariant, TokenUsage,
 };
 
 // Re-export context types
@@ -65,12 +65,12 @@ pub use context::{HookContext, SessionContext, ToolContext};
 pub use registry::{HookEntry, HookExecutionStats, HookRegistry, HookStats};
 
 // Re-export executor
-pub use executor::{execute_chain, HookExecutor};
+pub use executor::{HookExecutor, execute_chain};
 
 // Re-export builtin factories
 pub use builtin::{
-    create_context_window_monitor_hook, create_model_fallback_hook,
-    create_session_recovery_hook, register_all,
+    create_context_window_monitor_hook, create_model_fallback_hook, create_session_recovery_hook,
+    register_all,
 };
 
 /// Hook event types for subscription filtering
@@ -132,6 +132,10 @@ mod tests {
     #[test]
     fn test_create_registry() {
         let registry = create_registry();
-        assert!(registry.get_hooks_for_event(HookEventType::ChatMessage).is_empty());
+        assert!(
+            registry
+                .get_hooks_for_event(HookEventType::ChatMessage)
+                .is_empty()
+        );
     }
 }

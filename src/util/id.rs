@@ -125,6 +125,9 @@ mod tests {
         // When sorted ascending, descending IDs appear in reverse counter order
         // This is the expected behavior: higher counter = smaller string = appears first
         let expected: Vec<String> = (0..5).rev().map(generate_descending_id).collect();
-        assert_eq!(sorted, expected, "Sorted descending IDs should appear in reverse counter order");
+        assert_eq!(
+            sorted, expected,
+            "Sorted descending IDs should appear in reverse counter order"
+        );
     }
 }

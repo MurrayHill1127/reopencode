@@ -15,14 +15,14 @@
 //! - [`retry`] - Retry mechanism with exponential backoff
 //! - [`format`] - Formatting utilities for duration, bytes, numbers
 
-pub mod error;
-pub mod path;
-pub mod encoding;
-pub mod string;
-pub mod id;
 pub mod async_tool;
-pub mod retry;
+pub mod encoding;
+pub mod error;
 pub mod format;
+pub mod id;
+pub mod path;
+pub mod retry;
+pub mod string;
 
 // Re-export commonly used types and functions for convenience
 
@@ -45,7 +45,7 @@ pub use id::{generate_ascending_id, generate_descending_id, generate_uuid};
 pub use async_tool::{AbortController, AsyncLock, AsyncQueue, CancellationToken, with_timeout};
 
 // Retry mechanism
-pub use retry::{retry_with_backoff, ExponentialBackoff, RetryConfig};
+pub use retry::{ExponentialBackoff, RetryConfig, retry_with_backoff};
 
 // Format utilities
 pub use format::{format_bytes, format_duration, format_number, format_relative_time};

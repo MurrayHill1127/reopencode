@@ -142,7 +142,11 @@ impl SkillRegistry {
     /// Get skills filtered by scope
     pub async fn by_scope(&self, scope: SkillScope) -> Vec<SkillInfo> {
         let skills = self.skills.read().await;
-        skills.values().filter(|s| s.scope == scope).cloned().collect()
+        skills
+            .values()
+            .filter(|s| s.scope == scope)
+            .cloned()
+            .collect()
     }
 }
 
@@ -218,9 +222,18 @@ mod tests {
         let registry = SkillRegistry::new();
 
         let mut skills = HashMap::new();
-        skills.insert("skill1".to_string(), create_test_skill("skill1", SkillScope::Project));
-        skills.insert("skill2".to_string(), create_test_skill("skill2", SkillScope::User));
-        skills.insert("skill3".to_string(), create_test_skill("skill3", SkillScope::Opencode));
+        skills.insert(
+            "skill1".to_string(),
+            create_test_skill("skill1", SkillScope::Project),
+        );
+        skills.insert(
+            "skill2".to_string(),
+            create_test_skill("skill2", SkillScope::User),
+        );
+        skills.insert(
+            "skill3".to_string(),
+            create_test_skill("skill3", SkillScope::Opencode),
+        );
 
         registry.register_all(skills).await;
 
@@ -356,15 +369,24 @@ mod tests {
         let registry = SkillRegistry::new();
 
         let mut batch1 = HashMap::new();
-        batch1.insert("skill-a".to_string(), create_test_skill("skill-a", SkillScope::User));
+        batch1.insert(
+            "skill-a".to_string(),
+            create_test_skill("skill-a", SkillScope::User),
+        );
         registry.register_all(batch1).await;
 
         let mut batch2 = HashMap::new();
-        batch2.insert("skill-a".to_string(), create_test_skill("skill-a", SkillScope::Project));
+        batch2.insert(
+            "skill-a".to_string(),
+            create_test_skill("skill-a", SkillScope::Project),
+        );
         registry.register_all(batch2).await;
 
         let mut batch3 = HashMap::new();
-        batch3.insert("skill-a".to_string(), create_test_skill("skill-a", SkillScope::Opencode));
+        batch3.insert(
+            "skill-a".to_string(),
+            create_test_skill("skill-a", SkillScope::Opencode),
+        );
         registry.register_all(batch3).await;
 
         let skill = registry.get("skill-a").await.unwrap();

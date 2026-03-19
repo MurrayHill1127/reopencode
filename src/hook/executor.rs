@@ -8,8 +8,8 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 
 use super::{
-    Hook, HookContext, HookError, HookEvent, HookEventType, HookOutput,
-    HookPriority, HookRegistry, HookResult,
+    Hook, HookContext, HookError, HookEvent, HookEventType, HookOutput, HookPriority, HookRegistry,
+    HookResult,
 };
 
 /// Hook executor for running hook chains
@@ -181,7 +181,9 @@ mod tests {
 
     impl ContinueHook {
         fn new() -> Self {
-            Self { id: HookId::new("continue-hook") }
+            Self {
+                id: HookId::new("continue-hook"),
+            }
         }
     }
 
@@ -206,7 +208,9 @@ mod tests {
 
     impl ModifyHook {
         fn new() -> Self {
-            Self { id: HookId::new("modify-hook") }
+            Self {
+                id: HookId::new("modify-hook"),
+            }
         }
     }
 
@@ -235,7 +239,9 @@ mod tests {
 
     impl ErrorHook {
         fn new() -> Self {
-            Self { id: HookId::new("error-hook") }
+            Self {
+                id: HookId::new("error-hook"),
+            }
         }
     }
 
@@ -260,7 +266,9 @@ mod tests {
 
     impl SkipHook {
         fn new() -> Self {
-            Self { id: HookId::new("skip-hook") }
+            Self {
+                id: HookId::new("skip-hook"),
+            }
         }
     }
 
@@ -298,7 +306,11 @@ mod tests {
     #[tokio::test]
     async fn test_execute_chain_continue() {
         let registry = Arc::new(RwLock::new(HookRegistry::new()));
-        registry.write().await.register(Box::new(ContinueHook::new())).unwrap();
+        registry
+            .write()
+            .await
+            .register(Box::new(ContinueHook::new()))
+            .unwrap();
 
         let event = create_test_event();
         let context = HookContext::new(event.clone());
@@ -313,7 +325,11 @@ mod tests {
     #[tokio::test]
     async fn test_execute_chain_modified() {
         let registry = Arc::new(RwLock::new(HookRegistry::new()));
-        registry.write().await.register(Box::new(ModifyHook::new())).unwrap();
+        registry
+            .write()
+            .await
+            .register(Box::new(ModifyHook::new()))
+            .unwrap();
 
         let executor = HookExecutor::new(registry);
         let event = create_test_event();
@@ -330,7 +346,11 @@ mod tests {
     #[tokio::test]
     async fn test_execute_chain_stop() {
         let registry = Arc::new(RwLock::new(HookRegistry::new()));
-        registry.write().await.register(Box::new(ErrorHook::new())).unwrap();
+        registry
+            .write()
+            .await
+            .register(Box::new(ErrorHook::new()))
+            .unwrap();
 
         let executor = HookExecutor::new(registry).with_error_isolation(false);
         let event = create_test_event();
@@ -344,7 +364,11 @@ mod tests {
     #[tokio::test]
     async fn test_execute_chain_skip() {
         let registry = Arc::new(RwLock::new(HookRegistry::new()));
-        registry.write().await.register(Box::new(SkipHook::new())).unwrap();
+        registry
+            .write()
+            .await
+            .register(Box::new(SkipHook::new()))
+            .unwrap();
 
         let executor = HookExecutor::new(registry);
         let event = create_test_event();
@@ -365,7 +389,9 @@ mod tests {
 
         impl TimeoutHook {
             fn new() -> Self {
-                Self { id: HookId::new("timeout-hook") }
+                Self {
+                    id: HookId::new("timeout-hook"),
+                }
             }
         }
 
@@ -386,8 +412,16 @@ mod tests {
         }
 
         let registry = Arc::new(RwLock::new(HookRegistry::new()));
-        registry.write().await.register(Box::new(TimeoutHook::new())).unwrap();
-        registry.write().await.register(Box::new(ContinueHook::new())).unwrap();
+        registry
+            .write()
+            .await
+            .register(Box::new(TimeoutHook::new()))
+            .unwrap();
+        registry
+            .write()
+            .await
+            .register(Box::new(ContinueHook::new()))
+            .unwrap();
 
         let executor = HookExecutor::new(registry)
             .with_error_isolation(true)

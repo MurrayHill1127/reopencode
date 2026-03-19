@@ -2,8 +2,8 @@
 //!
 //! Defines all config types with serde support for TOML parsing.
 
-use std::collections::{BTreeMap, HashMap};
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
 
 // Import CategoryConfig from category module
 use crate::category::CategoryConfig;
@@ -41,16 +41,16 @@ pub struct Config {
     // Future fields - keep as default for forward compatibility
     #[serde(default)]
     pub command: HashMap<String, CommandConfig>,
-    
+
     #[serde(default)]
     pub skills: SkillsConfig,
-    
+
     #[serde(default)]
     pub storage: StorageConfig,
-    
+
     #[serde(default)]
     pub hook: HookConfig,
-    
+
     #[serde(default)]
     pub category: CategoryConfig,
 
@@ -82,8 +82,12 @@ pub struct ServerConfig {
     pub cors_origin: Vec<String>,
 }
 
-fn default_server_port() -> u16 { 4096 }
-fn default_server_host() -> String { "127.0.0.1".to_string() }
+fn default_server_port() -> u16 {
+    4096
+}
+fn default_server_host() -> String {
+    "127.0.0.1".to_string()
+}
 
 impl Default for ServerConfig {
     fn default() -> Self {
@@ -156,7 +160,9 @@ pub struct AgentConfig {
     pub permission: Option<PermissionConfig>,
 }
 
-fn default_temperature() -> f64 { 0.1 }
+fn default_temperature() -> f64 {
+    0.1
+}
 
 /// Agent 运行模式枚举
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -243,7 +249,9 @@ pub struct McpRemoteConfig {
     pub timeout: u64,
 }
 
-fn default_mcp_timeout() -> u64 { 30000 }
+fn default_mcp_timeout() -> u64 {
+    30000
+}
 
 impl Default for McpRemoteConfig {
     fn default() -> Self {

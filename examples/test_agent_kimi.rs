@@ -1,16 +1,15 @@
 //! Test Sisyphus Agent with Kimi API
 
-use std::sync::Arc;
 use reopencode::agent::{Agent, Message, Role, Sisyphus, ToolDefinition};
 use reopencode::provider::{OpenAiProvider, ProviderConfig};
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
-    let api_key = std::env::var("KIMI_API_KEY")
-        .expect("KIMI_API_KEY environment variable must be set");
+    let api_key =
+        std::env::var("KIMI_API_KEY").expect("KIMI_API_KEY environment variable must be set");
 
-    let config = ProviderConfig::new("kimi", api_key)
-        .with_base_url("https://api.moonshot.cn/v1");
+    let config = ProviderConfig::new("kimi", api_key).with_base_url("https://api.moonshot.cn/v1");
 
     let provider = Arc::new(OpenAiProvider::new(config));
 
@@ -21,12 +20,10 @@ async fn main() {
 
     println!("=== Sisyphus Agent Test with Kimi API ===\n");
 
-    let messages = vec![
-        Message {
-            role: Role::User,
-            content: "Say 'Hello from Sisyphus!' and nothing else.".to_string(),
-        },
-    ];
+    let messages = vec![Message {
+        role: Role::User,
+        content: "Say 'Hello from Sisyphus!' and nothing else.".to_string(),
+    }];
 
     println!("Sending message via Agent...\n");
 
@@ -34,10 +31,12 @@ async fn main() {
         Ok(response) => {
             println!("=== Agent Response ===");
             println!("Content: {}", response.content);
-            println!("Tokens: prompt={}, completion={}, total={}",
+            println!(
+                "Tokens: prompt={}, completion={}, total={}",
                 response.usage.prompt_tokens,
                 response.usage.completion_tokens,
-                response.usage.total_tokens);
+                response.usage.total_tokens
+            );
             println!("\n=== SUCCESS: Agent → Provider → Kimi API works! ===");
         }
         Err(e) => {

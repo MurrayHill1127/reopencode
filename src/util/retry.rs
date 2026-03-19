@@ -197,7 +197,9 @@ impl RetryConfigBuilder {
             max_retries: self.max_retries.unwrap_or(default.max_retries),
             initial_delay_ms: self.initial_delay_ms.unwrap_or(default.initial_delay_ms),
             max_delay_ms: self.max_delay_ms.unwrap_or(default.max_delay_ms),
-            backoff_multiplier: self.backoff_multiplier.unwrap_or(default.backoff_multiplier),
+            backoff_multiplier: self
+                .backoff_multiplier
+                .unwrap_or(default.backoff_multiplier),
             use_jitter: self.use_jitter.unwrap_or(default.use_jitter),
         }
     }
@@ -401,8 +403,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     #[test]
     fn test_retry_config_default() {
@@ -439,9 +441,7 @@ mod tests {
 
     #[test]
     fn test_retry_config_builder_partial() {
-        let config = RetryConfig::builder()
-            .max_retries(10)
-            .build();
+        let config = RetryConfig::builder().max_retries(10).build();
 
         assert_eq!(config.max_retries, 10);
         // Other fields should have default values
@@ -505,18 +505,28 @@ mod tests {
         let d3 = backoff.next().unwrap();
 
         // Jitter is ±10%, so check values are within reasonable bounds
-        assert!(d1 >= 900 && d1 <= 1100, "First delay {} should be within ±10% of 1000", d1);
-        assert!(d2 >= 1800 && d2 <= 2200, "Second delay {} should be within ±10% of 2000", d2);
-        assert!(d3 >= 3600 && d3 <= 4400, "Third delay {} should be within ±10% of 4000", d3);
+        assert!(
+            d1 >= 900 && d1 <= 1100,
+            "First delay {} should be within ±10% of 1000",
+            d1
+        );
+        assert!(
+            d2 >= 1800 && d2 <= 2200,
+            "Second delay {} should be within ±10% of 2000",
+            d2
+        );
+        assert!(
+            d3 >= 3600 && d3 <= 4400,
+            "Third delay {} should be within ±10% of 4000",
+            d3
+        );
 
         assert_eq!(backoff.next(), None);
     }
 
     #[test]
     fn test_exponential_backoff_zero_retries() {
-        let config = RetryConfig::builder()
-            .max_retries(0)
-            .build();
+        let config = RetryConfig::builder().max_retries(0).build();
 
         let mut backoff = ExponentialBackoff::new(&config);
         assert_eq!(backoff.next(), None);
@@ -526,9 +536,8 @@ mod tests {
     async fn test_retry_with_backoff_success_first_try() {
         let config = RetryConfig::default();
 
-        let result: Result<String, String> = retry_with_backoff(&config, || async {
-            Ok::<_, String>("success".to_string())
-        }).await;
+        let result: Result<String, String> =
+            retry_with_backoff(&config, || async { Ok::<_, String>("success".to_string()) }).await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "success");
@@ -553,11 +562,16 @@ mod tests {
                     Ok("success".to_string())
                 }
             }
-        }).await;
+        })
+        .await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "success");
-        assert_eq!(attempt.load(Ordering::SeqCst), 3, "Should have attempted 3 times");
+        assert_eq!(
+            attempt.load(Ordering::SeqCst),
+            3,
+            "Should have attempted 3 times"
+        );
     }
 
     #[tokio::test]
@@ -575,7 +589,8 @@ mod tests {
                 attempt.fetch_add(1, Ordering::SeqCst);
                 Err::<String, _>("always fails".to_string())
             }
-        }).await;
+        })
+        .await;
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "always fails");
@@ -585,9 +600,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_with_backoff_zero_retries() {
-        let config = RetryConfig::builder()
-            .max_retries(0)
-            .build();
+        let config = RetryConfig::builder().max_retries(0).build();
 
         let attempt = Arc::new(AtomicU32::new(0));
 
@@ -597,7 +610,8 @@ mod tests {
                 attempt.fetch_add(1, Ordering::SeqCst);
                 Err::<String, _>("fails".to_string())
             }
-        }).await;
+        })
+        .await;
 
         assert!(result.is_err());
         // With 0 retries, only 1 attempt should be made
@@ -617,9 +631,8 @@ mod tests {
             code: u32,
         }
 
-        let result: Result<String, CustomError> = retry_with_backoff(&config, || async {
-            Err(CustomError { code: 42 })
-        }).await;
+        let result: Result<String, CustomError> =
+            retry_with_backoff(&config, || async { Err(CustomError { code: 42 }) }).await;
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), CustomError { code: 42 });
@@ -633,8 +646,16 @@ mod tests {
             let jittered = add_jitter(base);
 
             // Jitter should be between 90% and 110% of base
-            assert!(jittered >= 900, "Jittered value {} should be >= 900", jittered);
-            assert!(jittered <= 1100, "Jittered value {} should be <= 1100", jittered);
+            assert!(
+                jittered >= 900,
+                "Jittered value {} should be >= 900",
+                jittered
+            );
+            assert!(
+                jittered <= 1100,
+                "Jittered value {} should be <= 1100",
+                jittered
+            );
         }
     }
 

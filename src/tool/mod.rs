@@ -10,7 +10,7 @@ pub mod write;
 
 pub use bash::BashTool;
 pub use edit::EditTool;
-pub use error::{ToolError, Result};
+pub use error::{Result, ToolError};
 pub use read::ReadTool;
 pub use registry::ToolRegistry;
 pub use traits::{Tool, ToolResult};

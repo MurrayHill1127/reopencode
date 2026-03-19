@@ -4,7 +4,7 @@ use tokio::sync::broadcast;
 
 const GLOBAL_BUS_CAPACITY: usize = 1024;
 
-static GLOBAL_BUS: once_cell::sync::Lazy<Arc<broadcast::Sender<GlobalEvent>>> = 
+static GLOBAL_BUS: once_cell::sync::Lazy<Arc<broadcast::Sender<GlobalEvent>>> =
     once_cell::sync::Lazy::new(|| {
         let (tx, _rx) = broadcast::channel(GLOBAL_BUS_CAPACITY);
         Arc::new(tx)

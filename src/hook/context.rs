@@ -3,9 +3,9 @@
 //! Provides context structures passed to hooks during execution,
 //! containing session, tool, and event information.
 
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use chrono::{DateTime, Utc};
 
 use super::types::{HookEvent, HookId, ResolvedModel, TokenUsage};
 

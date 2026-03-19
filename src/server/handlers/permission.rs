@@ -41,14 +41,17 @@ pub async fn reply(
     Path(id): Path<String>,
     Json(body): Json<PermissionReply>,
 ) -> Result<Json<bool>, StatusCode> {
-    info!("Processing permission reply for request {}: {:?}", id, body.reply);
-    
+    info!(
+        "Processing permission reply for request {}: {:?}",
+        id, body.reply
+    );
+
     let valid_replies = ["once", "always", "reject"];
     if !valid_replies.contains(&body.reply.as_str()) {
         info!("Invalid permission reply: {}", body.reply);
         return Err(StatusCode::BAD_REQUEST);
     }
-    
+
     info!("Permission request {} replied with: {}", id, body.reply);
     Ok(Json(true))
 }

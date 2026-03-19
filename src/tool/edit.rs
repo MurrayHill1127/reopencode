@@ -99,11 +99,13 @@ impl Tool for EditTool {
         tokio::fs::write(file_path, modified_content).await?;
 
         // Return result with metadata
-        Ok(ToolResult::new(format!("Successfully edited {}", file_path)).with_metadata(
-            serde_json::json!({
-                "occurrencesReplaced": occurrences_replaced
-            }),
-        ))
+        Ok(
+            ToolResult::new(format!("Successfully edited {}", file_path)).with_metadata(
+                serde_json::json!({
+                    "occurrencesReplaced": occurrences_replaced
+                }),
+            ),
+        )
     }
 }
 
@@ -263,8 +265,11 @@ mod tests {
 
         // Verify file content (writeln adds newline)
         let content = tokio::fs::read_to_string(path).await.unwrap();
-        assert_eq!(content, r#"path = "/baz/qux", pattern = "\n\t"
-"#);
+        assert_eq!(
+            content,
+            r#"path = "/baz/qux", pattern = "\n\t"
+"#
+        );
     }
 
     #[tokio::test]
@@ -278,7 +283,12 @@ mod tests {
         });
         let result = tool.execute(args).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Missing 'filePath'"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Missing 'filePath'")
+        );
 
         // Missing oldString
         let args = serde_json::json!({
@@ -287,7 +297,12 @@ mod tests {
         });
         let result = tool.execute(args).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Missing 'oldString'"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Missing 'oldString'")
+        );
 
         // Missing newString
         let args = serde_json::json!({
@@ -296,7 +311,12 @@ mod tests {
         });
         let result = tool.execute(args).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Missing 'newString'"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Missing 'newString'")
+        );
     }
 
     #[tokio::test]

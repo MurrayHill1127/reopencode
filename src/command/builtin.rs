@@ -3,11 +3,11 @@
 //! 包含所有 ROC 内置斜杠命令的定义和元数据。
 //! 对应 TypeScript: features/builtin-commands/commands.ts
 
+use lazy_static::lazy_static;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
-use lazy_static::lazy_static;
-use serde::{Deserialize, Serialize};
 
 /// 内置命令名称枚举
 /// 对应 TypeScript: BuiltinCommandName (config/schema/commands.ts:3-11)
@@ -44,17 +44,21 @@ impl BuiltinCommandName {
     pub fn description(&self) -> &'static str {
         match self {
             Self::InitDeep => "(builtin) Initialize hierarchical AGENTS.md knowledge base",
-            Self::RalphLoop => {
-                "(builtin) Start self-referential development loop until completion"
-            }
+            Self::RalphLoop => "(builtin) Start self-referential development loop until completion",
             Self::UlwLoop => {
                 "(builtin) Start ultrawork loop - continues until completion with ultrawork mode"
             }
             Self::CancelRalph => "(builtin) Cancel active Ralph Loop",
-            Self::Refactor => "(builtin) Intelligent refactoring command with LSP, AST-grep, architecture analysis, codemap, and TDD verification.",
+            Self::Refactor => {
+                "(builtin) Intelligent refactoring command with LSP, AST-grep, architecture analysis, codemap, and TDD verification."
+            }
             Self::StartWork => "(builtin) Start Sisyphus work session from Prometheus plan",
-            Self::StopContinuation => "(builtin) Stop all continuation mechanisms (ralph loop, todo continuation, boulder) for this session",
-            Self::Handoff => "(builtin) Create a detailed context summary for continuing work in a new session",
+            Self::StopContinuation => {
+                "(builtin) Stop all continuation mechanisms (ralph loop, todo continuation, boulder) for this session"
+            }
+            Self::Handoff => {
+                "(builtin) Create a detailed context summary for continuing work in a new session"
+            }
         }
     }
 
@@ -62,9 +66,15 @@ impl BuiltinCommandName {
     pub fn argument_hint(&self) -> Option<&'static str> {
         match self {
             Self::InitDeep => Some("[--create-new] [--max-depth=N]"),
-            Self::RalphLoop => Some("\"task description\" [--completion-promise=TEXT] [--max-iterations=N] [--strategy=reset|continue]"),
-            Self::UlwLoop => Some("\"task description\" [--completion-promise=TEXT] [--strategy=reset|continue]"),
-            Self::Refactor => Some("<refactoring-target> [--scope=<file|module|project>] [--strategy=<safe|aggressive>]"),
+            Self::RalphLoop => Some(
+                "\"task description\" [--completion-promise=TEXT] [--max-iterations=N] [--strategy=reset|continue]",
+            ),
+            Self::UlwLoop => {
+                Some("\"task description\" [--completion-promise=TEXT] [--strategy=reset|continue]")
+            }
+            Self::Refactor => Some(
+                "<refactoring-target> [--scope=<file|module|project>] [--strategy=<safe|aggressive>]",
+            ),
             Self::StartWork => Some("[plan-name]"),
             Self::Handoff => Some("[goal]"),
             _ => None,
@@ -296,7 +306,10 @@ mod tests {
         assert_eq!(BuiltinCommandName::CancelRalph.as_str(), "cancel-ralph");
         assert_eq!(BuiltinCommandName::Refactor.as_str(), "refactor");
         assert_eq!(BuiltinCommandName::StartWork.as_str(), "start-work");
-        assert_eq!(BuiltinCommandName::StopContinuation.as_str(), "stop-continuation");
+        assert_eq!(
+            BuiltinCommandName::StopContinuation.as_str(),
+            "stop-continuation"
+        );
         assert_eq!(BuiltinCommandName::Handoff.as_str(), "handoff");
     }
 
@@ -329,16 +342,32 @@ mod tests {
 
     #[test]
     fn test_builtin_command_name_description() {
-        assert!(BuiltinCommandName::InitDeep.description().contains("Initialize"));
-        assert!(BuiltinCommandName::RalphLoop.description().contains("self-referential"));
-        assert!(BuiltinCommandName::Handoff.description().contains("context summary"));
+        assert!(
+            BuiltinCommandName::InitDeep
+                .description()
+                .contains("Initialize")
+        );
+        assert!(
+            BuiltinCommandName::RalphLoop
+                .description()
+                .contains("self-referential")
+        );
+        assert!(
+            BuiltinCommandName::Handoff
+                .description()
+                .contains("context summary")
+        );
     }
 
     #[test]
     fn test_builtin_command_name_argument_hint() {
         assert!(BuiltinCommandName::InitDeep.argument_hint().is_some());
         assert!(BuiltinCommandName::CancelRalph.argument_hint().is_none());
-        assert!(BuiltinCommandName::StopContinuation.argument_hint().is_none());
+        assert!(
+            BuiltinCommandName::StopContinuation
+                .argument_hint()
+                .is_none()
+        );
     }
 
     #[test]
@@ -395,6 +424,11 @@ mod tests {
 
         // cancel-ralph and stop-continuation don't have agents
         assert!(get_builtin_command("cancel-ralph").unwrap().agent.is_none());
-        assert!(get_builtin_command("stop-continuation").unwrap().agent.is_none());
+        assert!(
+            get_builtin_command("stop-continuation")
+                .unwrap()
+                .agent
+                .is_none()
+        );
     }
 }

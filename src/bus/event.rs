@@ -1,4 +1,4 @@
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub trait EventProperties: Serialize + DeserializeOwned + Clone + Send + Sync + 'static {}
 
@@ -43,7 +43,7 @@ pub mod definitions {
     use super::*;
     use serde::{Deserialize, Serialize};
 
-    pub const INSTANCE_DISPOSED: EventDefinition<InstanceDisposedProperties> = 
+    pub const INSTANCE_DISPOSED: EventDefinition<InstanceDisposedProperties> =
         EventDefinition::new("server.instance.disposed");
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,8 +84,7 @@ pub mod definitions {
         pub info: PtyInfo,
     }
 
-    pub const PTY_EXITED: EventDefinition<PtyExitedProperties> =
-        EventDefinition::new("pty.exited");
+    pub const PTY_EXITED: EventDefinition<PtyExitedProperties> = EventDefinition::new("pty.exited");
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PtyExitedProperties {

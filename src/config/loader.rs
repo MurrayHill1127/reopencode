@@ -3,14 +3,14 @@
 //! Multi-layer config loading with priority:
 //! defaults -> global -> project -> env
 
-use std::path::{Path, PathBuf};
-use std::env;
-use crate::config::types::Config;
 use crate::config::error::ConfigError;
+use crate::config::merge::MergeStrategy;
 use crate::config::paths::ConfigPaths;
 use crate::config::substitution::Substitutor;
-use crate::config::merge::MergeStrategy;
+use crate::config::types::Config;
 use crate::config::validation::Validator;
+use std::env;
+use std::path::{Path, PathBuf};
 
 /// Configuration layer source
 #[derive(Debug, Clone)]
@@ -127,23 +127,19 @@ impl ConfigLoader {
                 Ok(config)
             }
 
-            ConfigLayer::File(path) => {
-                match ConfigPaths::read_file(path)? {
-                    Some(content) => {
-                        let content = if self.substitutions_enabled {
-                            Substitutor::substitute_env(&content)?
-                        } else {
-                            content
-                        };
-                        Self::parse_config(&content)
-                    }
-                    None => Err(ConfigError::FileNotFound(path.clone())),
+            ConfigLayer::File(path) => match ConfigPaths::read_file(path)? {
+                Some(content) => {
+                    let content = if self.substitutions_enabled {
+                        Substitutor::substitute_env(&content)?
+                    } else {
+                        content
+                    };
+                    Self::parse_config(&content)
                 }
-            }
+                None => Err(ConfigError::FileNotFound(path.clone())),
+            },
 
-            ConfigLayer::EnvPrefix(prefix) => {
-                self.load_from_env(prefix)
-            }
+            ConfigLayer::EnvPrefix(prefix) => self.load_from_env(prefix),
         }
     }
 
@@ -159,7 +155,10 @@ impl ConfigLoader {
         let mut config = Config::default();
 
         // Check for server config env vars
-        if let Some(port) = env::var(format!("{}__SERVER__PORT", prefix)).ok().and_then(|p| p.parse::<u16>().ok()) {
+        if let Some(port) = env::var(format!("{}__SERVER__PORT", prefix))
+            .ok()
+            .and_then(|p| p.parse::<u16>().ok())
+        {
             config.server.port = port;
         }
 

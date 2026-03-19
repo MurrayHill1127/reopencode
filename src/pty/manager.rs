@@ -4,10 +4,16 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use tokio::sync::Mutex;
 
-use crate::bus::{Bus, PTY_CREATED, PTY_DELETED, PTY_EXITED, PTY_UPDATED, PtyCreatedProperties, PtyDeletedProperties, PtyExitedProperties, PtyUpdatedProperties, PtyInfo as BusPtyInfo};
+use crate::bus::{
+    Bus, PTY_CREATED, PTY_DELETED, PTY_EXITED, PTY_UPDATED, PtyCreatedProperties,
+    PtyDeletedProperties, PtyExitedProperties, PtyInfo as BusPtyInfo, PtyUpdatedProperties,
+};
 
-use super::session::{spawn_pty, PtyHandle};
-use super::types::{CreatePtyRequest, PtyError, PtyInfo, PtyOutput, UpdatePtyRequest, DEFAULT_COLS, DEFAULT_ROWS, generate_pty_id};
+use super::session::{PtyHandle, spawn_pty};
+use super::types::{
+    CreatePtyRequest, DEFAULT_COLS, DEFAULT_ROWS, PtyError, PtyInfo, PtyOutput, UpdatePtyRequest,
+    generate_pty_id,
+};
 
 fn to_bus_pty_info(info: &PtyInfo) -> BusPtyInfo {
     BusPtyInfo {
@@ -43,7 +49,7 @@ impl PtyManager {
 
     pub async fn create(&self, req: CreatePtyRequest) -> Result<PtyInfo, PtyError> {
         let id = generate_pty_id();
-        
+
         let command = req.command.clone().unwrap_or_else(|| {
             if cfg!(target_os = "windows") {
                 "cmd.exe".to_string()
@@ -59,7 +65,7 @@ impl PtyManager {
         });
 
         let mut args = req.args.clone().unwrap_or_default();
-        
+
         if command.ends_with("sh") && !args.contains(&"-l".to_string()) {
             args.push("-l".to_string());
         }
@@ -84,9 +90,13 @@ impl PtyManager {
         self.readers.lock().await.insert(id.clone(), reader_handle);
 
         if let Some(bus) = &self.bus {
-            bus.publish(&PTY_CREATED, PtyCreatedProperties {
-                info: to_bus_pty_info(&info),
-            }).await;
+            bus.publish(
+                &PTY_CREATED,
+                PtyCreatedProperties {
+                    info: to_bus_pty_info(&info),
+                },
+            )
+            .await;
         }
 
         Ok(info)
@@ -109,7 +119,9 @@ impl PtyManager {
     }
 
     pub async fn update(&self, id: &str, _req: UpdatePtyRequest) -> Result<PtyInfo, PtyError> {
-        let handle = self.handles.get(id)
+        let handle = self
+            .handles
+            .get(id)
             .ok_or_else(|| PtyError::NotFound(id.to_string()))?;
 
         if handle.is_exited() {
@@ -119,9 +131,13 @@ impl PtyManager {
         let info = handle.get_info().await;
 
         if let Some(bus) = &self.bus {
-            bus.publish(&PTY_UPDATED, PtyUpdatedProperties {
-                info: to_bus_pty_info(&info),
-            }).await;
+            bus.publish(
+                &PTY_UPDATED,
+                PtyUpdatedProperties {
+                    info: to_bus_pty_info(&info),
+                },
+            )
+            .await;
         }
 
         Ok(info)
@@ -132,14 +148,18 @@ impl PtyManager {
     }
 
     pub async fn write(&self, id: &str, data: &[u8]) -> Result<(), PtyError> {
-        let handle = self.handles.get(id)
+        let handle = self
+            .handles
+            .get(id)
             .ok_or_else(|| PtyError::NotFound(id.to_string()))?;
 
         handle.write(data).await
     }
 
     pub async fn read(&self, id: &str, _cursor: Option<usize>) -> Result<PtyOutput, PtyError> {
-        let _handle = self.handles.get(id)
+        let _handle = self
+            .handles
+            .get(id)
             .ok_or_else(|| PtyError::NotFound(id.to_string()))?;
 
         Ok(PtyOutput {
@@ -149,17 +169,23 @@ impl PtyManager {
     }
 
     pub async fn kill(&self, id: &str) -> Result<(), PtyError> {
-        let handle = self.handles.get(id)
+        let handle = self
+            .handles
+            .get(id)
             .ok_or_else(|| PtyError::NotFound(id.to_string()))?;
 
         handle.mark_exited(0).await;
 
         if let Some(bus) = &self.bus {
             let info = handle.get_info().await;
-            bus.publish(&PTY_EXITED, PtyExitedProperties {
-                id: id.to_string(),
-                exit_code: info.exit_code.unwrap_or(0),
-            }).await;
+            bus.publish(
+                &PTY_EXITED,
+                PtyExitedProperties {
+                    id: id.to_string(),
+                    exit_code: info.exit_code.unwrap_or(0),
+                },
+            )
+            .await;
         }
 
         Ok(())
@@ -173,9 +199,8 @@ impl PtyManager {
         }
 
         if let Some(bus) = &self.bus {
-            bus.publish(&PTY_DELETED, PtyDeletedProperties {
-                id: id.to_string(),
-            }).await;
+            bus.publish(&PTY_DELETED, PtyDeletedProperties { id: id.to_string() })
+                .await;
         }
 
         Ok(true)
@@ -201,7 +226,7 @@ impl Default for PtyManager {
     }
 }
 
-static GLOBAL_PTY_MANAGER: once_cell::sync::Lazy<PtyManager> = 
+static GLOBAL_PTY_MANAGER: once_cell::sync::Lazy<PtyManager> =
     once_cell::sync::Lazy::new(PtyManager::new);
 
 pub fn global() -> &'static PtyManager {

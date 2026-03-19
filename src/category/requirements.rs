@@ -2,8 +2,8 @@
 //!
 //! Defines fallback chains for categories and agents.
 
-use std::collections::HashMap;
 use lazy_static::lazy_static;
+use std::collections::HashMap;
 
 use super::types::{FallbackEntry, ModelRequirement, ModelVariant};
 
@@ -11,7 +11,7 @@ lazy_static! {
     /// Category model requirements with fallback chains
     pub static ref CATEGORY_MODEL_REQUIREMENTS: HashMap<String, ModelRequirement> = {
         let mut m = HashMap::new();
-        
+
         // visual-engineering
         m.insert("visual-engineering".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -36,7 +36,7 @@ lazy_static! {
             requires_any_model: false,
             requires_provider: None,
         });
-        
+
         // ultrabrain
         m.insert("ultrabrain".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -61,7 +61,7 @@ lazy_static! {
             requires_any_model: false,
             requires_provider: None,
         });
-        
+
         // deep - requires GPT-5.3 Codex
         m.insert("deep".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -81,7 +81,7 @@ lazy_static! {
             requires_any_model: false,
             requires_provider: None,
         });
-        
+
         // artistry
         m.insert("artistry".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -101,7 +101,7 @@ lazy_static! {
             requires_any_model: false,
             requires_provider: None,
         });
-        
+
         // quick
         m.insert("quick".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -126,7 +126,7 @@ lazy_static! {
             requires_any_model: false,
             requires_provider: None,
         });
-        
+
         // unspecified-low
         m.insert("unspecified-low".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -151,7 +151,7 @@ lazy_static! {
             requires_any_model: false,
             requires_provider: None,
         });
-        
+
         // unspecified-high
         m.insert("unspecified-high".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -176,7 +176,7 @@ lazy_static! {
             requires_any_model: false,
             requires_provider: None,
         });
-        
+
         // writing
         m.insert("writing".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -201,14 +201,14 @@ lazy_static! {
             requires_any_model: false,
             requires_provider: None,
         });
-        
+
         m
     };
-    
+
     /// Agent model requirements with fallback chains
     pub static ref AGENT_MODEL_REQUIREMENTS: HashMap<String, ModelRequirement> = {
         let mut m = HashMap::new();
-        
+
         // Sisyphus - main orchestrator
         m.insert("sisyphus".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -243,7 +243,7 @@ lazy_static! {
             requires_any_model: true,
             requires_provider: None,
         });
-        
+
         // Hephaestus - deep coding specialist (requires GPT)
         m.insert("hephaestus".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -263,7 +263,7 @@ lazy_static! {
             requires_any_model: false,
             requires_provider: Some(vec!["openai".to_string(), "github-copilot".to_string(), "venice".to_string(), "opencode".to_string()]),
         });
-        
+
         // Oracle - architecture consultation
         m.insert("oracle".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -288,7 +288,7 @@ lazy_static! {
             requires_any_model: false,
             requires_provider: None,
         });
-        
+
         // Explore - fast search (speed priority)
         m.insert("explore".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -313,7 +313,7 @@ lazy_static! {
             requires_any_model: false,
             requires_provider: None,
         });
-        
+
         // Librarian - documentation lookup
         m.insert("librarian".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -333,7 +333,7 @@ lazy_static! {
             requires_any_model: false,
             requires_provider: None,
         });
-        
+
         // Metis - pre-planning consultant
         m.insert("metis".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -353,7 +353,7 @@ lazy_static! {
             requires_any_model: false,
             requires_provider: None,
         });
-        
+
         // Momus - plan reviewer
         m.insert("momus".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -373,7 +373,7 @@ lazy_static! {
             requires_any_model: false,
             requires_provider: None,
         });
-        
+
         // Plan - task planning
         m.insert("plan".to_string(), ModelRequirement {
             fallback_chain: vec![
@@ -398,7 +398,7 @@ lazy_static! {
             requires_any_model: false,
             requires_provider: None,
         });
-        
+
         m
     };
 }
