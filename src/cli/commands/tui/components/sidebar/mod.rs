@@ -22,6 +22,8 @@ pub use sections::{DiffInfo, LspServerInfo, McpServerInfo, SidebarSection, TodoI
 
 use super::{Component, ComponentId, EventPropagation};
 use crate::cli::commands::tui::theme::ThemeContext;
+use crate::mcp::types::McpStatus;
+use crate::VERSION;
 use crossterm::event::KeyEvent;
 use ratatui::{
     layout::Rect,
@@ -71,6 +73,10 @@ pub struct Sidebar {
     section_states: HashMap<SidebarSection, SectionState>,
     /// Theme context for styling
     theme: ThemeContext,
+    /// Session title to display at the top
+    session_title: String,
+    /// Whether LSP is enabled (affects empty state message)
+    lsp_enabled: bool,
 }
 
 impl Sidebar {
@@ -87,7 +93,7 @@ impl Sidebar {
         let mut section_states = HashMap::new();
         for section in SidebarSection::all() {
             // Default: all sections expanded
-            section_states.insert(section, SectionState::expanded());
+            section_states.insert(section, SectionState::expanded(0));
         }
 
         Self {
@@ -102,6 +108,8 @@ impl Sidebar {
             diffs: Vec::new(),
             section_states,
             theme,
+            session_title: "New Session".to_string(),
+            lsp_enabled: true,
         }
     }
 
@@ -177,6 +185,16 @@ impl Sidebar {
         }
     }
 
+    /// Set the session title
+    pub fn set_session_title(&mut self, title: String) {
+        self.session_title = title;
+    }
+
+    /// Set whether LSP is enabled (affects empty state message)
+    pub fn set_lsp_enabled(&mut self, enabled: bool) {
+        self.lsp_enabled = enabled;
+    }
+
     /// Toggle a section's expanded state
     pub fn toggle_section(&mut self, section: SidebarSection) {
         if let Some(state) = self.section_states.get_mut(&section) {
@@ -191,31 +209,78 @@ impl Sidebar {
 
     /// Render the context section
     fn render_context_section(&self, block: Block, area: Rect, frame: &mut Frame) {
-        let lines = vec![
-            Line::from(vec![
-                Span::styled("Tokens: ", Style::default().fg(self.theme.text_muted())),
-                Span::styled(
-                    self.context.format_tokens(),
-                    Style::default().fg(self.theme.text()),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("Usage:  ", Style::default().fg(self.theme.text_muted())),
-                Span::styled(
-                    self.context.format_percentage(),
-                    Style::default().fg(self.theme.text()),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("Cost:   ", Style::default().fg(self.theme.text_muted())),
-                Span::styled(
-                    self.context.format_cost(),
-                    Style::default().fg(self.theme.success()),
-                ),
-            ]),
-        ];
+        let mut lines = vec![Line::from(vec![Span::styled(
+            self.session_title.clone(),
+            Style::default()
+                .fg(self.theme.text())
+                .add_modifier(Modifier::BOLD),
+        )])];
+
+        lines.push(Line::from(vec![
+            Span::styled("Tokens: ", Style::default().fg(self.theme.text_muted())),
+            Span::styled(
+                self.context.format_tokens(),
+                Style::default().fg(self.theme.text()),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("Usage:  ", Style::default().fg(self.theme.text_muted())),
+            Span::styled(
+                self.context.format_percentage(),
+                Style::default().fg(self.theme.text()),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("Cost:   ", Style::default().fg(self.theme.text_muted())),
+            Span::styled(
+                self.context.format_cost(),
+                Style::default().fg(self.theme.success()),
+            ),
+        ]));
 
         let paragraph = Paragraph::new(lines).block(block);
+        frame.render_widget(paragraph, area);
+    }
+
+    /// Count MCP servers by status for summary display
+    fn count_mcp_statuses(&self) -> (usize, usize) {
+        let active = self
+            .mcp_servers
+            .iter()
+            .filter(|s| matches!(s.status, McpStatus::Connected))
+            .count();
+        let errors = self
+            .mcp_servers
+            .iter()
+            .filter(|s| {
+                matches!(
+                    s.status,
+                    McpStatus::Failed { .. }
+                        | McpStatus::NeedsAuth
+                        | McpStatus::NeedsClientRegistration { .. }
+                )
+            })
+            .count();
+        (active, errors)
+    }
+
+    /// Render the footer with version info
+    fn render_footer(&self, area: Rect, frame: &mut Frame) {
+        let footer_text = Line::from(vec![
+            Span::styled("•", Style::default().fg(self.theme.success())),
+            Span::raw(" "),
+            Span::styled("Open", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Code",
+                Style::default()
+                    .fg(self.theme.text())
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(VERSION, Style::default().fg(self.theme.text_muted())),
+        ]);
+
+        let paragraph = Paragraph::new(footer_text);
         frame.render_widget(paragraph, area);
     }
 
@@ -233,12 +298,35 @@ impl Sidebar {
     {
         let state = self.section_states.get(&section).unwrap();
 
-        // Render header
-        let header = if state.has_content {
-            format!("{} {}", state.indicator(), section.title())
+        // Build header with potential summary
+        let mut header_spans = if state.has_content {
+            vec![
+                Span::raw(state.indicator()),
+                Span::raw(" "),
+                Span::raw(section.title()),
+            ]
         } else {
-            format!("  {}", section.title())
+            vec![Span::raw("  "), Span::raw(section.title())]
         };
+
+        // Add MCP summary when collapsed and has >2 items
+        if section == SidebarSection::Mcp && !state.expanded && items.len() > 2 {
+            let (active, errors) = self.count_mcp_statuses();
+            if active > 0 || errors > 0 {
+                let mut summary = format!(" ({active} active");
+                if errors > 0 {
+                    summary.push_str(&format!(
+                        ", {errors} error{}",
+                        if errors > 1 { "s" } else { "" }
+                    ));
+                }
+                summary.push(')');
+                header_spans.push(Span::styled(
+                    summary,
+                    Style::default().fg(self.theme.text_muted()),
+                ));
+            }
+        }
 
         let header_style = if section == self.active_section {
             Style::default()
@@ -248,8 +336,16 @@ impl Sidebar {
             Style::default().fg(self.theme.text())
         };
 
+        // Apply header style to all spans
+        let header_line = Line::from(
+            header_spans
+                .into_iter()
+                .map(|s| Span::styled(s.content, header_style))
+                .collect::<Vec<_>>(),
+        );
+
         let header_block = Block::default()
-            .title(Line::from(Span::styled(header, header_style)))
+            .title(header_line)
             .borders(Borders::TOP)
             .border_style(Style::default().fg(self.theme.border()));
 
@@ -261,29 +357,58 @@ impl Sidebar {
         frame.render_widget(header_block.clone(), header_area);
 
         // Render content if expanded
-        if state.expanded && !items.is_empty() {
-            let content_area = Rect::new(
-                area.x,
-                area.y + header_height,
-                area.width,
-                area.height.saturating_sub(header_height),
-            );
+        if state.expanded {
+            if items.is_empty() {
+                // Handle empty state for LSP section
+                if section == SidebarSection::Lsp {
+                    let empty_message = if !self.lsp_enabled {
+                        "LSPs have been disabled in settings"
+                    } else {
+                        "LSPs will activate as files are read"
+                    };
+                    let content_area = Rect::new(
+                        area.x,
+                        area.y + header_height,
+                        area.width,
+                        area.height.saturating_sub(header_height),
+                    );
+                    let content = vec![Line::from(Span::styled(
+                        empty_message,
+                        Style::default().fg(self.theme.text_muted()),
+                    ))];
+                    let content_block = Block::default().padding(ratatui::widgets::Padding {
+                        top: 0,
+                        right: 1,
+                        bottom: 0,
+                        left: 2,
+                    });
+                    let paragraph = Paragraph::new(content).block(content_block);
+                    frame.render_widget(paragraph, content_area);
+                }
+            } else {
+                let content_area = Rect::new(
+                    area.x,
+                    area.y + header_height,
+                    area.width,
+                    area.height.saturating_sub(header_height),
+                );
 
-            let content: Vec<Line> = items
-                .iter()
-                .enumerate()
-                .map(|(idx, item)| render_item(item, idx))
-                .collect();
+                let content: Vec<Line> = items
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, item)| render_item(item, idx))
+                    .collect();
 
-            let content_block = Block::default().padding(ratatui::widgets::Padding {
-                top: 0,
-                right: 1,
-                bottom: 0,
-                left: 2,
-            });
+                let content_block = Block::default().padding(ratatui::widgets::Padding {
+                    top: 0,
+                    right: 1,
+                    bottom: 0,
+                    left: 2,
+                });
 
-            let paragraph = Paragraph::new(content).block(content_block);
-            frame.render_widget(paragraph, content_area);
+                let paragraph = Paragraph::new(content).block(content_block);
+                frame.render_widget(paragraph, content_area);
+            }
         }
     }
 }
@@ -411,6 +536,19 @@ impl Component for Sidebar {
                 diff_area,
                 frame,
             );
+            current_y += section_height;
+        }
+
+        // Render footer with version at the bottom
+        if current_y < area.y + area.height {
+            let footer_height = 1u16;
+            let footer_area = Rect::new(
+                area.x,
+                area.y + area.height - footer_height,
+                area.width,
+                footer_height,
+            );
+            self.render_footer(footer_area, frame);
         }
     }
 
@@ -585,5 +723,74 @@ mod tests {
         assert!(sidebar.lsp_servers.is_empty());
         assert!(sidebar.todos.is_empty());
         assert!(sidebar.diffs.is_empty());
+    }
+
+    #[test]
+    fn test_sidebar_set_session_title() {
+        let mut sidebar = Sidebar::default();
+        assert_eq!(sidebar.session_title, "New Session");
+
+        sidebar.set_session_title("My Test Session".to_string());
+        assert_eq!(sidebar.session_title, "My Test Session");
+    }
+
+    #[test]
+    fn test_sidebar_set_lsp_enabled() {
+        let mut sidebar = Sidebar::default();
+        assert!(sidebar.lsp_enabled);
+
+        sidebar.set_lsp_enabled(false);
+        assert!(!sidebar.lsp_enabled);
+
+        sidebar.set_lsp_enabled(true);
+        assert!(sidebar.lsp_enabled);
+    }
+
+    #[test]
+    fn test_sidebar_count_mcp_statuses() {
+        let mut sidebar = Sidebar::default();
+
+        // No servers
+        let (active, errors) = sidebar.count_mcp_statuses();
+        assert_eq!(active, 0);
+        assert_eq!(errors, 0);
+
+        // Add various servers
+        let servers = vec![
+            McpServerInfo::new("server1".to_string(), McpStatus::Connected, 5),
+            McpServerInfo::new("server2".to_string(), McpStatus::Connected, 3),
+            McpServerInfo::new(
+                "server3".to_string(),
+                McpStatus::Failed {
+                    error: "test".to_string(),
+                },
+                0,
+            ),
+            McpServerInfo::new("server4".to_string(), McpStatus::NeedsAuth, 0),
+            McpServerInfo::new("server5".to_string(), McpStatus::Disabled, 0),
+        ];
+        sidebar.set_mcp_servers(servers);
+
+        let (active, errors) = sidebar.count_mcp_statuses();
+        assert_eq!(active, 2);
+        assert_eq!(errors, 2); // Failed and NeedsAuth
+    }
+
+    #[test]
+    fn test_sidebar_count_mcp_statuses_with_client_registration_error() {
+        let mut sidebar = Sidebar::default();
+
+        let servers = vec![McpServerInfo::new(
+            "server1".to_string(),
+            McpStatus::NeedsClientRegistration {
+                error: "auth required".to_string(),
+            },
+            0,
+        )];
+        sidebar.set_mcp_servers(servers);
+
+        let (active, errors) = sidebar.count_mcp_statuses();
+        assert_eq!(active, 0);
+        assert_eq!(errors, 1);
     }
 }

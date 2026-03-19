@@ -4,6 +4,7 @@
 //! sidebar sections including MCP servers, LSP servers, todos, and diffs.
 
 use crate::mcp::types::McpStatus;
+use crate::storage::schema::TodoStatus;
 use ratatui::style::Color;
 
 /// Sidebar section types
@@ -48,6 +49,8 @@ pub struct SectionState {
     pub expanded: bool,
     /// Whether the section has content to show
     pub has_content: bool,
+    /// Number of items in the section
+    pub item_count: usize,
 }
 
 impl SectionState {
@@ -57,30 +60,34 @@ impl SectionState {
     ///
     /// * `expanded` - Initial expanded state
     /// * `has_content` - Whether the section has content
+    /// * `item_count` - Number of items in the section
     ///
     /// # Returns
     ///
     /// A new `SectionState` instance.
-    pub fn new(expanded: bool, has_content: bool) -> Self {
+    pub fn new(expanded: bool, has_content: bool, item_count: usize) -> Self {
         Self {
             expanded,
             has_content,
+            item_count,
         }
     }
 
     /// Create a collapsed section with content
-    pub fn collapsed() -> Self {
+    pub fn collapsed(item_count: usize) -> Self {
         Self {
             expanded: false,
             has_content: true,
+            item_count,
         }
     }
 
     /// Create an expanded section with content
-    pub fn expanded() -> Self {
+    pub fn expanded(item_count: usize) -> Self {
         Self {
             expanded: true,
             has_content: true,
+            item_count,
         }
     }
 
@@ -89,13 +96,26 @@ impl SectionState {
         self.expanded = !self.expanded;
     }
 
+    /// Check if the section can be toggled
+    ///
+    /// # Returns
+    ///
+    /// `true` if the section has more than 2 items and can be toggled.
+    pub fn can_toggle(&self) -> bool {
+        self.item_count > 2
+    }
+
     /// Get the expand/collapse indicator
     ///
     /// # Returns
     ///
-    /// "▼" if expanded, "▶" if collapsed.
+    /// "" (empty string) if 2 or fewer items.
+    /// "▼" if expanded and more than 2 items.
+    /// "▶" if collapsed and more than 2 items.
     pub fn indicator(&self) -> &'static str {
-        if self.expanded {
+        if self.item_count <= 2 {
+            ""
+        } else if self.expanded {
             "▼"
         } else {
             "▶"
@@ -105,7 +125,7 @@ impl SectionState {
 
 impl Default for SectionState {
     fn default() -> Self {
-        Self::collapsed()
+        Self::collapsed(0)
     }
 }
 
@@ -216,31 +236,31 @@ impl LspServerInfo {
 pub struct TodoItem {
     /// Todo description
     pub content: String,
-    /// Whether the todo is completed
-    pub completed: bool,
+    /// Todo status
+    pub status: TodoStatus,
 }
 
 impl TodoItem {
     /// Create new todo item
-    pub fn new(content: String, completed: bool) -> Self {
-        Self { content, completed }
+    pub fn new(content: String, status: TodoStatus) -> Self {
+        Self { content, status }
     }
 
-    /// Get completion indicator
+    /// Get status indicator
     pub fn indicator(&self) -> &'static str {
-        if self.completed {
-            "✓"
-        } else {
-            "○"
+        match self.status {
+            TodoStatus::Completed => "[✓]",
+            TodoStatus::InProgress => "[•]",
+            TodoStatus::Pending | TodoStatus::Cancelled => "[ ]",
         }
     }
 
     /// Get status color
     pub fn status_color(&self) -> Color {
-        if self.completed {
-            Color::Green
-        } else {
-            Color::Yellow
+        match self.status {
+            TodoStatus::Completed => Color::Green,
+            TodoStatus::InProgress => Color::Yellow,
+            TodoStatus::Pending | TodoStatus::Cancelled => Color::Gray,
         }
     }
 }
@@ -305,8 +325,9 @@ mod tests {
 
     #[test]
     fn test_section_state_toggle() {
-        let mut state = SectionState::collapsed();
+        let mut state = SectionState::collapsed(3);
         assert!(!state.expanded);
+        assert!(state.can_toggle());
         assert_eq!(state.indicator(), "▶");
 
         state.toggle();
@@ -319,6 +340,7 @@ mod tests {
         let state = SectionState::default();
         assert!(!state.expanded);
         assert!(state.has_content);
+        assert_eq!(state.item_count, 0);
     }
 
     #[test]
@@ -339,12 +361,12 @@ mod tests {
 
     #[test]
     fn test_todo_item() {
-        let todo = TodoItem::new("Fix bug".to_string(), false);
-        assert_eq!(todo.indicator(), "○");
-        assert_eq!(todo.status_color(), Color::Yellow);
+        let todo = TodoItem::new("Fix bug".to_string(), TodoStatus::Pending);
+        assert_eq!(todo.indicator(), "[ ]");
+        assert_eq!(todo.status_color(), Color::Gray);
 
-        let completed = TodoItem::new("Done task".to_string(), true);
-        assert_eq!(completed.indicator(), "✓");
+        let completed = TodoItem::new("Done task".to_string(), TodoStatus::Completed);
+        assert_eq!(completed.indicator(), "[✓]");
         assert_eq!(completed.status_color(), Color::Green);
     }
 
@@ -354,5 +376,34 @@ mod tests {
         assert_eq!(diff.format_changes(), "+10 -3");
         assert_eq!(DiffInfo::additions_color(), Color::Green);
         assert_eq!(DiffInfo::deletions_color(), Color::Red);
+    }
+
+    #[test]
+    fn test_todo_item_in_progress() {
+        let todo = TodoItem::new("Working on it".to_string(), TodoStatus::InProgress);
+        assert_eq!(todo.indicator(), "[•]");
+        assert_eq!(todo.status_color(), Color::Yellow);
+    }
+
+    #[test]
+    fn test_section_indicator_two_items() {
+        let collapsed = SectionState::collapsed(2);
+        assert!(!collapsed.can_toggle());
+        assert_eq!(collapsed.indicator(), "");
+
+        let expanded = SectionState::expanded(2);
+        assert!(!expanded.can_toggle());
+        assert_eq!(expanded.indicator(), "");
+    }
+
+    #[test]
+    fn test_section_indicator_three_items() {
+        let collapsed = SectionState::collapsed(3);
+        assert!(collapsed.can_toggle());
+        assert_eq!(collapsed.indicator(), "▶");
+
+        let expanded = SectionState::expanded(3);
+        assert!(expanded.can_toggle());
+        assert_eq!(expanded.indicator(), "▼");
     }
 }
