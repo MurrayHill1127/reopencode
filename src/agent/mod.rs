@@ -5,14 +5,20 @@
 //! - Permission system for tool access control
 //! - Prompt templates for builtin agents
 //! - Agent registry for managing agents
+//! - Loop logic for agent execution cycles
 
 pub mod config;
+pub mod loop_;
 pub mod permission;
 pub mod prompts;
 pub mod registry;
 
 // Re-export commonly used types
 pub use config::{AgentInfo, AgentMode, ModelConfig};
+pub use loop_::{
+    AgentLoop, FinishReason, LoopConfig, LoopDecision, LoopState, LoopStats, OverflowStatus,
+    DEFAULT_CONTEXT_OVERFLOW_THRESHOLD, DEFAULT_CONTEXT_WARNING_THRESHOLD, DEFAULT_MAX_STEPS,
+};
 pub use permission::{Action, PermissionEngine, Rule, Ruleset, evaluate, merge};
 pub use registry::AgentRegistry;
 
