@@ -27,7 +27,7 @@ use std::io;
 
 use crate::mcp::types::McpStatus;
 use components::mcp_status::McpStatusPanel;
-use components::{Component, ContextInfo, Footer, List, Sidebar, TextArea};
+use components::{Component, ContextInfo, Footer, List, Sidebar, StatusDialog, TextArea};
 use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
 use std::collections::HashMap;
 use theme::ThemeContext;
@@ -85,6 +85,7 @@ pub struct TuiApp {
     pub sidebar: Sidebar,
     pub context_info: ContextInfo,
     pub footer: Footer,
+    pub status_dialog: StatusDialog,
 }
 
 impl Default for TuiApp {
@@ -129,6 +130,7 @@ impl Default for TuiApp {
             sidebar: Sidebar::new(ThemeContext::default()),
             context_info: ContextInfo::default(),
             footer: Footer::new(ThemeContext::default()),
+            status_dialog: StatusDialog::new(),
         }
     }
 }
@@ -195,6 +197,20 @@ impl TuiApp {
             .matches("sidebar_toggle", &key_info, leader_active)
         {
             self.sidebar.toggle();
+            return None;
+        }
+
+        if self
+            .keybinds
+            .matches("status_view", &key_info, leader_active)
+        {
+            if self.status_dialog.is_visible() {
+                self.status_dialog.hide();
+            } else {
+                self.status_dialog.set_mcp_statuses(self.mcp_statuses.clone());
+                self.status_dialog.set_lsp_count(self.lsp_count);
+                self.status_dialog.show();
+            }
             return None;
         }
 
@@ -460,6 +476,10 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         );
 
         app.sidebar.render(f, sidebar_area);
+    }
+
+    if app.status_dialog.is_visible() {
+        app.status_dialog.render(f, f.area());
     }
 }
 

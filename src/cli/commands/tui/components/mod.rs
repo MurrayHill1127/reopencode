@@ -17,6 +17,7 @@ pub mod model_selector;
 pub mod session_create;
 pub mod session_list;
 pub mod sidebar;
+pub mod status_dialog;
 pub mod textarea;
 pub mod toast;
 pub mod types;
@@ -27,6 +28,7 @@ pub use footer::Footer;
 pub use header::{Header, HoverButton};
 pub use list::List;
 pub use sidebar::{ContextInfo, DiffInfo, LspServerInfo, McpServerInfo, Sidebar, TodoItem};
+pub use status_dialog::StatusDialog;
 pub use textarea::TextArea;
 pub use types::{ComponentId, EventPropagation};
 
