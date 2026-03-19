@@ -3,11 +3,11 @@
 use super::{Component, ComponentId, EventPropagation};
 use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List as TuiList, ListItem, ListState},
-    Frame,
 };
 use std::fmt::Display;
 use std::time::Duration;

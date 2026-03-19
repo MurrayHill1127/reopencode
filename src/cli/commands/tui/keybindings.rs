@@ -7,11 +7,12 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::time::{Duration, Instant};
 
 /// Keyboard binding information
 /// Corresponds to TypeScript: Info (packages/opencode/src/util/keybind.ts)
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub struct KeybindInfo {
     /// Key name: "c", "return", "escape", "space", "backspace", etc.
     #[serde(rename = "name")]
@@ -38,29 +39,12 @@ pub struct KeybindInfo {
     pub leader: bool,
 }
 
-impl Default for KeybindInfo {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            ctrl: false,
-            meta: false,
-            shift: false,
-            super_: false,
-            leader: false,
-        }
-    }
-}
-
 impl KeybindInfo {
     /// Create a new keybind info with the given key name
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            ctrl: false,
-            meta: false,
-            shift: false,
-            super_: false,
-            leader: false,
+            ..Default::default()
         }
     }
 
@@ -111,27 +95,9 @@ impl KeybindInfo {
                         "down" => info.name = "down".to_string(),
                         "left" => info.name = "left".to_string(),
                         "right" => info.name = "right".to_string(),
-                        // Function keys f1-f12
+                        // Function keys f1-f12 (and beyond)
                         part if part.len() >= 2 && part.starts_with('f') => {
-                            // Check if it's a valid function key (f1-f12)
-                            if part.len() == 2 || part.len() == 3 {
-                                let num_part = &part[1..];
-                                if num_part.chars().all(|c| c.is_ascii_digit()) {
-                                    if let Ok(n) = num_part.parse::<u8>() {
-                                        if n >= 1 && n <= 12 {
-                                            info.name = part.to_string();
-                                        } else {
-                                            info.name = part.to_string();
-                                        }
-                                    } else {
-                                        info.name = part.to_string();
-                                    }
-                                } else {
-                                    info.name = part.to_string();
-                                }
-                            } else {
-                                info.name = part.to_string();
-                            }
+                            info.name = part.to_string();
                         }
                         // Everything else is the key name
                         _ => info.name = part.to_string(),
@@ -176,74 +142,39 @@ impl KeybindInfo {
     /// Convert a crossterm KeyEvent to KeybindInfo
     /// Note: leader is always false since crossterm doesn't know about leader keys
     pub fn from_crossterm(evt: &KeyEvent) -> Self {
-        let mut info = Self::default();
-
-        // Extract modifiers
-        info.ctrl = evt.modifiers.contains(KeyModifiers::CONTROL);
-        info.meta = evt.modifiers.contains(KeyModifiers::ALT);
-        info.shift = evt.modifiers.contains(KeyModifiers::SHIFT);
-        info.super_ = evt.modifiers.contains(KeyModifiers::SUPER);
-
-        // Convert KeyCode to name string
-        info.name = match evt.code {
-            KeyCode::Char(c) => {
-                if c == ' ' {
-                    "space".to_string()
-                } else {
-                    c.to_lowercase().to_string()
+        Self {
+            ctrl: evt.modifiers.contains(KeyModifiers::CONTROL),
+            meta: evt.modifiers.contains(KeyModifiers::ALT),
+            shift: evt.modifiers.contains(KeyModifiers::SHIFT),
+            super_: evt.modifiers.contains(KeyModifiers::SUPER),
+            name: match evt.code {
+                KeyCode::Char(c) => {
+                    if c == ' ' {
+                        "space".to_string()
+                    } else {
+                        c.to_lowercase().to_string()
+                    }
                 }
-            }
-            KeyCode::Enter => "return".to_string(),
-            KeyCode::Backspace => "backspace".to_string(),
-            KeyCode::Esc => "escape".to_string(),
-            KeyCode::Tab => "tab".to_string(),
-            KeyCode::Delete => "delete".to_string(),
-            KeyCode::Home => "home".to_string(),
-            KeyCode::End => "end".to_string(),
-            KeyCode::PageUp => "pageup".to_string(),
-            KeyCode::PageDown => "pagedown".to_string(),
-            KeyCode::Up => "up".to_string(),
-            KeyCode::Down => "down".to_string(),
-            KeyCode::Left => "left".to_string(),
-            KeyCode::Right => "right".to_string(),
-            KeyCode::F(n) => format!("f{}", n),
-            KeyCode::Insert => "insert".to_string(),
-            KeyCode::Null => "".to_string(),
-            KeyCode::BackTab => "backtab".to_string(),
-            _ => "".to_string(),
-        };
-
-        info
-    }
-
-    /// Convert to human-readable string like "ctrl+c" or "<leader>q"
-    pub fn to_string(&self) -> String {
-        let mut parts = Vec::new();
-
-        // Add modifiers in order: ctrl, meta, super, shift
-        if self.ctrl {
-            parts.push("ctrl".to_string());
-        }
-        if self.meta {
-            parts.push("alt".to_string());
-        }
-        if self.super_ {
-            parts.push("super".to_string());
-        }
-        if self.shift {
-            parts.push("shift".to_string());
-        }
-
-        // Add key name
-        parts.push(self.name.clone());
-
-        let result = parts.join("+");
-
-        // Prepend leader prefix if set
-        if self.leader {
-            format!("<leader> {}", result)
-        } else {
-            result
+                KeyCode::Enter => "return".to_string(),
+                KeyCode::Backspace => "backspace".to_string(),
+                KeyCode::Esc => "escape".to_string(),
+                KeyCode::Tab => "tab".to_string(),
+                KeyCode::Delete => "delete".to_string(),
+                KeyCode::Home => "home".to_string(),
+                KeyCode::End => "end".to_string(),
+                KeyCode::PageUp => "pageup".to_string(),
+                KeyCode::PageDown => "pagedown".to_string(),
+                KeyCode::Up => "up".to_string(),
+                KeyCode::Down => "down".to_string(),
+                KeyCode::Left => "left".to_string(),
+                KeyCode::Right => "right".to_string(),
+                KeyCode::F(n) => format!("f{}", n),
+                KeyCode::Insert => "insert".to_string(),
+                KeyCode::Null => String::new(),
+                KeyCode::BackTab => "backtab".to_string(),
+                _ => String::new(),
+            },
+            leader: false,
         }
     }
 
@@ -255,6 +186,35 @@ impl KeybindInfo {
             && self.shift == other.shift
             && self.super_ == other.super_
             && self.leader == other.leader
+    }
+}
+
+impl fmt::Display for KeybindInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut parts = Vec::new();
+
+        if self.ctrl {
+            parts.push("ctrl");
+        }
+        if self.meta {
+            parts.push("alt");
+        }
+        if self.super_ {
+            parts.push("super");
+        }
+        if self.shift {
+            parts.push("shift");
+        }
+
+        parts.push(&self.name);
+
+        let result = parts.join("+");
+
+        if self.leader {
+            write!(f, "<leader> {}", result)
+        } else {
+            write!(f, "{}", result)
+        }
     }
 }
 

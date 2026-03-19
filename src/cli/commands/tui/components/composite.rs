@@ -7,7 +7,7 @@ use super::{
     Component, ComponentAction, ComponentEvent, ComponentId, EventPropagation, FocusManager,
 };
 use anyhow::Result;
-use ratatui::{layout::Rect, Frame};
+use ratatui::{Frame, layout::Rect};
 
 /// Pump events through component chain, stopping when consumed.
 ///

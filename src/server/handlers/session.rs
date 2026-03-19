@@ -103,6 +103,23 @@ pub async fn get(
     }
 }
 
+pub async fn delete(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    match state.session_manager.delete_session(&id).await {
+        Ok(_) => Ok(StatusCode::OK),
+        Err(e) => {
+            if e.is_not_found() {
+                Err(StatusCode::NOT_FOUND)
+            } else {
+                error!("Failed to delete session: {}", e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
+    }
+}
+
 pub async fn send_message(
     State(state): State<AppState>,
     Path(session_id): Path<String>,

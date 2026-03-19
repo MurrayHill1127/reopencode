@@ -20,7 +20,10 @@ pub fn create_router() -> Router<AppState> {
             "/session",
             get(handlers::session::list).post(handlers::session::create),
         )
-        .route("/session/{id}", get(handlers::session::get))
+        .route(
+            "/session/{id}",
+            get(handlers::session::get).delete(handlers::session::delete),
+        )
         .route(
             "/session/{id}/message",
             axum::routing::post(handlers::session::send_message),

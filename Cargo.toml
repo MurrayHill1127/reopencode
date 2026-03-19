@@ -66,6 +66,10 @@ dashmap = "6.1.0"
 # PTY (Pseudo-Terminal)
 portable-pty = "0.9"
 
+# Markdown & Syntax Highlighting
+pulldown-cmark = "0.13"
+syntect = "5"
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3"

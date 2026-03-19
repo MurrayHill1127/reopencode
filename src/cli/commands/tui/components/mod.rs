@@ -6,24 +6,30 @@ pub mod composite;
 pub mod dialog;
 pub mod error;
 pub mod events;
+pub mod file_tree;
 pub mod focus;
 pub mod list;
+pub mod session_create;
+pub mod session_list;
 pub mod textarea;
 pub mod toast;
 pub mod types;
 
-pub use composite::{event_pump, event_pump_with_focus, render_all, update_all, ComponentRegistry};
+pub use composite::{ComponentRegistry, event_pump, event_pump_with_focus, render_all, update_all};
 pub use dialog::{Dialog, DialogSize};
 pub use error::{ComponentError, Result};
 pub use events::{ComponentAction, ComponentEvent, ToastVariant};
+pub use file_tree::{FileNode, FileTree, GitFileStatus};
 pub use focus::{FocusError, FocusManager};
 pub use list::List;
+pub use session_create::SessionCreateDialog;
+pub use session_list::SessionList;
 pub use textarea::TextArea;
 pub use toast::Toast;
 pub use types::{ComponentId, EventPropagation, FocusState};
 
 use crossterm::event::KeyEvent;
-use ratatui::{layout::Rect, Frame};
+use ratatui::{Frame, layout::Rect};
 use std::time::Duration;
 
 /// Component trait - all TUI components implement this

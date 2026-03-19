@@ -1,10 +1,15 @@
 //! TextArea Component - wraps tui-textarea crate
 
 use super::{Component, ComponentId, EventPropagation};
-use ratatui::{layout::Rect, style::{Color, Modifier, Style}, widgets::{Block, Borders}, Frame};
 use crossterm::event::KeyEvent;
-use tui_textarea::{TextArea as TuiTextArea, Input, Scrolling};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    widgets::{Block, Borders},
+};
 use std::time::Duration;
+use tui_textarea::{Input, TextArea as TuiTextArea};
 
 pub struct TextArea {
     id: ComponentId,
@@ -49,34 +54,60 @@ impl TextArea {
         self.textarea = TuiTextArea::new(lines);
     }
 
-    pub fn title(&self) -> &str { &self.title }
-    pub fn set_title(&mut self, title: impl Into<String>) { self.title = title.into(); }
-    pub fn placeholder(&self) -> &str { &self.placeholder }
-    pub fn set_placeholder(&mut self, placeholder: impl Into<String>) { self.placeholder = placeholder.into(); }
-    pub fn is_read_only(&self) -> bool { self.read_only }
-    pub fn set_read_only(&mut self, read_only: bool) { self.read_only = read_only; }
-    pub fn cursor_position(&self) -> (usize, usize) { self.textarea.cursor() }
-    pub fn is_empty(&self) -> bool {
-        self.textarea.lines().is_empty() ||
-        (self.textarea.lines().len() == 1 && self.textarea.lines()[0].is_empty())
+    pub fn title(&self) -> &str {
+        &self.title
     }
-    pub fn line_count(&self) -> usize { self.textarea.lines().len() }
-    pub fn clear(&mut self) { self.textarea = TuiTextArea::default(); }
+    pub fn set_title(&mut self, title: impl Into<String>) {
+        self.title = title.into();
+    }
+    pub fn placeholder(&self) -> &str {
+        &self.placeholder
+    }
+    pub fn set_placeholder(&mut self, placeholder: impl Into<String>) {
+        self.placeholder = placeholder.into();
+    }
+    pub fn is_read_only(&self) -> bool {
+        self.read_only
+    }
+    pub fn set_read_only(&mut self, read_only: bool) {
+        self.read_only = read_only;
+    }
+    pub fn cursor_position(&self) -> (usize, usize) {
+        self.textarea.cursor()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.textarea.lines().is_empty()
+            || (self.textarea.lines().len() == 1 && self.textarea.lines()[0].is_empty())
+    }
+    pub fn line_count(&self) -> usize {
+        self.textarea.lines().len()
+    }
+    pub fn clear(&mut self) {
+        self.textarea = TuiTextArea::default();
+    }
 }
 
 impl Default for TextArea {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Component for TextArea {
-    fn id(&self) -> ComponentId { self.id }
+    fn id(&self) -> ComponentId {
+        self.id
+    }
 
     fn render(&self, frame: &mut Frame, area: Rect) {
         let block = if self.focused {
             Block::default()
                 .title(self.title.as_str())
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+                .border_style(
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                )
         } else {
             Block::default()
                 .title(self.title.as_str())
@@ -89,8 +120,13 @@ impl Component for TextArea {
         // Render textarea content manually
         use ratatui::text::{Line, Span};
         use ratatui::widgets::Paragraph;
-        
-        let lines: Vec<Line> = self.textarea.lines().iter().map(|s| Line::from(Span::raw(s.clone()))).collect();
+
+        let lines: Vec<Line> = self
+            .textarea
+            .lines()
+            .iter()
+            .map(|s| Line::from(Span::raw(s.clone())))
+            .collect();
         let paragraph = Paragraph::new(lines).block(Block::default());
         frame.render_widget(paragraph, inner);
     }
@@ -104,10 +140,14 @@ impl Component for TextArea {
 
         if self.read_only {
             match (event.code, event.modifiers) {
-                (KeyCode::Up, _) | (KeyCode::Down, _) |
-                (KeyCode::Left, _) | (KeyCode::Right, _) |
-                (KeyCode::Home, _) | (KeyCode::End, _) |
-                (KeyCode::PageUp, _) | (KeyCode::PageDown, _) => {}
+                (KeyCode::Up, _)
+                | (KeyCode::Down, _)
+                | (KeyCode::Left, _)
+                | (KeyCode::Right, _)
+                | (KeyCode::Home, _)
+                | (KeyCode::End, _)
+                | (KeyCode::PageUp, _)
+                | (KeyCode::PageDown, _) => {}
                 _ => return EventPropagation::Stop,
             }
         }
@@ -122,9 +162,15 @@ impl Component for TextArea {
     }
 
     fn update(&mut self, _delta: Duration) {}
-    fn is_focusable(&self) -> bool { true }
-    fn on_focus(&mut self) { self.focused = true; }
-    fn on_blur(&mut self) { self.focused = false; }
+    fn is_focusable(&self) -> bool {
+        true
+    }
+    fn on_focus(&mut self) {
+        self.focused = true;
+    }
+    fn on_blur(&mut self) {
+        self.focused = false;
+    }
 }
 
 #[cfg(test)]

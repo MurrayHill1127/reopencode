@@ -9,7 +9,7 @@
 //!
 //! - [gitui Focus Pattern](https://github.com/gitui-org/gitui/blob/master/src/components/mod.rs)
 
-use super::{Component, ComponentId, EventPropagation};
+use super::{ComponentId, EventPropagation};
 use crossterm::event::KeyEvent;
 
 /// Manages focus state across multiple components
