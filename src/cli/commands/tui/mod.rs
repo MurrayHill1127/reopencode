@@ -143,6 +143,7 @@ impl TuiApp {
     pub fn init(&mut self) {
         self.input_component
             .set_placeholder("Type your message here...");
+        self.input_component.on_focus();
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<String> {
@@ -459,6 +460,10 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
     f.render_widget(title, chunks[0]);
 
     app.footer.render(f, chunks[1]);
+
+    app.message_list.render(f, chunks[2]);
+
+    app.input_component.render(f, chunks[3]);
 
     // Render sidebar when expanded
     if app.sidebar.is_expanded() {
