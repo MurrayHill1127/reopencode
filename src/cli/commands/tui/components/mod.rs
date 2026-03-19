@@ -14,6 +14,7 @@ pub mod mcp_status;
 pub mod model_selector;
 pub mod session_create;
 pub mod session_list;
+pub mod sidebar;
 pub mod textarea;
 pub mod toast;
 pub mod types;
@@ -21,6 +22,7 @@ pub mod types;
 pub use events::{ComponentAction, ComponentEvent, ToastVariant};
 pub use focus::FocusManager;
 pub use list::List;
+pub use sidebar::{ContextInfo, DiffInfo, LspServerInfo, McpServerInfo, Sidebar, TodoItem};
 pub use textarea::TextArea;
 pub use types::{ComponentId, EventPropagation};
 

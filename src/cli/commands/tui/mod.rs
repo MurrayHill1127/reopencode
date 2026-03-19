@@ -27,7 +27,7 @@ use std::io;
 
 use crate::mcp::types::McpStatus;
 use components::mcp_status::McpStatusPanel;
-use components::{Component, List, TextArea};
+use components::{Component, ContextInfo, List, Sidebar, TextArea};
 use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
 use std::collections::HashMap;
 use theme::ThemeContext;
@@ -82,6 +82,8 @@ pub struct TuiApp {
     pub current_directory: String,
     pub lsp_count: usize,
     pub pending_permissions: usize,
+    pub sidebar: Sidebar,
+    pub context_info: ContextInfo,
 }
 
 impl Default for TuiApp {
@@ -123,6 +125,8 @@ impl Default for TuiApp {
             current_directory: current_dir,
             lsp_count: 0,
             pending_permissions: 0,
+            sidebar: Sidebar::new(ThemeContext::default()),
+            context_info: ContextInfo::default(),
         }
     }
 }
@@ -181,6 +185,14 @@ impl TuiApp {
             .matches("mcp_status_toggle", &key_info, leader_active)
         {
             self.mcp_status_expanded = !self.mcp_status_expanded;
+            return None;
+        }
+
+        if self
+            .keybinds
+            .matches("sidebar_toggle", &key_info, leader_active)
+        {
+            self.sidebar.toggle();
             return None;
         }
 
@@ -491,16 +503,14 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
     let mcp_area = Rect::new(f.area().width - 15, f.area().y + 1, 15, 1);
     f.render_widget(mcp_footer, mcp_area);
 
-    // Render MCP sidebar when expanded
-    if app.mcp_status_expanded {
-        // Create a sidebar on the right side
-        let sidebar_width = 40;
+    // Render sidebar when expanded
+    if app.sidebar.is_expanded() {
+        let sidebar_width = app.sidebar.width();
         let sidebar_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Min(0), Constraint::Length(sidebar_width)])
             .split(f.area());
 
-        // Render the MCP status panel in the sidebar
         let sidebar_area = Rect::new(
             sidebar_chunks[1].x,
             sidebar_chunks[1].y,
@@ -508,7 +518,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
             sidebar_chunks[1].height,
         );
 
-        app.mcp_status_panel.render(f, sidebar_area);
+        app.sidebar.render(f, sidebar_area);
     }
 }
 
