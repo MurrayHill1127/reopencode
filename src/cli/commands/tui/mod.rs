@@ -27,10 +27,11 @@ use std::io;
 
 use crate::mcp::types::McpStatus;
 use components::mcp_status::McpStatusPanel;
-use components::{CommandDialog, CommandEntry, Component, ContextInfo, FocusManager, Footer, List, Sidebar, StatusDialog, TextArea};
+use components::{CommandDialog, CommandEntry, Component, ContextInfo, FocusManager, Footer, List, MessageList, Sidebar, StatusDialog, TextArea};
 use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
 use std::collections::HashMap;
 use theme::ThemeContext;
+use transcript::{TranscriptMessage, create_assistant_message, create_user_message};
 
 const SERVER_URL: &str = "http://127.0.0.1:4096";
 
@@ -67,10 +68,10 @@ pub struct TuiApp {
     pub client: Client,
     pub session_id: Option<String>,
     pub status: String,
-    pub messages: Vec<String>,
+    pub messages: Vec<TranscriptMessage>,
     pub files: Vec<String>,
     pub input_component: TextArea,
-    pub message_list: List<String>,
+    pub message_list: MessageList,
     pub file_list: List<String>,
     pub toasts: Vec<(usize, u64)>,
     pub keybinds: KeybindsConfig,
@@ -106,15 +107,17 @@ impl Default for TuiApp {
             })
             .unwrap_or_else(|| ".".to_string());
 
+        let welcome_msg = create_user_message("Welcome to ReOpenCode!");
+
         Self {
             running: true,
             client: Client::new(),
             session_id: None,
             status: "Connecting...".to_string(),
-            messages: vec!["Welcome to ReOpenCode!".to_string()],
+            messages: vec![welcome_msg.clone()],
             files: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
             input_component: TextArea::with_title("Input (Enter to send, q to quit)"),
-            message_list: List::with_title(vec!["Welcome to ReOpenCode!".to_string()], "Messages"),
+            message_list: MessageList::with_title(vec![welcome_msg], "Messages"),
             file_list: List::with_title(
                 vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
                 "Files",
@@ -219,10 +222,11 @@ impl TuiApp {
             let input = self.input_component.text();
             if !input.is_empty() {
                 let msg = input.clone();
-                self.messages.push(format!("> {}", input));
+                let user_msg = create_user_message(&input);
+                self.messages.push(user_msg.clone());
                 self.status = "Sending...".to_string();
                 self.input_component.clear();
-                self.message_list = List::with_title(self.messages.clone(), "Messages");
+                self.message_list.push(user_msg);
                 return Some(msg);
             }
             return None;
@@ -353,9 +357,14 @@ impl TuiApp {
                             self.session_id = Some(session.id.clone());
                             self.footer.set_session_id(self.session_id.clone());
                             self.status = format!("Connected: {}", session.id);
-                            self.messages
-                                .push(format!("[System] Session created: {}", session.id));
-                            self.message_list = List::with_title(self.messages.clone(), "Messages");
+                            let system_msg = create_assistant_message(
+                                &format!("Session created: {}", session.id),
+                                "system",
+                                "internal",
+                                None,
+                            );
+                            self.messages.push(system_msg.clone());
+                            self.message_list.push(system_msg);
                         }
                         Err(e) => {
                             self.status = format!("Parse error: {}", e);
@@ -367,9 +376,14 @@ impl TuiApp {
             }
             Err(e) => {
                 self.status = format!("Connection failed: {}", e);
-                self.messages
-                    .push("[Error] Could not connect to server. Is it running?".to_string());
-                self.message_list = List::with_title(self.messages.clone(), "Messages");
+                let error_msg = create_assistant_message(
+                    "Could not connect to server. Is it running?",
+                    "system",
+                    "internal",
+                    None,
+                );
+                self.messages.push(error_msg.clone());
+                self.message_list.push(error_msg);
             }
         }
     }
@@ -389,31 +403,33 @@ impl TuiApp {
                     if response.status().is_success() {
                         match response.text().await {
                             Ok(text) => {
-                                self.messages.push(format!("[Response] {}", text));
+                                let assistant_msg = create_assistant_message(&text, "assistant", "default", None);
+                                self.messages.push(assistant_msg.clone());
                                 self.status = "Ready".to_string();
-                                self.message_list =
-                                    List::with_title(self.messages.clone(), "Messages");
+                                self.message_list.push(assistant_msg);
                             }
                             Err(e) => {
-                                self.messages.push(format!("[Error] Parse error: {}", e));
-                                self.message_list =
-                                    List::with_title(self.messages.clone(), "Messages");
+                                let error_msg = create_assistant_message(&format!("Parse error: {}", e), "system", "internal", None);
+                                self.messages.push(error_msg.clone());
+                                self.message_list.push(error_msg);
                             }
                         }
                     } else {
-                        self.messages
-                            .push(format!("[Error] Server returned: {}", response.status()));
-                        self.message_list = List::with_title(self.messages.clone(), "Messages");
+                        let error_msg = create_assistant_message(&format!("Server returned: {}", response.status()), "system", "internal", None);
+                        self.messages.push(error_msg.clone());
+                        self.message_list.push(error_msg);
                     }
                 }
                 Err(e) => {
-                    self.messages.push(format!("[Error] Failed to send: {}", e));
-                    self.message_list = List::with_title(self.messages.clone(), "Messages");
+                    let error_msg = create_assistant_message(&format!("Failed to send: {}", e), "system", "internal", None);
+                    self.messages.push(error_msg.clone());
+                    self.message_list.push(error_msg);
                 }
             }
         } else {
-            self.messages.push("[Error] No active session".to_string());
-            self.message_list = List::with_title(self.messages.clone(), "Messages");
+            let error_msg = create_assistant_message("No active session", "system", "internal", None);
+            self.messages.push(error_msg.clone());
+            self.message_list.push(error_msg);
         }
     }
 
@@ -430,12 +446,21 @@ impl TuiApp {
             .map(|(idx, _)| *idx)
             .collect();
 
-        to_remove.sort_by(|a, b| b.cmp(a));
-        for idx in to_remove {
-            if idx < self.messages.len() {
-                self.messages.remove(idx);
+        if !to_remove.is_empty() {
+            to_remove.sort_by(|a, b| b.cmp(a));
+
+            for idx in to_remove {
+                if idx < self.messages.len() {
+                    self.messages.remove(idx);
+                }
+            }
+
+            self.message_list.clear();
+            for msg in &self.messages {
+                self.message_list.push(msg.clone());
             }
         }
+
         self.toasts.retain(|(_, expires)| *expires > now);
     }
 

@@ -289,6 +289,61 @@ pub fn format_transcript(
     transcript
 }
 
+/// Create a user message from text input.
+pub fn create_user_message(text: &str) -> TranscriptMessage {
+    TranscriptMessage {
+        role: MessageRole::User,
+        parts: vec![PartType::Text {
+            text: text.to_string(),
+            synthetic: false,
+        }],
+    }
+}
+
+/// Create an assistant message from response text.
+pub fn create_assistant_message(
+    text: &str,
+    agent: &str,
+    model_id: &str,
+    duration_ms: Option<u64>,
+) -> TranscriptMessage {
+    TranscriptMessage {
+        role: MessageRole::Assistant {
+            agent: agent.to_string(),
+            model_id: model_id.to_string(),
+            duration_ms,
+        },
+        parts: vec![PartType::Text {
+            text: text.to_string(),
+            synthetic: false,
+        }],
+    }
+}
+
+/// Create a message with tool call information.
+pub fn create_tool_message(
+    name: &str,
+    status: ToolStatus,
+    input: Option<String>,
+    output: Option<String>,
+    error: Option<String>,
+) -> TranscriptMessage {
+    TranscriptMessage {
+        role: MessageRole::Assistant {
+            agent: "system".to_string(),
+            model_id: "internal".to_string(),
+            duration_ms: None,
+        },
+        parts: vec![PartType::Tool {
+            name: name.to_string(),
+            status,
+            input,
+            output,
+            error,
+        }],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1587,5 +1642,42 @@ mod tests {
         let result = format_transcript(&session, &messages, &options);
 
         assert!(result.starts_with("# Test [Code] & 'Quotes' <tag>\n\n"));
+    }
+
+    #[test]
+    fn test_create_user_message() {
+        let msg = create_user_message("Hello, world!");
+        assert!(matches!(msg.role, MessageRole::User));
+        assert_eq!(msg.parts.len(), 1);
+        if let PartType::Text { text, synthetic } = &msg.parts[0] {
+            assert_eq!(text, "Hello, world!");
+            assert!(!synthetic);
+        } else {
+            panic!("Expected Text part");
+        }
+    }
+
+    #[test]
+    fn test_create_assistant_message() {
+        let msg = create_assistant_message("Response", "oracle", "claude-3", Some(1500));
+        if let MessageRole::Assistant { agent, model_id, duration_ms } = msg.role {
+            assert_eq!(agent, "oracle");
+            assert_eq!(model_id, "claude-3");
+            assert_eq!(duration_ms, Some(1500));
+        } else {
+            panic!("Expected Assistant role");
+        }
+    }
+
+    #[test]
+    fn test_create_tool_message() {
+        let msg = create_tool_message("bash", ToolStatus::Completed, Some("ls".into()), Some("files".into()), None);
+        assert_eq!(msg.parts.len(), 1);
+        if let PartType::Tool { name, status, .. } = &msg.parts[0] {
+            assert_eq!(name, "bash");
+            assert_eq!(*status, ToolStatus::Completed);
+        } else {
+            panic!("Expected Tool part");
+        }
     }
 }

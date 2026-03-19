@@ -13,8 +13,26 @@ use crate::bus::{
     TuiCommandExecuteProperties, TuiPromptAppendProperties, TuiSessionSelectProperties,
     TuiToastShowProperties,
 };
+use crate::cli::commands::tui::transcript::{create_assistant_message, TranscriptMessage, PartType};
 
 use super::TuiApp;
+
+fn get_message_text(message: &TranscriptMessage) -> String {
+    message.parts.iter()
+        .filter_map(|part| {
+            if let PartType::Text { text, synthetic } = part {
+                if !synthetic {
+                    Some(text.as_str())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
 
 /// TUI Event Subscriber - manages Bus subscriptions for TUI events
 pub struct TuiEventSubscriber {
@@ -115,8 +133,10 @@ impl TuiEventSubscriber {
             _ => "[Toast] ",
         };
 
-        let toast_msg = format!("{}{}: {}", variant_prefix, props.title, props.message);
-        app.messages.push(toast_msg);
+        let toast_content = format!("{}{}: {}", variant_prefix, props.title, props.message);
+        let toast_msg = create_assistant_message(&toast_content, "system", "internal", None);
+        app.messages.push(toast_msg.clone());
+        app.message_list.push(toast_msg);
 
         // Store toast with expiry timestamp for auto-dismiss
         if let Some(duration_ms) = props.duration {
@@ -145,8 +165,9 @@ impl TuiEventSubscriber {
     /// * `app` - Mutable reference to TUI application state
     /// * `props` - Command execute properties (command string)
     pub fn handle_command_execute(app: &mut TuiApp, props: TuiCommandExecuteProperties) {
-        app.messages.push(format!("[Command] {}", props.command));
-        // Future enhancement: execute known commands here
+        let cmd_msg = create_assistant_message(&format!("[Command] {}", props.command), "system", "internal", None);
+        app.messages.push(cmd_msg.clone());
+        app.message_list.push(cmd_msg);
     }
 
     /// Handle TUI_SESSION_SELECT event - update session ID and status
@@ -169,7 +190,6 @@ impl TuiEventSubscriber {
             .unwrap()
             .as_millis() as u64;
 
-        // Collect indices to remove (in reverse order to maintain indices)
         let mut to_remove: Vec<usize> = app
             .toasts
             .iter()
@@ -177,15 +197,21 @@ impl TuiEventSubscriber {
             .map(|(idx, _)| *idx)
             .collect();
 
-        to_remove.sort_by(|a, b| b.cmp(a)); // Reverse order
+        if !to_remove.is_empty() {
+            to_remove.sort_by(|a, b| b.cmp(a));
 
-        for idx in to_remove {
-            if idx < app.messages.len() {
-                app.messages.remove(idx);
+            for idx in to_remove {
+                if idx < app.messages.len() {
+                    app.messages.remove(idx);
+                }
+            }
+
+            app.message_list.clear();
+            for msg in &app.messages {
+                app.message_list.push(msg.clone());
             }
         }
 
-        // Remove processed toasts
         app.toasts.retain(|(_, expires)| *expires > now);
     }
 }
@@ -206,8 +232,8 @@ mod tests {
 
         TuiEventSubscriber::handle_toast_show(&mut app, props);
 
-        assert_eq!(app.messages.len(), 2); // Welcome + toast
-        assert!(app.messages[1].contains("[Toast] Test Title: Test Message"));
+        assert_eq!(app.messages.len(), 2);
+        assert!(get_message_text(&app.messages[1]).contains("[Toast] Test Title: Test Message"));
     }
 
     #[tokio::test]
@@ -222,7 +248,7 @@ mod tests {
 
         TuiEventSubscriber::handle_toast_show(&mut app, props);
 
-        assert!(app.messages[1].contains("[Error] Error: Something went wrong"));
+        assert!(get_message_text(&app.messages[1]).contains("[Error] Error: Something went wrong"));
     }
 
     #[tokio::test]
@@ -237,7 +263,7 @@ mod tests {
 
         TuiEventSubscriber::handle_toast_show(&mut app, props);
 
-        assert!(app.messages[1].contains("[Success] Success: Operation completed"));
+        assert!(get_message_text(&app.messages[1]).contains("[Success] Success: Operation completed"));
     }
 
     #[tokio::test]
@@ -252,7 +278,7 @@ mod tests {
 
         TuiEventSubscriber::handle_toast_show(&mut app, props);
 
-        assert!(app.messages[1].contains("[Warning] Warning: Low memory"));
+        assert!(get_message_text(&app.messages[1]).contains("[Warning] Warning: Low memory"));
     }
 
     #[tokio::test]
@@ -320,7 +346,7 @@ mod tests {
         assert!(
             app.messages
                 .iter()
-                .any(|m| m.contains("[Command] cargo test"))
+                .any(|m| get_message_text(m).contains("[Command] cargo test"))
         );
     }
 
@@ -337,8 +363,8 @@ mod tests {
         TuiEventSubscriber::handle_command_execute(&mut app, props1);
         TuiEventSubscriber::handle_command_execute(&mut app, props2);
 
-        assert!(app.messages.iter().any(|m| m.contains("[Command] ls -la")));
-        assert!(app.messages.iter().any(|m| m.contains("[Command] pwd")));
+        assert!(app.messages.iter().any(|m| get_message_text(m).contains("[Command] ls -la")));
+        assert!(app.messages.iter().any(|m| get_message_text(m).contains("[Command] pwd")));
     }
 
     #[tokio::test]
@@ -418,7 +444,7 @@ mod tests {
         assert!(
             app.messages
                 .iter()
-                .any(|m| m.contains("[Success] Integration Test: This tests the full flow"))
+                .any(|m| get_message_text(m).contains("[Success] Integration Test: This tests the full flow"))
         );
     }
 
@@ -501,7 +527,7 @@ mod tests {
         assert!(
             app.messages
                 .iter()
-                .any(|m| m.contains("[Command] cargo build"))
+                .any(|m| get_message_text(m).contains("[Command] cargo build"))
         );
     }
 }
