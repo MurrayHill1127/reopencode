@@ -1,11 +1,12 @@
-use axum::{Router, routing::get};
+use axum::{routing::get, Router};
 
-use super::AppState;
 use super::handlers;
+use super::AppState;
 
 pub fn create_router() -> Router<AppState> {
     Router::new()
         .route("/", get(handlers::health))
+        // Global endpoints
         .route("/global/health", get(handlers::global::health))
         .route("/global/event", get(handlers::global::event))
         .route(
@@ -16,23 +17,105 @@ pub fn create_router() -> Router<AppState> {
             "/global/dispose",
             axum::routing::post(handlers::global::dispose),
         )
+        // Auth endpoints
+        .route(
+            "/global/auth/{provider_id}",
+            axum::routing::put(handlers::auth::set_auth).delete(handlers::auth::remove_auth),
+        )
+        // Agent and Skill endpoints
+        .route("/global/agent", get(handlers::agent::list))
+        .route("/global/skill", get(handlers::skill::list))
+        // Session endpoints
         .route(
             "/session",
             get(handlers::session::list).post(handlers::session::create),
         )
+        .route("/session/status", get(handlers::session_status::list))
         .route(
             "/session/{id}",
-            get(handlers::session::get).delete(handlers::session::delete),
+            get(handlers::session::get)
+                .delete(handlers::session::delete)
+                .patch(handlers::session::update),
+        )
+        .route(
+            "/session/{id}/children",
+            get(handlers::session_children::get_children),
         )
         .route(
             "/session/{id}/message",
             axum::routing::post(handlers::session::send_message),
         )
         .route(
+            "/session/{id}/message/{message_id}",
+            axum::routing::get(handlers::session_message::get_message)
+                .delete(handlers::session_message::delete_message),
+        )
+        .route(
+            "/session/{id}/message/{message_id}/part/{part_id}",
+            axum::routing::delete(handlers::session_message::delete_part)
+                .patch(handlers::session_message::update_part),
+        )
+        .route(
             "/session/{id}/stream",
             axum::routing::post(handlers::session::stream_message),
         )
+        .route(
+            "/session/{id}/abort",
+            axum::routing::post(handlers::session_abort::abort),
+        )
+        .route(
+            "/session/{id}/fork",
+            axum::routing::post(handlers::session_fork::fork),
+        )
+        .route(
+            "/session/{id}/revert",
+            axum::routing::post(handlers::session_revert::revert),
+        )
+        .route(
+            "/session/{id}/unrevert",
+            axum::routing::post(handlers::session_unrevert::unrevert),
+        )
+        .route(
+            "/session/{id}/summarize",
+            axum::routing::post(handlers::session_summarize::summarize),
+        )
+        .route(
+            "/session/{id}/init",
+            axum::routing::post(handlers::session_init::init),
+        )
+        .route(
+            "/session/{id}/share",
+            axum::routing::post(handlers::session_share::share)
+                .delete(handlers::session_share::unshare),
+        )
+        .route("/session/{id}/diff", get(handlers::session_diff::get_diff))
+        .route("/session/{id}/todo", get(handlers::session_todo::get_todos))
+        .route(
+            "/session/{id}/prompt_async",
+            axum::routing::post(handlers::session_prompt_async::prompt_async),
+        )
+        .route(
+            "/session/{id}/command",
+            axum::routing::post(handlers::session_command::command),
+        )
+        .route(
+            "/session/{id}/shell",
+            axum::routing::post(handlers::session_shell::shell),
+        )
+        .route(
+            "/session/{id}/permissions/{permissionID}",
+            axum::routing::post(handlers::session_permission_reply::permission_reply),
+        )
         .route("/provider", get(handlers::provider::list))
+        .route("/provider/auth", get(handlers::provider::auth_methods))
+        .route(
+            "/provider/{provider_id}/oauth/authorize",
+            axum::routing::post(handlers::provider::oauth_authorize),
+        )
+        .route(
+            "/provider/{provider_id}/oauth/callback",
+            axum::routing::post(handlers::provider::oauth_callback),
+        )
         .route("/config", get(handlers::config::get))
         .route("/project", get(handlers::project::list))
         .route("/project/current", get(handlers::project::current))

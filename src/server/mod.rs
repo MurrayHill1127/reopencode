@@ -17,7 +17,7 @@ use crate::bus::Bus;
 use crate::mcp::McpManager;
 use crate::provider::{OpenAiProvider, Provider, ProviderConfig};
 use crate::session::SessionManager;
-use crate::storage::path::GlobalPath;
+use crate::storage::{MessageStore, Storage};
 
 pub use handlers::permission::PermissionRequest;
 pub use routes::create_router;
@@ -55,16 +55,17 @@ pub struct AppState {
     pub provider: Arc<dyn Provider>,
     pub agent: Arc<Sisyphus>,
     pub session_manager: SessionManager,
+    pub message_store: MessageStore,
     pub bus: Arc<Bus>,
     pub mcp_manager: Arc<McpManager>,
     pub permission_store: PermissionStore,
 }
 
 impl AppState {
-    /// Create a new AppState with Kimi provider configuration
     pub fn new_kimi(
         api_key: impl Into<String>,
         session_manager: SessionManager,
+        message_store: MessageStore,
         directory: impl Into<String>,
     ) -> Self {
         let config =
@@ -84,6 +85,7 @@ impl AppState {
             provider,
             agent,
             session_manager,
+            message_store,
             bus,
             mcp_manager,
             permission_store: PermissionStore {
@@ -109,7 +111,10 @@ pub async fn start(config: ServerConfig) -> anyhow::Result<()> {
     let api_key = std::env::var("KIMI_API_KEY")
         .map_err(|_| anyhow::anyhow!("KIMI_API_KEY environment variable not set"))?;
 
-    let global_path = GlobalPath::get();
+    let storage = Storage::new(crate::storage::BackendType::Json).await?;
+    let message_store = storage.messages();
+
+    let global_path = crate::storage::path::GlobalPath::get();
     global_path.init().await?;
     let db_path = global_path.database_path("latest");
     let database_url = format!("sqlite:{}", db_path.display());
@@ -122,7 +127,7 @@ pub async fn start(config: ServerConfig) -> anyhow::Result<()> {
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "/".to_string());
 
-    let state = AppState::new_kimi(api_key, session_manager, directory);
+    let state = AppState::new_kimi(api_key, session_manager, message_store, directory);
     let app = build_app(state);
     let addr = format!("{}:{}", config.host, config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;

@@ -241,6 +241,7 @@ impl SessionStore {
 // ==================== MessageStore ====================
 
 /// Message storage
+#[derive(Clone)]
 pub struct MessageStore {
     backend: Arc<dyn StorageBackend>,
     cache: MemoryCache,
@@ -394,6 +395,54 @@ impl MessageStore {
         Ok(MessageWithParts { info, parts })
     }
 
+    /// Get a single message by ID
+    pub async fn get_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> Result<Option<MessageWithParts>, StorageError> {
+        let key = ["message", session_id, &format!("{}.json", message_id)];
+        let key_refs: Vec<&str> = key.iter().map(|s| *s).collect();
+
+        let record = read::<MessageRecord>(&*self.backend, &key_refs).await?;
+
+        match record {
+            Some(record) => {
+                let parts = self.load_parts(&record.id).await?;
+
+                let role: MessageRole = serde_json::from_value(
+                    record
+                        .data
+                        .get("role")
+                        .cloned()
+                        .unwrap_or(serde_json::json!("user")),
+                )
+                .unwrap_or(MessageRole::User);
+
+                let agent = record
+                    .data
+                    .get("agent")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
+                Ok(Some(MessageWithParts {
+                    info: MessageInfo {
+                        id: record.id,
+                        session_id: record.session_id,
+                        role,
+                        agent,
+                        time: MessageTime {
+                            created: record.time_created,
+                            updated: Some(record.time_updated),
+                        },
+                    },
+                    parts,
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+
     /// Delete a message
     pub async fn remove(&self, session_id: &str, message_id: &str) -> Result<(), StorageError> {
         let keys = self.backend.list(&["part", message_id]).await?;
@@ -410,6 +459,37 @@ impl MessageStore {
         self.cache.remove(&format!("messages:{}", session_id));
 
         Ok(())
+    }
+
+    /// Remove a specific part from a message
+    pub async fn remove_part(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        part_id: &str,
+    ) -> Result<bool, StorageError> {
+        let part_key = ["part", message_id, &format!("{}.json", part_id)];
+        let key_refs: Vec<&str> = part_key.iter().map(|s| *s).collect();
+        self.backend.remove(&key_refs).await?;
+
+        self.cache.remove(&format!("messages:{}", session_id));
+
+        Ok(true)
+    }
+
+    /// Update a specific part in a message
+    pub async fn update_part(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        part: MessagePart,
+    ) -> Result<MessagePart, StorageError> {
+        let part_key = ["part", message_id, &format!("{}.json", part.id())];
+        write(&*self.backend, &part_key, &part).await?;
+
+        self.cache.remove(&format!("messages:{}", session_id));
+
+        Ok(part)
     }
 }
 

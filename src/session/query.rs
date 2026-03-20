@@ -182,6 +182,7 @@ impl SessionQuery {
         let status: String = row.get("status");
         let message_count: i64 = row.get("message_count");
         let metadata: String = row.get("metadata");
+        let archived_at: Option<i64> = row.try_get("archived_at").ok().flatten();
 
         Ok(Session {
             id,
@@ -195,6 +196,11 @@ impl SessionQuery {
             status: Self::string_to_status(&status),
             message_count: message_count as u32,
             metadata: serde_json::from_str(&metadata)?,
+            parent_id: None,
+            archived_at,
+            revert: None,
+            summary: None,
+            share_url: None,
         })
     }
 
@@ -210,6 +216,7 @@ impl SessionQuery {
             session_id,
             role,
             content,
+            parts: Vec::new(),
             created_at: DateTime::parse_from_rfc3339(&created_at)
                 .map_err(|e| SessionError::DateTimeParse(e.to_string()))?
                 .into(),
@@ -248,7 +255,7 @@ mod tests {
         let (query, store) = setup_test_query().await;
 
         for i in 0..3 {
-            let session = Session::new(Some(format!("Test {}", i)));
+            let session = Session::new(Some(format!("Test {}", i)), None);
             store.create_session(&session).await.unwrap();
         }
 
@@ -260,10 +267,10 @@ mod tests {
     async fn test_filter_by_status() {
         let (query, store) = setup_test_query().await;
 
-        let active = Session::new(Some("Active".to_string()));
+        let active = Session::new(Some("Active".to_string()), None);
         store.create_session(&active).await.unwrap();
 
-        let mut paused = Session::new(Some("Paused".to_string()));
+        let mut paused = Session::new(Some("Paused".to_string()), None);
         paused.set_status(SessionStatus::Paused);
         store.create_session(&paused).await.unwrap();
 
@@ -278,15 +285,15 @@ mod tests {
         let (query, store) = setup_test_query().await;
 
         store
-            .create_session(&Session::new(Some("Project Alpha".to_string())))
+            .create_session(&Session::new(Some("Project Alpha".to_string()), None))
             .await
             .unwrap();
         store
-            .create_session(&Session::new(Some("Project Beta".to_string())))
+            .create_session(&Session::new(Some("Project Beta".to_string()), None))
             .await
             .unwrap();
         store
-            .create_session(&Session::new(Some("Other".to_string())))
+            .create_session(&Session::new(Some("Other".to_string()), None))
             .await
             .unwrap();
 
@@ -301,7 +308,7 @@ mod tests {
     async fn test_get_messages() {
         let (query, store) = setup_test_query().await;
 
-        let session = Session::new(None);
+        let session = Session::new(None, None);
         let session_id = session.id.clone();
         store.create_session(&session).await.unwrap();
 
@@ -331,7 +338,7 @@ mod tests {
     async fn test_get_messages_with_limit() {
         let (query, store) = setup_test_query().await;
 
-        let session = Session::new(None);
+        let session = Session::new(None, None);
         let session_id = session.id.clone();
         store.create_session(&session).await.unwrap();
 
@@ -357,7 +364,7 @@ mod tests {
         assert_eq!(query.count_sessions().await.unwrap(), 0);
 
         for _ in 0..5 {
-            store.create_session(&Session::new(None)).await.unwrap();
+            store.create_session(&Session::new(None, None)).await.unwrap();
         }
 
         assert_eq!(query.count_sessions().await.unwrap(), 5);

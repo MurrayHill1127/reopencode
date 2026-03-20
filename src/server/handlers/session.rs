@@ -21,6 +21,8 @@ pub struct SessionInfo {
     updated_at: chrono::DateTime<chrono::Utc>,
     status: String,
     message_count: u32,
+    parent_id: Option<String>,
+    archived_at: Option<i64>,
 }
 
 impl From<Session> for SessionInfo {
@@ -36,6 +38,8 @@ impl From<Session> for SessionInfo {
                 SessionStatus::Completed => "completed".to_string(),
             },
             message_count: s.message_count,
+            parent_id: s.parent_id,
+            archived_at: s.archived_at,
         }
     }
 }
@@ -43,6 +47,18 @@ impl From<Session> for SessionInfo {
 #[derive(Debug, Deserialize)]
 pub struct CreateSessionRequest {
     title: Option<String>,
+    parent_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSessionRequest {
+    pub title: Option<String>,
+    pub time: Option<UpdateTime>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateTime {
+    pub archived: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,7 +86,7 @@ pub async fn create(
     State(state): State<AppState>,
     Json(body): Json<CreateSessionRequest>,
 ) -> Result<Json<SessionInfo>, StatusCode> {
-    match state.session_manager.create_session(body.title).await {
+    match state.session_manager.create_session(body.title, body.parent_id).await {
         Ok(id) => match state.session_manager.get_session(&id).await {
             Ok(session) => Ok(Json(SessionInfo::from(session))),
             Err(e) => {
@@ -117,6 +133,50 @@ pub async fn delete(
             }
         }
     }
+}
+
+pub async fn update(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateSessionRequest>,
+) -> Result<Json<SessionInfo>, StatusCode> {
+    let mut session = match state.session_manager.get_session(&id).await {
+        Ok(s) => s,
+        Err(e) => {
+            if e.is_not_found() {
+                return Err(StatusCode::NOT_FOUND);
+            } else {
+                error!("Failed to get session: {}", e);
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
+    };
+
+    if let Some(title) = body.title {
+        session = state
+            .session_manager
+            .set_title(&id, title)
+            .await
+            .map_err(|e| {
+                error!("Failed to update title: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+    }
+
+    if let Some(time) = body.time {
+        if let Some(archived) = time.archived {
+            session = state
+                .session_manager
+                .set_archived(&id, Some(archived))
+                .await
+                .map_err(|e| {
+                    error!("Failed to update archived: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        }
+    }
+
+    Ok(Json(SessionInfo::from(session)))
 }
 
 pub async fn send_message(
