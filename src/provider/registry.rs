@@ -4,10 +4,15 @@ use std::sync::{Arc, RwLock};
 use tracing::{debug, info, warn};
 
 use crate::provider::anthropic::AnthropicProvider;
+use crate::provider::azure::AzureProvider;
 use crate::provider::config::ProvidersConfig;
 use crate::provider::error::{ProviderError, Result};
+use crate::provider::google::GoogleProvider;
 use crate::provider::openai::OpenAiProvider;
+use crate::provider::openrouter::OpenRouterProvider;
 use crate::provider::provider_trait::Provider;
+use crate::provider::vertex::VertexProvider;
+use crate::provider::xai::XaiProvider;
 use crate::provider::zhipu::ZhipuProvider;
 
 pub struct ProviderRegistry {
@@ -139,8 +144,28 @@ impl ProviderRegistry {
                     let provider = AnthropicProvider::new(provider_config.clone());
                     registry.register(Arc::new(provider));
                 }
+                "azure" => {
+                    let provider = AzureProvider::new(provider_config.clone());
+                    registry.register(Arc::new(provider));
+                }
+                "google" => {
+                    let provider = GoogleProvider::new(provider_config.clone());
+                    registry.register(Arc::new(provider));
+                }
                 "zhipu" => {
                     let provider = ZhipuProvider::new(provider_config.clone());
+                    registry.register(Arc::new(provider));
+                }
+                "openrouter" => {
+                    let provider = OpenRouterProvider::new(provider_config.clone());
+                    registry.register(Arc::new(provider));
+                }
+                "xai" => {
+                    let provider = XaiProvider::new(provider_config.clone());
+                    registry.register(Arc::new(provider));
+                }
+                "vertex" => {
+                    let provider = VertexProvider::new(provider_config.clone());
                     registry.register(Arc::new(provider));
                 }
                 _ => {
@@ -301,5 +326,77 @@ models = ["claude-3-opus"]
         let cloned = registry.clone();
         assert_eq!(cloned.len(), 1);
         assert_eq!(cloned.default_provider(), registry.default_provider());
+    }
+
+    #[test]
+    fn test_registry_tier2_openrouter() {
+        let toml = r#"
+[providers.openrouter]
+name = "openrouter"
+api_key = "sk-or-test"
+models = ["openai/gpt-4"]
+"#;
+        let config = ProvidersConfig::from_toml(toml).unwrap();
+        let registry = ProviderRegistry::from_config(&config);
+
+        assert!(registry.get("openrouter").is_some());
+        assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn test_registry_tier2_xai() {
+        let toml = r#"
+[providers.xai]
+name = "xai"
+api_key = "xai-test"
+models = ["grok-beta"]
+"#;
+        let config = ProvidersConfig::from_toml(toml).unwrap();
+        let registry = ProviderRegistry::from_config(&config);
+
+        assert!(registry.get("xai").is_some());
+        assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn test_registry_tier2_vertex() {
+        let toml = r#"
+[providers.vertex]
+name = "vertex"
+api_key = "google-api-key"
+models = ["gemini-pro"]
+"#;
+        let config = ProvidersConfig::from_toml(toml).unwrap();
+        let registry = ProviderRegistry::from_config(&config);
+
+        assert!(registry.get("vertex").is_some());
+        assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn test_registry_all_tier2_providers() {
+        let toml = r#"
+default_provider = "openrouter"
+
+[providers.openrouter]
+name = "openrouter"
+api_key = "sk-or-test"
+
+[providers.xai]
+name = "xai"
+api_key = "xai-test"
+
+[providers.vertex]
+name = "vertex"
+api_key = "google-api-key"
+"#;
+        let config = ProvidersConfig::from_toml(toml).unwrap();
+        let registry = ProviderRegistry::from_config(&config);
+
+        assert_eq!(registry.len(), 3);
+        assert!(registry.list().contains(&"openrouter".to_string()));
+        assert!(registry.list().contains(&"xai".to_string()));
+        assert!(registry.list().contains(&"vertex".to_string()));
+        assert_eq!(registry.default_provider(), "openrouter");
     }
 }

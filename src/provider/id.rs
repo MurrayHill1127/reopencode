@@ -56,7 +56,10 @@ impl ProviderId {
             ));
         }
 
-        if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        if !id
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
             return Err(ProviderIdError::InvalidFormat(format!(
                 "Provider ID '{}' contains invalid characters",
                 id

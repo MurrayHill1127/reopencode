@@ -354,10 +354,7 @@ mod tests {
             supports_tools: false,
             supports_vision: true,
             supports_function_call: false,
-            supported_media_types: Some(vec![
-                "image/jpeg".to_string(),
-                "image/png".to_string(),
-            ]),
+            supported_media_types: Some(vec!["image/jpeg".to_string(), "image/png".to_string()]),
         };
 
         assert!(caps.supports_media_type("image/jpeg"));
@@ -486,7 +483,10 @@ mod tests {
         assert!(def.cost.is_some());
         assert!(def.limits.is_some());
         assert!(def.is_deprecated());
-        assert_eq!(def.deprecation_warning, Some("Use claude-4-opus instead".to_string()));
+        assert_eq!(
+            def.deprecation_warning,
+            Some("Use claude-4-opus instead".to_string())
+        );
     }
 
     #[test]

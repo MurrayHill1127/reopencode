@@ -266,7 +266,10 @@ mod tests {
             &ProviderId::new("openai"),
             "invalid-key"
         ));
-        assert!(!AuthManager::validate_key_format(&ProviderId::new("openai"), ""));
+        assert!(!AuthManager::validate_key_format(
+            &ProviderId::new("openai"),
+            ""
+        ));
     }
 
     #[test]
@@ -287,7 +290,10 @@ mod tests {
             &ProviderId::new("azure"),
             "any-key"
         ));
-        assert!(!AuthManager::validate_key_format(&ProviderId::new("azure"), ""));
+        assert!(!AuthManager::validate_key_format(
+            &ProviderId::new("azure"),
+            ""
+        ));
     }
 
     #[test]
@@ -329,8 +335,16 @@ mod tests {
         let auth = AuthManager::new();
 
         let providers = vec![
-            "openai", "anthropic", "azure", "google", "vertex",
-            "openrouter", "copilot", "xai", "mistral", "groq",
+            "openai",
+            "anthropic",
+            "azure",
+            "google",
+            "vertex",
+            "openrouter",
+            "copilot",
+            "xai",
+            "mistral",
+            "groq",
         ];
 
         for provider_name in providers {
@@ -406,5 +420,101 @@ mod tests {
         let auth = AuthManager::new();
         let source = auth.get_credential_source(&ProviderId::new("unknown-provider"));
         assert!(source.is_none());
+    }
+
+    /// Thread safety test - concurrent read/write operations
+    #[test]
+    fn test_thread_safety_concurrent_access() {
+        use std::thread;
+        use std::time::Duration;
+
+        let auth = AuthManager::new();
+        let provider = ProviderId::new("openai");
+
+        // Set initial key
+        auth.set_api_key(&provider, "initial-key");
+
+        let auth_ref = Arc::new(auth);
+        let mut handles = vec![];
+
+        // Spawn multiple reader threads
+        for _ in 0..5 {
+            let auth_clone = Arc::clone(&auth_ref);
+            let provider_clone = provider.clone();
+            let handle = thread::spawn(move || {
+                for _ in 0..10 {
+                    let _ = auth_clone.get_api_key(&provider_clone);
+                    thread::sleep(Duration::from_millis(1));
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Spawn writer threads
+        for i in 0..3 {
+            let auth_clone = Arc::clone(&auth_ref);
+            let provider_clone = provider.clone();
+            let handle = thread::spawn(move || {
+                for j in 0..5 {
+                    let key = format!("writer-{}-key-{}", i, j);
+                    auth_clone.set_api_key(&provider_clone, &key);
+                    thread::sleep(Duration::from_millis(2));
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all threads to complete
+        for handle in handles {
+            handle.join().expect("Thread panicked");
+        }
+
+        // Verify final state is valid
+        let final_key = auth_ref.get_api_key(&provider);
+        assert!(final_key.is_some());
+    }
+
+    /// Test multiple providers concurrently
+    #[test]
+    fn test_thread_safety_multiple_providers() {
+        use std::thread;
+
+        let auth = AuthManager::new();
+        let auth_ref = Arc::new(auth);
+        let mut handles = vec![];
+
+        let providers = vec![
+            ("openai", "sk-openai"),
+            ("anthropic", "sk-ant"),
+            ("google", "google-key"),
+            ("azure", "azure-key"),
+            ("xai", "xai-key"),
+        ];
+
+        for (name, prefix) in &providers {
+            let auth_clone = Arc::clone(&auth_ref);
+            let name = name.to_string();
+            let prefix = prefix.to_string();
+            let handle = thread::spawn(move || {
+                let provider = ProviderId::new(&name);
+                for i in 0..10 {
+                    let key = format!("{}-thread-{}", prefix, i);
+                    auth_clone.set_api_key(&provider, &key);
+                    let retrieved = auth_clone.get_api_key(&provider);
+                    assert!(retrieved.is_some());
+                }
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().expect("Thread panicked");
+        }
+
+        // Verify all providers have keys
+        for (name, _) in &providers {
+            let provider = ProviderId::new(*name);
+            assert!(auth_ref.has_credentials(&provider));
+        }
     }
 }

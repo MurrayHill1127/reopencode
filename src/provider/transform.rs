@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::id::ProviderId;
 use super::message::Message;
+use super::provider_trait::ProviderToolCall;
 use crate::provider::error::Result;
 
 /// Provider-agnostic message format for transformation
@@ -24,7 +25,11 @@ pub struct ProviderMessage {
 
     /// Tool calls (for assistant messages)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tool_calls: Vec<serde_json::Value>,
+    pub tool_calls: Vec<ProviderToolCall>,
+
+    /// Name field (for certain provider formats)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 impl ProviderMessage {
@@ -35,6 +40,7 @@ impl ProviderMessage {
             content: content.into(),
             tool_call_id: None,
             tool_calls: vec![],
+            name: None,
         }
     }
 
@@ -45,8 +51,14 @@ impl ProviderMessage {
     }
 
     /// Set tool calls
-    pub fn with_tool_calls(mut self, calls: Vec<serde_json::Value>) -> Self {
+    pub fn with_tool_calls(mut self, calls: Vec<ProviderToolCall>) -> Self {
         self.tool_calls = calls;
+        self
+    }
+
+    /// Set name
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
         self
     }
 }
@@ -160,17 +172,12 @@ impl MessageNormalizer for OpenAiNormalizer {
         let mut pm = ProviderMessage::new(message.role.as_str(), message.content.clone());
 
         if let Some(ref id) = message.tool_call_id {
-            pm = pm.with_tool_call_id(id.clone());
+            pm.tool_call_id = Some(id.clone());
         }
 
-        // Convert tool calls to JSON
+        // Copy tool calls directly
         if !message.tool_calls.is_empty() {
-            let tool_calls: Vec<serde_json::Value> = message
-                .tool_calls
-                .iter()
-                .filter_map(|tc| serde_json::to_value(tc).ok())
-                .collect();
-            pm = pm.with_tool_calls(tool_calls);
+            pm.tool_calls = message.tool_calls.clone();
         }
 
         Ok(pm)
@@ -218,17 +225,11 @@ impl MessageNormalizer for AnthropicNormalizer {
                 Ok(ProviderMessage::new("system", message.content.clone()))
             }
             MessageRole::User | MessageRole::Assistant => {
-                let mut pm =
-                    ProviderMessage::new(message.role.as_str(), message.content.clone());
+                let mut pm = ProviderMessage::new(message.role.as_str(), message.content.clone());
 
+                // Copy tool calls directly for Anthropic content blocks
                 if !message.tool_calls.is_empty() {
-                    // For Anthropic, tool calls become content blocks
-                    let tool_calls: Vec<serde_json::Value> = message
-                        .tool_calls
-                        .iter()
-                        .filter_map(|tc| serde_json::to_value(tc).ok())
-                        .collect();
-                    pm = pm.with_tool_calls(tool_calls);
+                    pm.tool_calls = message.tool_calls.clone();
                 }
 
                 Ok(pm)
@@ -237,7 +238,7 @@ impl MessageNormalizer for AnthropicNormalizer {
                 // Tool responses in Anthropic use special format
                 let mut pm = ProviderMessage::new("user", message.content.clone());
                 if let Some(ref id) = message.tool_call_id {
-                    pm = pm.with_tool_call_id(id.clone());
+                    pm.tool_call_id = Some(id.clone());
                 }
                 Ok(pm)
             }
@@ -322,20 +323,23 @@ mod tests {
 
     #[test]
     fn test_provider_message_with_tool_calls() {
-        let tool_call = serde_json::json!({
-            "id": "call_1",
-            "type": "function",
-            "function": {
-                "name": "test",
-                "arguments": "{}"
-            }
-        });
+        use crate::provider::provider_trait::{ProviderToolCall, ProviderToolCallFunction};
 
-        let pm = ProviderMessage::new("assistant", "Content")
-            .with_tool_calls(vec![tool_call.clone()]);
+        let tool_call = ProviderToolCall {
+            id: "call_1".to_string(),
+            call_type: "function".to_string(),
+            function: ProviderToolCallFunction {
+                name: "test".to_string(),
+                arguments: "{}".to_string(),
+            },
+        };
+
+        let pm =
+            ProviderMessage::new("assistant", "Content").with_tool_calls(vec![tool_call.clone()]);
 
         assert_eq!(pm.tool_calls.len(), 1);
-        assert_eq!(pm.tool_calls[0], tool_call);
+        assert_eq!(pm.tool_calls[0].id, "call_1");
+        assert_eq!(pm.tool_calls[0].function.name, "test");
     }
 
     #[test]

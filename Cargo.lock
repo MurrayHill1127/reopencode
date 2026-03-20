@@ -2317,6 +2317,7 @@ dependencies = [
  "async-trait",
  "axum",
  "base64",
+ "bytes",
  "camino",
  "chrono",
  "clap",
