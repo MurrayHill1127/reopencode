@@ -3,6 +3,7 @@
 pub mod commands;
 
 use clap::{Parser, Subcommand};
+use commands::{DbCommands, McpCommands};
 
 /// ReOpenCode (ROC) - AI coding assistant
 #[derive(Parser, Debug)]
@@ -33,4 +34,34 @@ pub enum Commands {
 
     /// Show version
     Version,
+
+    /// Manage MCP servers
+    Mcp {
+        #[command(subcommand)]
+        command: McpCommands,
+    },
+
+    /// Import session from JSON file or share URL
+    Import {
+        /// Path to JSON file or share URL
+        file: String,
+    },
+
+    /// Export session as JSON
+    Export {
+        /// Session ID to export (optional, shows picker if not provided)
+        session_id: Option<String>,
+    },
+
+    /// Database tools
+    Db {
+        /// SQL query to execute (opens sqlite3 shell if not provided)
+        sql: Option<String>,
+
+        #[command(subcommand)]
+        command: Option<DbCommands>,
+    },
+
+    /// Generate OpenAPI specification
+    Generate,
 }

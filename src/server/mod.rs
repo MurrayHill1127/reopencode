@@ -1,6 +1,7 @@
 //! HTTP Server module - RESTful API using axum
 
 pub mod handlers;
+pub mod openapi;
 pub mod routes;
 
 use std::collections::HashMap;

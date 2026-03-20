@@ -42,6 +42,7 @@ pub use types::{Config, McpConfig, McpLocalConfig, McpRemoteConfig};
 pub use loader::ConfigLoader;
 
 // Re-export paths
+pub use paths::ConfigPaths;
 
 // Re-export merge
 

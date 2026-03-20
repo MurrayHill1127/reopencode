@@ -1130,14 +1130,29 @@ mod tests {
     #[test]
     fn test_date_category_from_date_str() {
         let today = Local::now().format("%Y-%m-%d").to_string();
-        let yesterday = (Local::now() - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
-        let three_days_ago = (Local::now() - chrono::Duration::days(3)).format("%Y-%m-%d").to_string();
-        let ten_days_ago = (Local::now() - chrono::Duration::days(10)).format("%Y-%m-%d").to_string();
+        let yesterday = (Local::now() - chrono::Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string();
+        let three_days_ago = (Local::now() - chrono::Duration::days(3))
+            .format("%Y-%m-%d")
+            .to_string();
+        let ten_days_ago = (Local::now() - chrono::Duration::days(10))
+            .format("%Y-%m-%d")
+            .to_string();
 
         assert_eq!(DateCategory::from_date_str(&today), DateCategory::Today);
-        assert_eq!(DateCategory::from_date_str(&yesterday), DateCategory::Yesterday);
-        assert_eq!(DateCategory::from_date_str(&three_days_ago), DateCategory::ThisWeek);
-        assert_eq!(DateCategory::from_date_str(&ten_days_ago), DateCategory::Older);
+        assert_eq!(
+            DateCategory::from_date_str(&yesterday),
+            DateCategory::Yesterday
+        );
+        assert_eq!(
+            DateCategory::from_date_str(&three_days_ago),
+            DateCategory::ThisWeek
+        );
+        assert_eq!(
+            DateCategory::from_date_str(&ten_days_ago),
+            DateCategory::Older
+        );
     }
 
     #[test]
@@ -1260,7 +1275,9 @@ mod tests {
     fn test_session_list_grouped_sessions() {
         let mut list = SessionList::new();
         let today = Local::now().format("%Y-%m-%d").to_string();
-        let yesterday = (Local::now() - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+        let yesterday = (Local::now() - chrono::Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string();
 
         let sessions = vec![
             SessionInfo {

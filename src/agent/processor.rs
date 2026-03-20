@@ -1060,54 +1060,72 @@ mod tests {
     #[test]
     fn test_error_is_retryable() {
         // Retryable errors
-        assert!(ProcessorError::RateLimit {
-            retry_after_ms: None
-        }
-        .is_retryable());
-        assert!(ProcessorError::Network {
-            message: "test".into()
-        }
-        .is_retryable());
+        assert!(
+            ProcessorError::RateLimit {
+                retry_after_ms: None
+            }
+            .is_retryable()
+        );
+        assert!(
+            ProcessorError::Network {
+                message: "test".into()
+            }
+            .is_retryable()
+        );
         assert!(ProcessorError::Timeout.is_retryable());
-        assert!(ProcessorError::Api {
-            message: "test".into(),
-            code: Some("overloaded".into()),
-        }
-        .is_retryable());
-        assert!(ProcessorError::Api {
-            message: "test".into(),
-            code: Some("529".into()),
-        }
-        .is_retryable());
+        assert!(
+            ProcessorError::Api {
+                message: "test".into(),
+                code: Some("overloaded".into()),
+            }
+            .is_retryable()
+        );
+        assert!(
+            ProcessorError::Api {
+                message: "test".into(),
+                code: Some("529".into()),
+            }
+            .is_retryable()
+        );
 
         // Non-retryable errors
         assert!(!ProcessorError::Authentication.is_retryable());
-        assert!(!ProcessorError::ContextOverflow {
-            message: "test".into()
-        }
-        .is_retryable());
-        assert!(!ProcessorError::Api {
-            message: "test".into(),
-            code: Some("invalid_request".into()),
-        }
-        .is_retryable());
-        assert!(!ProcessorError::Api {
-            message: "test".into(),
-            code: None,
-        }
-        .is_retryable());
+        assert!(
+            !ProcessorError::ContextOverflow {
+                message: "test".into()
+            }
+            .is_retryable()
+        );
+        assert!(
+            !ProcessorError::Api {
+                message: "test".into(),
+                code: Some("invalid_request".into()),
+            }
+            .is_retryable()
+        );
+        assert!(
+            !ProcessorError::Api {
+                message: "test".into(),
+                code: None,
+            }
+            .is_retryable()
+        );
     }
 
     #[test]
     fn test_error_is_context_overflow() {
-        assert!(ProcessorError::ContextOverflow {
-            message: "test".into()
-        }
-        .is_context_overflow());
-        assert!(!ProcessorError::RateLimit {
-            retry_after_ms: None
-        }
-        .is_context_overflow());
+        assert!(
+            ProcessorError::ContextOverflow {
+                message: "test".into()
+            }
+            .is_context_overflow()
+        );
+        assert!(
+            !ProcessorError::RateLimit {
+                retry_after_ms: None
+            }
+            .is_context_overflow()
+        );
     }
 
     #[test]

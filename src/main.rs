@@ -25,18 +25,20 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("reopencode=info".parse().unwrap()),
-        )
-        .init();
-
-    tracing::info!("ReOpenCode v{}", VERSION);
-
     // Parse CLI arguments
     let args = cli::Args::parse();
+
+    // Initialize logging (skip for generate command since it outputs to stdout)
+    if !matches!(args.command, Some(cli::Commands::Generate)) {
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::from_default_env()
+                    .add_directive("reopencode=info".parse().unwrap()),
+            )
+            .init();
+
+        tracing::info!("ReOpenCode v{}", VERSION);
+    }
 
     // Execute command
     match args.command {
@@ -48,6 +50,21 @@ async fn main() -> Result<()> {
         }
         Some(cli::Commands::Version) => {
             cli::commands::version();
+        }
+        Some(cli::Commands::Mcp { command }) => {
+            cli::commands::mcp_run(command).await?;
+        }
+        Some(cli::Commands::Import { file }) => {
+            cli::commands::import_run(file).await?;
+        }
+        Some(cli::Commands::Export { session_id }) => {
+            cli::commands::export_run(session_id).await?;
+        }
+        Some(cli::Commands::Db { sql, command }) => {
+            cli::commands::db_run(sql, command).await?;
+        }
+        Some(cli::Commands::Generate) => {
+            cli::commands::generate_run().await?;
         }
         None => {
             // Default: start interactive session

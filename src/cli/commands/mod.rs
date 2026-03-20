@@ -1,10 +1,21 @@
 //! CLI commands
 
 pub mod clipboard;
+pub mod db;
+pub mod export;
+pub mod generate;
+pub mod import;
+pub mod mcp;
 pub mod tui;
 
 use crate::server::{self, ServerConfig};
 use anyhow::Result;
+
+pub use db::{DbCommands, run as db_run};
+pub use export::run as export_run;
+pub use generate::run as generate_run;
+pub use import::run as import_run;
+pub use mcp::{McpCommands, run as mcp_run};
 
 /// Run command - start server and TUI
 pub async fn run(cwd: Option<String>) -> Result<()> {
