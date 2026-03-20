@@ -25,6 +25,15 @@ pub enum ProviderError {
 
     #[error("认证失败：请检查 API Key")]
     Authentication,
+
+    #[error("请求超时：{0}")]
+    Timeout(String),
+
+    #[error("上下文溢出：token 数超出模型限制")]
+    ContextOverflow,
+
+    #[error("未实现：{0}")]
+    NotImplemented(String),
 }
 
 impl ProviderError {
@@ -34,6 +43,20 @@ impl ProviderError {
 
     pub fn is_authentication(&self) -> bool {
         matches!(self, ProviderError::Authentication)
+    }
+
+    pub fn is_context_overflow(&self) -> bool {
+        matches!(self, ProviderError::ContextOverflow)
+    }
+
+    pub fn is_retryable(&self) -> bool {
+        matches!(
+            self,
+            ProviderError::Network(_)
+                | ProviderError::RateLimit
+                | ProviderError::Timeout(_)
+                | ProviderError::Api(_)
+        )
     }
 }
 
