@@ -6,6 +6,7 @@ pub mod llm;
 pub mod manager;
 pub mod message;
 pub mod parts;
+pub mod processor;
 pub mod prompt;
 pub mod query;
 pub mod status;
@@ -26,6 +27,10 @@ pub use llm::{
 pub use manager::SessionManager;
 pub use message::{MessageInfo, ModelMessage, WithParts, to_model_messages};
 pub use parts::Part;
+pub use processor::{
+    Processor, ProcessResult as ProcessorResult, ProcessError, StepState,
+    is_retryable, retry_delay, SESSION_ERROR, SessionErrorProperties,
+};
 pub use prompt::{AbortController, PromptState};
 pub use status::{SessionStatusInfo, SessionStatusState, StatusEvent};
 pub use todo::TodoInfo;
