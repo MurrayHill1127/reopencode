@@ -6,6 +6,7 @@ use tracing::{debug, info};
 
 use crate::session::{
     error::{Result, SessionError},
+    parts::Part,
     todo::TodoInfo,
     types::{Session, SessionMessage, SessionStatus},
 };
@@ -63,7 +64,40 @@ impl SessionStore {
 
         sqlx::query(
             r#"
+            CREATE TABLE IF NOT EXISTS parts (
+                id TEXT PRIMARY KEY NOT NULL,
+                session_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                part_type TEXT NOT NULL,
+                data TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+                FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+            ) STRICT
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
             CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id)
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_parts_message_id ON parts(message_id)
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_parts_session_id ON parts(session_id)
             "#,
         )
         .execute(&self.pool)
@@ -340,6 +374,211 @@ impl SessionStore {
             .await?;
 
         Ok(result.rows_affected())
+    }
+
+    // ========== Parts CRUD ==========
+
+    /// Create a new message part
+    pub async fn create_part(&self, part: &Part) -> Result<()> {
+        debug!("Creating part: {} for message: {}", part.id(), part.message_id());
+
+        let part_type = match part {
+            Part::Text(_) => "text",
+            Part::Reasoning(_) => "reasoning",
+            Part::Tool(_) => "tool",
+            Part::File(_) => "file",
+            Part::Snapshot(_) => "snapshot",
+            Part::Patch(_) => "patch",
+            Part::Compaction(_) => "compaction",
+            Part::Subtask(_) => "subtask",
+            Part::StepStart(_) => "step-start",
+            Part::StepFinish(_) => "step-finish",
+            Part::Agent(_) => "agent",
+            Part::Retry(_) => "retry",
+        };
+
+        let data = serde_json::to_string(part)?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO parts (id, session_id, message_id, part_type, data)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(part.id())
+        .bind(part.session_id())
+        .bind(part.message_id())
+        .bind(part_type)
+        .bind(&data)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get all parts for a message
+    pub async fn get_parts(&self, message_id: &str) -> Result<Vec<Part>> {
+        debug!("Getting parts for message: {}", message_id);
+
+        let rows = sqlx::query(
+            r#"
+            SELECT id, session_id, message_id, part_type, data
+            FROM parts
+            WHERE message_id = ?
+            ORDER BY id ASC
+            "#,
+        )
+        .bind(message_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut parts = Vec::new();
+        for row in rows {
+            let data: String = row.get("data");
+            match serde_json::from_str(&data) {
+                Ok(part) => parts.push(part),
+                Err(e) => {
+                    tracing::warn!("Failed to deserialize part: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        Ok(parts)
+    }
+
+    /// Get parts for multiple messages (batch operation)
+    pub async fn get_parts_for_messages(&self, message_ids: &[String]) -> Result<std::collections::HashMap<String, Vec<Part>>> {
+        if message_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        let placeholders = message_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let query = format!(
+            "SELECT id, session_id, message_id, part_type, data FROM parts WHERE message_id IN ({}) ORDER BY message_id, id",
+            placeholders
+        );
+
+        let mut query_builder = sqlx::query(&query);
+        for id in message_ids {
+            query_builder = query_builder.bind(id);
+        }
+
+        let rows = query_builder.fetch_all(&self.pool).await?;
+
+        let mut parts_by_message = std::collections::HashMap::new();
+        for row in rows {
+            let message_id: String = row.get("message_id");
+            let data: String = row.get("data");
+            
+            match serde_json::from_str::<Part>(&data) {
+                Ok(part) => {
+                    parts_by_message
+                        .entry(message_id)
+                        .or_insert_with(Vec::new)
+                        .push(part);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to deserialize part: {}", e);
+                }
+            }
+        }
+
+        Ok(parts_by_message)
+    }
+
+    /// Update a part
+    pub async fn update_part(&self, part: &Part) -> Result<()> {
+        debug!("Updating part: {}", part.id());
+
+        let data = serde_json::to_string(part)?;
+
+        let result = sqlx::query(
+            r#"
+            UPDATE parts SET data = ? WHERE id = ?
+            "#,
+        )
+        .bind(&data)
+        .bind(part.id())
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(SessionError::NotFound {
+                session_id: format!("part {}", part.id()),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Delete a part
+    pub async fn delete_part(&self, part_id: &str) -> Result<bool> {
+        debug!("Deleting part: {}", part_id);
+
+        let result = sqlx::query("DELETE FROM parts WHERE id = ?")
+            .bind(part_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    /// Delete all parts for a message
+    pub async fn delete_parts_for_message(&self, message_id: &str) -> Result<u64> {
+        debug!("Deleting parts for message: {}", message_id);
+
+        let result = sqlx::query("DELETE FROM parts WHERE message_id = ?")
+            .bind(message_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(result.rows_affected())
+    }
+
+    /// Create multiple parts in a transaction
+    pub async fn create_parts_batch(&self, parts: &[Part]) -> Result<()> {
+        if parts.is_empty() {
+            return Ok(());
+        }
+
+        let mut tx = self.pool.begin().await?;
+
+        for part in parts {
+            let part_type = match part {
+                Part::Text(_) => "text",
+                Part::Reasoning(_) => "reasoning",
+                Part::Tool(_) => "tool",
+                Part::File(_) => "file",
+                Part::Snapshot(_) => "snapshot",
+                Part::Patch(_) => "patch",
+                Part::Compaction(_) => "compaction",
+                Part::Subtask(_) => "subtask",
+                Part::StepStart(_) => "step-start",
+                Part::StepFinish(_) => "step-finish",
+                Part::Agent(_) => "agent",
+                Part::Retry(_) => "retry",
+            };
+
+            let data = serde_json::to_string(part)?;
+
+            sqlx::query(
+                r#"
+                INSERT INTO parts (id, session_id, message_id, part_type, data)
+                VALUES (?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(part.id())
+            .bind(part.session_id())
+            .bind(part.message_id())
+            .bind(part_type)
+            .bind(&data)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+        Ok(())
     }
 
     // ========== Todo CRUD ==========
