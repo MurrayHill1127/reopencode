@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use dashmap::DashMap;
+use sqlx::SqlitePool;
 use tokio::sync::RwLock;
 
 use crate::storage::{GlobalPath, StorageError};
@@ -297,5 +298,179 @@ mod tests {
     #[test]
     fn test_backend_type_default() {
         assert_eq!(BackendType::default(), BackendType::Sqlite);
+    }
+}
+
+// ─── SQLite backend ──────────────────────────────────────────────────────────
+
+/// Key separator used when flattening `&[&str]` key segments into a single string.
+const KV_SEP: char = '\x1f'; // ASCII unit separator — safe inside TEXT keys
+
+/// SQLite-backed implementation of `StorageBackend`.
+///
+/// Stores all values in a `kv` table (key TEXT PRIMARY KEY, value BLOB).
+/// The table must already exist (created by migration 001).
+pub struct SqliteBackend {
+    pool: SqlitePool,
+}
+
+impl SqliteBackend {
+    /// Connect to (or create) a SQLite database at `path` and run any pending
+    /// migrations before returning.
+    pub async fn open(path: &Path) -> Result<Self, StorageError> {
+        use crate::storage::{Database, MigrationRunner};
+
+        let db = Database::open(path).await?;
+        let runner = MigrationRunner::builtin();
+        runner.run(&db).await?;
+        let pool = db.pool().clone();
+        // Don't close — we're reusing the pool.
+        Ok(Self { pool })
+    }
+
+    fn encode_key(key: &[&str]) -> String {
+        key.join(&KV_SEP.to_string())
+    }
+
+    fn decode_key(encoded: &str) -> Vec<String> {
+        encoded
+            .split(KV_SEP)
+            .map(|s| s.to_string())
+            .collect()
+    }
+
+    fn prefix_pattern(prefix: &[&str]) -> String {
+        let mut p = Self::encode_key(prefix);
+        p.push(KV_SEP);
+        // LIKE pattern — no wildcards in our keys, so appending '%' is safe.
+        p.push('%');
+        p
+    }
+}
+
+#[async_trait]
+impl StorageBackend for SqliteBackend {
+    fn backend_type(&self) -> BackendType {
+        BackendType::Sqlite
+    }
+
+    async fn exists(&self, key: &[&str]) -> bool {
+        let k = Self::encode_key(key);
+        let result: Option<(i32,)> =
+            sqlx::query_as("SELECT 1 FROM kv WHERE key = ?")
+                .bind(&k)
+                .fetch_optional(&self.pool)
+                .await
+                .unwrap_or(None);
+        result.is_some()
+    }
+
+    async fn read_raw(&self, key: &[&str]) -> Result<Option<Vec<u8>>, StorageError> {
+        if key.is_empty() {
+            return Err(StorageError::InvalidKey("empty key".to_string()));
+        }
+        let k = Self::encode_key(key);
+        let row: Option<(Vec<u8>,)> = sqlx::query_as("SELECT value FROM kv WHERE key = ?")
+            .bind(&k)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| StorageError::Database(crate::storage::DatabaseError::QueryFailed(e.to_string())))?;
+        Ok(row.map(|(v,)| v))
+    }
+
+    async fn write_raw(&self, key: &[&str], data: &[u8]) -> Result<(), StorageError> {
+        if key.is_empty() {
+            return Err(StorageError::InvalidKey("empty key".to_string()));
+        }
+        let k = Self::encode_key(key);
+        let now = chrono::Utc::now().timestamp_millis();
+        sqlx::query("INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, ?)")
+            .bind(&k)
+            .bind(data)
+            .bind(now)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::Database(crate::storage::DatabaseError::QueryFailed(e.to_string())))?;
+        Ok(())
+    }
+
+    async fn remove(&self, key: &[&str]) -> Result<(), StorageError> {
+        if key.is_empty() {
+            return Err(StorageError::InvalidKey("empty key".to_string()));
+        }
+        let k = Self::encode_key(key);
+        sqlx::query("DELETE FROM kv WHERE key = ? OR key LIKE ?")
+            .bind(&k)
+            .bind(format!("{}{}{}", k, KV_SEP, '%'))
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::Database(crate::storage::DatabaseError::QueryFailed(e.to_string())))?;
+        Ok(())
+    }
+
+    async fn list(&self, prefix: &[&str]) -> Result<Vec<Vec<String>>, StorageError> {
+        let pattern = Self::prefix_pattern(prefix);
+        let rows: Vec<(String,)> = sqlx::query_as("SELECT key FROM kv WHERE key LIKE ?")
+            .bind(&pattern)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| StorageError::Database(crate::storage::DatabaseError::QueryFailed(e.to_string())))?;
+        Ok(rows.into_iter().map(|(k,)| Self::decode_key(&k)).collect())
+    }
+}
+
+#[cfg(test)]
+mod sqlite_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    async fn make_backend() -> (SqliteBackend, TempDir) {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("test.db");
+        let b = SqliteBackend::open(&path).await.unwrap();
+        (b, temp)
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_write_read() {
+        let (b, _t) = make_backend().await;
+        let data = serde_json::to_vec(&serde_json::json!({"x": 1})).unwrap();
+        b.write_raw(&["a", "b", "c.json"], &data).await.unwrap();
+        let got = b.read_raw(&["a", "b", "c.json"]).await.unwrap();
+        assert_eq!(got, Some(data));
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_exists() {
+        let (b, _t) = make_backend().await;
+        assert!(!b.exists(&["missing.json"]).await);
+        b.write_raw(&["k.json"], b"hello").await.unwrap();
+        assert!(b.exists(&["k.json"]).await);
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_remove() {
+        let (b, _t) = make_backend().await;
+        b.write_raw(&["del.json"], b"v").await.unwrap();
+        assert!(b.exists(&["del.json"]).await);
+        b.remove(&["del.json"]).await.unwrap();
+        assert!(!b.exists(&["del.json"]).await);
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_list() {
+        let (b, _t) = make_backend().await;
+        b.write_raw(&["ses", "p1", "s1.json"], b"1").await.unwrap();
+        b.write_raw(&["ses", "p1", "s2.json"], b"2").await.unwrap();
+        b.write_raw(&["ses", "p2", "s3.json"], b"3").await.unwrap();
+        let mut keys = b.list(&["ses"]).await.unwrap();
+        keys.sort();
+        assert_eq!(keys.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_invalid_key() {
+        let (b, _t) = make_backend().await;
+        assert!(b.read_raw(&[]).await.is_err());
     }
 }

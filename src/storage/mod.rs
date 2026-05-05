@@ -53,7 +53,7 @@ pub use schema::{
 };
 
 // Re-export backend types
-pub use backend::{BackendType, JsonBackend, StorageBackend};
+pub use backend::{BackendType, JsonBackend, SqliteBackend, StorageBackend};
 
 // Re-export database types
 pub use database::Database;
@@ -90,10 +90,8 @@ impl Storage {
         let backend: Arc<dyn StorageBackend> = match backend_type {
             BackendType::Json => Arc::new(JsonBackend::new(&path.data)?),
             BackendType::Sqlite => {
-                // For now, fall back to JSON backend
-                // SQLite backend will be implemented separately
-                tracing::warn!("SQLite backend not yet implemented, using JSON backend");
-                Arc::new(JsonBackend::new(&path.data)?)
+                let db_path = path.database_path("kv");
+                Arc::new(SqliteBackend::open(&db_path).await?)
             }
         };
 

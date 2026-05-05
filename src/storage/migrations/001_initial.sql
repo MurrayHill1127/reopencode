@@ -108,3 +108,10 @@ CREATE TABLE IF NOT EXISTS workspace (
 );
 
 CREATE INDEX IF NOT EXISTS idx_workspace_project_id ON workspace(project_id);
+
+-- Generic key-value store for the StorageBackend abstraction
+CREATE TABLE IF NOT EXISTS kv (
+    key TEXT PRIMARY KEY,
+    value BLOB NOT NULL,
+    updated_at INTEGER NOT NULL
+);
