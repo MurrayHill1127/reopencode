@@ -130,7 +130,7 @@ impl MessageList {
         if self.messages.is_empty() {
             return Text::from(vec![Line::from(vec![Span::styled(
                 "No messages yet — type something below.",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::Rgb(128, 128, 128)),
             )])]);
         }
 
@@ -141,7 +141,7 @@ impl MessageList {
             if i > 0 {
                 all_lines.push(Line::from(Span::styled(
                     "─".repeat(sep_len),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(Color::Rgb(72, 72, 72)),
                 )));
                 all_lines.push(Line::from(""));
             }

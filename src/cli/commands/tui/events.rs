@@ -241,8 +241,8 @@ mod tests {
 
         TuiEventSubscriber::handle_toast_show(&mut app, props);
 
-        assert_eq!(app.messages.len(), 2);
-        assert!(get_message_text(&app.messages[1]).contains("[Toast] Test Title: Test Message"));
+        assert_eq!(app.messages.len(), 1);
+        assert!(get_message_text(&app.messages[0]).contains("[Toast] Test Title: Test Message"));
     }
 
     #[tokio::test]
@@ -257,7 +257,7 @@ mod tests {
 
         TuiEventSubscriber::handle_toast_show(&mut app, props);
 
-        assert!(get_message_text(&app.messages[1]).contains("[Error] Error: Something went wrong"));
+        assert!(get_message_text(&app.messages[0]).contains("[Error] Error: Something went wrong"));
     }
 
     #[tokio::test]
@@ -273,7 +273,7 @@ mod tests {
         TuiEventSubscriber::handle_toast_show(&mut app, props);
 
         assert!(
-            get_message_text(&app.messages[1]).contains("[Success] Success: Operation completed")
+            get_message_text(&app.messages[0]).contains("[Success] Success: Operation completed")
         );
     }
 
@@ -289,7 +289,7 @@ mod tests {
 
         TuiEventSubscriber::handle_toast_show(&mut app, props);
 
-        assert!(get_message_text(&app.messages[1]).contains("[Warning] Warning: Low memory"));
+        assert!(get_message_text(&app.messages[0]).contains("[Warning] Warning: Low memory"));
     }
 
     #[tokio::test]

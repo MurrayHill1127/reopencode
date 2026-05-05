@@ -33,6 +33,7 @@ use components::{
     Footer, Header, List, MessageList, Sidebar, StatusDialog, TextArea,
 };
 use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
+use ratatui::layout::Position;
 use std::collections::HashMap;
 use theme::ThemeContext;
 use transcript::{MessageRole, TranscriptMessage, create_assistant_message, create_user_message};
@@ -106,6 +107,8 @@ pub struct TuiApp {
     stream_rx: Option<UnboundedReceiver<StreamChunk>>,
     /// When the current stream started (for elapsed-time tracking).
     stream_started: Option<std::time::Instant>,
+    /// Frame counter for spinner animation.
+    frame_count: u64,
 }
 
 impl Default for TuiApp {
@@ -124,21 +127,16 @@ impl Default for TuiApp {
             })
             .unwrap_or_else(|| ".".to_string());
 
-        let welcome_msg = create_user_message("Welcome to ReOpenCode!");
-
         Self {
             running: true,
             client: Client::new(),
             session_id: None,
-            status: "Connecting...".to_string(),
-            messages: vec![welcome_msg.clone()],
-            files: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
-            input_component: TextArea::with_title("Input (Enter to send, q to quit)"),
-            message_list: MessageList::with_title(vec![welcome_msg], "Messages"),
-            file_list: List::with_title(
-                vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
-                "Files",
-            ),
+            status: "Connecting…".to_string(),
+            messages: vec![],
+            files: vec![],
+            input_component: TextArea::new(),
+            message_list: MessageList::new(vec![]),
+            file_list: List::with_title(vec![], "Files"),
             toasts: Vec::new(),
             keybinds: KeybindsConfig::default(),
             leader_state: LeaderState::default(),
@@ -159,6 +157,7 @@ impl Default for TuiApp {
             dialog_agent: DialogAgent::new(),
             stream_rx: None,
             stream_started: None,
+            frame_count: 0,
         }
     }
 }
@@ -462,15 +461,7 @@ impl TuiApp {
                         Ok(session) => {
                             self.session_id = Some(session.id.clone());
                             self.footer.set_session_id(self.session_id.clone());
-                            self.status = format!("Connected: {}", session.id);
-                            let system_msg = create_assistant_message(
-                                &format!("Session created: {}", session.id),
-                                "system",
-                                "internal",
-                                None,
-                            );
-                            self.messages.push(system_msg.clone());
-                            self.message_list.push(system_msg);
+                            self.status = "Ready".to_string();
                         }
                         Err(e) => {
                             self.status = format!("Parse error: {}", e);
@@ -480,16 +471,8 @@ impl TuiApp {
                     self.status = format!("Server error: {}", response.status());
                 }
             }
-            Err(e) => {
-                self.status = format!("Connection failed: {}", e);
-                let error_msg = create_assistant_message(
-                    "Could not connect to server. Is it running?",
-                    "system",
-                    "internal",
-                    None,
-                );
-                self.messages.push(error_msg.clone());
-                self.message_list.push(error_msg);
+            Err(_) => {
+                self.status = "Server offline".to_string();
             }
         }
     }
@@ -503,7 +486,7 @@ impl TuiApp {
         };
 
         // Add placeholder message that chunks will stream into.
-        let placeholder = create_assistant_message("", "assistant", "default", None);
+        let placeholder = create_assistant_message("", "build", "moonshot-v1-8k", None);
         self.messages.push(placeholder.clone());
         self.message_list.push(placeholder);
         self.stream_started = Some(std::time::Instant::now());
@@ -723,6 +706,7 @@ async fn run_app<B: ratatui::backend::Backend>(
 
     while app.running {
         app.process_stream_chunks();
+        app.frame_count = app.frame_count.wrapping_add(1);
         terminal.draw(|f| ui(f, &mut *app))?;
 
         let now = std::time::Instant::now();
@@ -765,26 +749,28 @@ async fn run_app<B: ratatui::backend::Backend>(
 
 fn ui(f: &mut Frame, app: &mut TuiApp) {
     let area = f.area();
-    let theme = &app.theme;
+    let bg = app.theme.background();
 
-    // Fill background with near-black (#0a0a0a → Color::Rgb)
+    // Fill the entire terminal with our background color
     let bg_block = ratatui::widgets::Block::default()
-        .style(ratatui::style::Style::default().bg(theme.background()));
+        .style(ratatui::style::Style::default().bg(bg));
     f.render_widget(bg_block, area);
 
-    // Layout: body (sidebar+messages) | input (3 rows) | footer (1 row)
+    // Layout: body | input (3 rows) | footer (1 row)
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(5),    // body
-            Constraint::Length(3), // input prompt area
+            Constraint::Min(3),    // body
+            Constraint::Length(3), // input prompt
             Constraint::Length(1), // footer
         ])
         .split(area);
 
-    // Body: sidebar (42 cols) | messages
     const SIDEBAR_W: u16 = 42;
-    let show_sidebar = app.sidebar.is_expanded() && area.width > SIDEBAR_W + 20;
+    // Auto-show sidebar when terminal is wide (≥ 120 cols), matching opencode's behaviour.
+    // Also respect explicit sidebar toggle.
+    let show_sidebar = (app.sidebar.is_expanded() || area.width >= 120) && area.width > SIDEBAR_W + 20;
+
     if show_sidebar {
         let body = Layout::default()
             .direction(Direction::Horizontal)
@@ -796,13 +782,10 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         render_messages(f, app, outer[0]);
     }
 
-    // Input prompt area
     render_input(f, app, outer[1]);
-
-    // Footer
     render_footer(f, app, outer[2]);
 
-    // Overlay dialogs — drawn last so they appear on top
+    // Overlay dialogs
     if app.status_dialog.is_visible() {
         app.status_dialog.render(f, area);
     }
@@ -824,17 +807,21 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 // ─── sub-renderers ────────────────────────────────────────────────────────────
 
 fn render_sidebar(f: &mut Frame, app: &TuiApp, area: Rect) {
-    use ratatui::style::Style;
+    use ratatui::style::{Modifier, Style};
     use ratatui::text::{Line, Span};
     use ratatui::widgets::{Block, Paragraph};
 
     let theme = &app.theme;
+    let panel_bg = theme.colors().background_panel;
+    let text = theme.text();
+    let muted = theme.colors().text_muted;
+    let primary = theme.primary();
+    let success = theme.success();
 
-    // Dark panel background
-    let panel = Block::default()
-        .style(Style::default().bg(theme.colors().background_panel));
-    f.render_widget(panel, area);
+    // Fill sidebar with panel background
+    f.render_widget(Block::default().style(Style::default().bg(panel_bg)), area);
 
+    // Content area with 2-col padding on each side, 1-row top/bottom
     let inner = Rect {
         x: area.x + 2,
         y: area.y + 1,
@@ -844,61 +831,67 @@ fn render_sidebar(f: &mut Frame, app: &TuiApp, area: Rect) {
 
     let mut lines: Vec<Line> = Vec::new();
 
-    // Session title
+    // Session title (bold)
     let title = app.session_id
-        .as_deref()
-        .map(|id| format!("Session #{}", &id[..8.min(id.len())]))
+        .as_ref()
+        .map(|_| "New Session".to_string())
         .unwrap_or_else(|| "New Session".to_string());
     lines.push(Line::from(Span::styled(
         title,
-        Style::default().fg(theme.text()).add_modifier(ratatui::style::Modifier::BOLD),
+        Style::default().fg(text).add_modifier(Modifier::BOLD),
     )));
     lines.push(Line::from(""));
 
-    // Status
-    let status_color = if app.session_id.is_some() {
-        theme.success()
-    } else {
-        theme.colors().text_muted
-    };
-    lines.push(Line::from(Span::styled(
-        format!("● {}", app.status),
-        Style::default().fg(status_color),
-    )));
-    lines.push(Line::from(""));
+    // Keybind hints - matches opencode sidebar style
+    let key_style = Style::default().fg(primary).add_modifier(Modifier::BOLD);
+    let desc_style = Style::default().fg(muted);
 
-    // Hint line
     lines.push(Line::from(vec![
-        Span::styled("Enter ", Style::default().fg(theme.primary())),
-        Span::styled("send  ", Style::default().fg(theme.colors().text_muted)),
-        Span::styled("Ctrl+b ", Style::default().fg(theme.primary())),
-        Span::styled("sidebar", Style::default().fg(theme.colors().text_muted)),
+        Span::styled("Enter ", key_style),
+        Span::styled("send", desc_style),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("Ctrl+p ", Style::default().fg(theme.primary())),
-        Span::styled("sessions  ", Style::default().fg(theme.colors().text_muted)),
-        Span::styled("Ctrl+c ", Style::default().fg(theme.primary())),
-        Span::styled("quit", Style::default().fg(theme.colors().text_muted)),
+        Span::styled("Ctrl+p ", key_style),
+        Span::styled("sessions", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("Ctrl+b ", key_style),
+        Span::styled("sidebar", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("Ctrl+c ", key_style),
+        Span::styled("quit", desc_style),
     ]));
 
-    // Version at bottom
-    let ver_y = area.y + area.height.saturating_sub(2);
-    if ver_y > inner.y {
-        let bottom_area = Rect { x: area.x + 2, y: ver_y, width: area.width.saturating_sub(4), height: 1 };
-        let ver_line = Line::from(vec![
-            Span::styled("●", Style::default().fg(theme.success())),
-            Span::styled(" Open", Style::default().fg(theme.colors().text_muted)),
-            Span::styled("Code", Style::default().fg(theme.text())),
-            Span::styled(" ROC", Style::default().fg(theme.primary())),
-        ]);
-        f.render_widget(Paragraph::new(ver_line), bottom_area);
+    f.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(panel_bg)),
+        inner,
+    );
+
+    // Version at bottom — "● OpenCode ROC" like opencode's "● OpenCode <version>"
+    if area.height > 3 {
+        let ver_y = area.y + area.height.saturating_sub(2);
+        let bottom_area = Rect {
+            x: area.x + 2,
+            y: ver_y,
+            width: area.width.saturating_sub(4),
+            height: 1,
+        };
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("●", Style::default().fg(success)),
+                Span::styled(" Open", Style::default().fg(muted)),
+                Span::styled("Code", Style::default().fg(text).add_modifier(Modifier::BOLD)),
+                Span::styled(" ROC", Style::default().fg(primary)),
+            ]))
+            .style(Style::default().bg(panel_bg)),
+            bottom_area,
+        );
     }
-
-    f.render_widget(Paragraph::new(lines), inner);
 }
 
 fn render_messages(f: &mut Frame, app: &TuiApp, area: Rect) {
-    // Delegate to the existing MessageList component, but with padding
+    // 4-col horizontal padding (2 each side), full height — matches opencode's message area
     let inner = Rect {
         x: area.x + 2,
         y: area.y,
@@ -907,6 +900,8 @@ fn render_messages(f: &mut Frame, app: &TuiApp, area: Rect) {
     };
     app.message_list.render(f, inner);
 }
+
+const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 fn render_input(f: &mut Frame, app: &TuiApp, area: Rect) {
     use ratatui::style::Style;
@@ -917,74 +912,82 @@ fn render_input(f: &mut Frame, app: &TuiApp, area: Rect) {
     let muted = theme.colors().text_muted;
     let primary = theme.primary();
     let text_color = theme.text();
+    let border_color = theme.colors().border;
+    let bg = theme.background();
 
-    // Top separator
+    // Top separator line spanning the full width
     let sep = "─".repeat(area.width as usize);
-    let sep_area = Rect { x: area.x, y: area.y, width: area.width, height: 1 };
     f.render_widget(
-        Paragraph::new(Span::styled(sep, Style::default().fg(theme.colors().border))),
-        sep_area,
+        Paragraph::new(Span::styled(sep, Style::default().fg(border_color).bg(bg))),
+        Rect { x: area.x, y: area.y, width: area.width, height: 1 },
     );
 
-    // Input content area (below separator)
-    let content_area = Rect {
+    // Input content (rows below separator), with 1-col padding each side
+    let content = Rect {
         x: area.x + 1,
         y: area.y + 1,
         width: area.width.saturating_sub(2),
         height: area.height.saturating_sub(1),
     };
 
-    let input_text = app.input_component.text();
     let is_streaming = app.stream_rx.is_some();
+    let input_text = app.input_component.text();
 
-    // Show streaming indicator or prompt
     if is_streaming {
-        let line = Line::from(vec![
-            Span::styled("⠸ ", Style::default().fg(primary)),
-            Span::styled("Thinking…", Style::default().fg(muted)),
-        ]);
-        f.render_widget(Paragraph::new(line), content_area);
+        // Animated spinner
+        let frame_idx = (app.frame_count / 3) as usize % SPINNER_FRAMES.len();
+        let spinner = SPINNER_FRAMES[frame_idx];
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(format!("{} ", spinner), Style::default().fg(primary)),
+                Span::styled("Thinking…", Style::default().fg(muted)),
+            ])),
+            content,
+        );
     } else if input_text.is_empty() {
-        // Placeholder
-        let lines_area = Rect { x: content_area.x, y: content_area.y, width: content_area.width, height: 1 };
-        let hint_area = Rect { x: content_area.x, y: content_area.y + content_area.height.saturating_sub(1), width: content_area.width, height: 1 };
-
+        // Empty: show "> " cursor + placeholder + hint on row 2
+        let row0 = Rect { x: content.x, y: content.y, width: content.width, height: 1 };
         f.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::styled("> ", Style::default().fg(primary)),
                 Span::styled("Ask anything…", Style::default().fg(muted)),
             ])),
-            lines_area,
+            row0,
         );
-        f.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled("Enter", Style::default().fg(primary)),
-                Span::styled(" send  ", Style::default().fg(muted)),
-                Span::styled("Shift+Enter", Style::default().fg(primary)),
-                Span::styled(" newline", Style::default().fg(muted)),
-            ])),
-            hint_area,
-        );
+        if content.height > 1 {
+            let row1 = Rect { x: content.x, y: content.y + 1, width: content.width, height: 1 };
+            f.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled("Enter", Style::default().fg(muted)),
+                    Span::styled(" send  ", Style::default().fg(muted)),
+                    Span::styled("Shift+Enter", Style::default().fg(muted)),
+                    Span::styled(" newline", Style::default().fg(muted)),
+                ])),
+                row1,
+            );
+        }
+        // Place hardware cursor at start of prompt
+        f.set_cursor_position(Position { x: content.x + 2, y: content.y });
     } else {
-        // Show typed content
+        // Show typed lines with "> " prefix on first line
+        let (cursor_row, cursor_col) = app.input_component.cursor_position();
         for (i, line) in input_text.lines().enumerate() {
-            if i as u16 >= content_area.height {
-                break;
-            }
-            let row_area = Rect {
-                x: content_area.x,
-                y: content_area.y + i as u16,
-                width: content_area.width,
-                height: 1,
-            };
+            if i as u16 >= content.height { break; }
+            let row = Rect { x: content.x, y: content.y + i as u16, width: content.width, height: 1 };
             let prefix = if i == 0 { "> " } else { "  " };
             f.render_widget(
                 Paragraph::new(Line::from(vec![
                     Span::styled(prefix, Style::default().fg(primary)),
                     Span::styled(line.to_string(), Style::default().fg(text_color)),
                 ])),
-                row_area,
+                row,
             );
+        }
+        // Hardware cursor at typed position
+        let cursor_x = content.x + 2 + cursor_col as u16;
+        let cursor_y = content.y + cursor_row as u16;
+        if cursor_y < content.y + content.height {
+            f.set_cursor_position(Position { x: cursor_x, y: cursor_y });
         }
     }
 }
@@ -996,56 +999,48 @@ fn render_footer(f: &mut Frame, app: &TuiApp, area: Rect) {
 
     let theme = &app.theme;
     let muted = theme.colors().text_muted;
+    let text = theme.text();
     let success = theme.success();
     let warning = theme.warning();
-    let text = theme.text();
+    let bg = theme.background();
 
-    // Left: current directory
+    // Left side: working directory path (muted)
     let dir = &app.current_directory;
-    let dir_span = Span::styled(dir.clone(), Style::default().fg(muted));
 
-    // Right: LSP + MCP + hint
+    // Right side: build right section then measure its length
+    let lsp_dot = if app.lsp_count > 0 { "•" } else { "•" };
+    let lsp_dot_style = Style::default().fg(if app.lsp_count > 0 { success } else { muted });
+    let mcp_count = app.mcp_statuses.len();
+
     let mut right_spans: Vec<Span> = Vec::new();
+
     if app.pending_permissions > 0 {
         right_spans.push(Span::styled(
-            format!("△ {} Permission{}", app.pending_permissions, if app.pending_permissions > 1 { "s" } else { "" }),
+            format!("△ {} Permission{}  ", app.pending_permissions,
+                if app.pending_permissions > 1 { "s" } else { "" }),
             Style::default().fg(warning),
         ));
-        right_spans.push(Span::styled("  ", Style::default()));
     }
-    right_spans.push(Span::styled(
-        if app.lsp_count > 0 { "●" } else { "○" },
-        Style::default().fg(if app.lsp_count > 0 { success } else { muted }),
-    ));
-    right_spans.push(Span::styled(
-        format!(" {} LSP  ", app.lsp_count),
-        Style::default().fg(text),
-    ));
+
+    right_spans.push(Span::styled(lsp_dot, lsp_dot_style));
+    right_spans.push(Span::styled(format!(" {} LSP  ", app.lsp_count), Style::default().fg(text)));
     right_spans.push(Span::styled("⊙ ", Style::default().fg(success)));
-    right_spans.push(Span::styled(
-        format!("{} MCP  ", app.mcp_statuses.len()),
-        Style::default().fg(text),
-    ));
+    right_spans.push(Span::styled(format!("{} MCP  ", mcp_count), Style::default().fg(text)));
     right_spans.push(Span::styled("/status", Style::default().fg(muted)));
 
-    // Calculate layout widths safely
-    let right_len: usize = right_spans.iter().map(|s| s.content.len()).sum();
+    let right_width: usize = right_spans.iter().map(|s| s.content.chars().count()).sum();
     let total_w = area.width as usize;
-    let left_max = total_w.saturating_sub(right_len + 2);
-    let left_len = dir.len().min(left_max);
-    let gap = total_w.saturating_sub(left_len + right_len).max(1);
+    // Truncate directory to fit
+    let max_dir = total_w.saturating_sub(right_width + 2);
+    let dir_shown: String = dir.chars().take(max_dir).collect();
+    let gap = total_w.saturating_sub(dir_shown.chars().count() + right_width).max(1);
 
-    let mut all_spans = vec![Span::styled(
-        dir.chars().take(left_len).collect::<String>(),
-        Style::default().fg(muted),
-    )];
-    all_spans.push(Span::raw(" ".repeat(gap)));
-    all_spans.extend(right_spans);
+    let mut spans: Vec<Span> = vec![Span::styled(dir_shown, Style::default().fg(muted))];
+    spans.push(Span::raw(" ".repeat(gap)));
+    spans.extend(right_spans);
 
-    let _ = dir_span;
     f.render_widget(
-        Paragraph::new(Line::from(all_spans))
-            .style(Style::default().bg(theme.background())),
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)),
         area,
     );
 }
