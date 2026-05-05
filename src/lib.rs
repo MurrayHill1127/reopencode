@@ -5,6 +5,7 @@
 // Many modules are mid-implementation; suppress noise during development.
 #![allow(dead_code, unused_variables, unused_imports)]
 
+pub mod account;
 pub mod agent;
 pub mod bus;
 pub mod lsp;
