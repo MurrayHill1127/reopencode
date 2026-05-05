@@ -3,6 +3,7 @@
 
 mod agent;
 mod bus;
+mod git;
 mod category;
 mod cli;
 mod command;
