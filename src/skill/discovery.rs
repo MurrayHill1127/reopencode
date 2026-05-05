@@ -230,7 +230,13 @@ mod tests {
     #[tokio::test]
     async fn test_discover_skills_empty_directory() {
         let temp = tempdir().unwrap();
-        let result = discover_skills(Some(temp.path().to_path_buf())).await;
+        let options = DiscoveryOptions {
+            directory: Some(temp.path().to_path_buf()),
+            include_claude_paths: false,
+            disable_external: true,
+            ..Default::default()
+        };
+        let result = discover_skills_with_options(options).await;
         assert!(result.is_ok());
         let result = result.unwrap();
         assert!(result.skills.is_empty());
