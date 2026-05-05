@@ -24,6 +24,7 @@ pub mod skill;
 pub mod storage;
 pub mod tool;
 pub mod util;
+pub mod worktree;
 
 use anyhow::Result;
 

@@ -20,6 +20,7 @@ mod skill;
 mod storage;
 mod tool;
 mod util;
+mod worktree;
 
 use anyhow::Result;
 use clap::Parser;
