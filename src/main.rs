@@ -4,6 +4,7 @@
 mod agent;
 mod bus;
 mod git;
+mod snapshot;
 mod category;
 mod cli;
 mod command;

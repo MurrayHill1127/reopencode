@@ -8,6 +8,7 @@
 pub mod agent;
 pub mod bus;
 pub mod git;
+pub mod snapshot;
 pub mod category;
 pub mod cli;
 pub mod command;
