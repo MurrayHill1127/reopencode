@@ -4,17 +4,16 @@ pub mod handlers;
 pub mod openapi;
 pub mod routes;
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::Router;
-use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use crate::agent::Sisyphus;
 use crate::bus::Bus;
 use crate::mcp::McpManager;
+use crate::permission::PermissionStore;
 use crate::provider::{OpenAiProvider, Provider, ProviderConfig};
 use crate::session::SessionManager;
 use crate::storage::{MessageStore, Storage};
@@ -41,12 +40,6 @@ impl ServerConfig {
     pub fn new(port: u16, host: String) -> Self {
         Self { port, host }
     }
-}
-
-/// Store for tracking pending permission requests per session
-#[derive(Clone)]
-pub struct PermissionStore {
-    pub pending: Arc<RwLock<HashMap<String, Vec<PermissionRequest>>>>,
 }
 
 /// Application state shared across handlers
@@ -88,9 +81,7 @@ impl AppState {
             message_store,
             bus,
             mcp_manager,
-            permission_store: PermissionStore {
-                pending: Arc::new(RwLock::new(HashMap::new())),
-            },
+            permission_store: PermissionStore::new(),
         }
     }
 }
