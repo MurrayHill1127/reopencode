@@ -448,7 +448,7 @@ pub fn to_model_messages(
                 }
             }
             MessageInfo::Assistant(assistant_msg) => {
-                let different_model = format!("{}/{}", model.provider_id, model.model_id)
+                let _different_model = format!("{}/{}", model.provider_id, model.model_id)
                     != format!("{}/{}", assistant_msg.provider_id, assistant_msg.model_id);
                 let mut media: Vec<(String, String)> = Vec::new();
 
@@ -614,7 +614,7 @@ pub fn to_model_messages(
                         let mut media_parts: Vec<ModelContent> = vec![ModelContent::Text {
                             text: "Attached image(s) from tool result:".to_string(),
                         }];
-                        for (mime, url) in media {
+                        for (_mime, url) in media {
                             media_parts.push(ModelContent::Image {
                                 image: ImageContent { url },
                             });

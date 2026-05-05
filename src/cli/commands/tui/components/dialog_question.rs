@@ -865,7 +865,7 @@ impl Component for MultiQuestionDialog {
                 None => return EventPropagation::Continue,
             };
 
-            let opts_len = question.options.len();
+            let _opts_len = question.options.len();
             let total_options = self.option_count();
 
             match event.code {

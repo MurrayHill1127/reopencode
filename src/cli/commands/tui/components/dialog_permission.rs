@@ -565,7 +565,7 @@ impl PermissionDialog {
     }
 
     /// Build the content lines for the current stage
-    fn build_content(&self) -> Vec<Line> {
+    fn build_content(&self) -> Vec<Line<'_>> {
         let mut lines = Vec::new();
 
         match self.stage {

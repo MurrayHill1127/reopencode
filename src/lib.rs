@@ -2,6 +2,9 @@
 //!
 //! A high-performance AI coding assistant with plugin support.
 
+// Many modules are mid-implementation; suppress noise during development.
+#![allow(dead_code, unused_variables, unused_imports)]
+
 pub mod agent;
 pub mod bus;
 pub mod category;

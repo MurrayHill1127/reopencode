@@ -507,7 +507,7 @@ impl Component for SessionList {
         };
 
         let mut items: Vec<ListItem> = Vec::new();
-        let selected_idx = self.state.selected().unwrap_or(0);
+        let _selected_idx = self.state.selected().unwrap_or(0);
 
         for category in DateCategory::all() {
             if let Some(sessions) = self.grouped_sessions.get(&category) {

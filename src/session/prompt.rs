@@ -508,7 +508,7 @@ pub async fn run_loop(
 
     // Ensure cleanup on exit
     let session_id_for_cleanup = session_id.clone();
-    let cleanup_guard = CleanupGuard {
+    let _cleanup_guard = CleanupGuard {
         session_id: session_id_for_cleanup,
     };
 
@@ -658,7 +658,7 @@ pub async fn run_loop(
         // Add structured output tool if needed
         if let Some(OutputFormat::JsonSchema { schema, .. }) = &last_user.format {
             let output_store = structured_output_clone.clone();
-            let structured_tool = create_structured_output_tool(schema.clone(), move |output| {
+            let _structured_tool = create_structured_output_tool(schema.clone(), move |output| {
                 // Note: This is synchronous but we use try_lock to avoid blocking
                 if let Ok(mut guard) = output_store.try_lock() {
                     *guard = Some(output);
@@ -901,7 +901,7 @@ fn find_last_messages(messages: &[WithParts]) -> (
 
 /// Handle a pending subtask
 async fn handle_subtask(
-    session_id: &str,
+    _session_id: &str,
     subtask: &SubtaskPart,
     _last_user: &UserMessage,
     _messages: &[WithParts],
@@ -931,7 +931,7 @@ async fn handle_compaction(
     session_id: &str,
     compaction: &CompactionPart,
     messages: &[WithParts],
-    abort_rx: &watch::Receiver<bool>,
+    _abort_rx: &watch::Receiver<bool>,
 ) -> Result<CompactionProcessResult, PromptError> {
     info!("Handling compaction for session: {}", session_id);
 
@@ -978,10 +978,10 @@ fn build_system_prompts(agent: &AgentInfo, user: &UserMessage) -> Vec<String> {
 
 /// Resolve tools for a session
 fn resolve_tools_for_session(
-    agent: &AgentInfo,
+    _agent: &AgentInfo,
     user: &UserMessage,
-    messages: &[WithParts],
-    provider: Arc<dyn Provider>,
+    _messages: &[WithParts],
+    _provider: Arc<dyn Provider>,
 ) -> HashMap<String, ToolDef> {
     // Start with agent tools
     let mut tools: HashMap<String, ToolDef> = HashMap::new();
@@ -1007,7 +1007,7 @@ fn resolve_tools_for_session(
 /// matching a JSON schema.
 pub fn create_structured_output_tool<F>(
     schema: serde_json::Value,
-    on_success: F,
+    _on_success: F,
 ) -> ToolDef
 where
     F: Fn(serde_json::Value) + Send + Sync + 'static,

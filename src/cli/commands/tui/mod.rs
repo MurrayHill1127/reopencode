@@ -18,8 +18,6 @@ use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
-    widgets::{Block, Borders, Paragraph},
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -30,7 +28,7 @@ use components::mcp_status::McpStatusPanel;
 use components::session_list::SessionList;
 use components::{
     AgentInfo, CommandDialog, CommandEntry, Component, ContextInfo, DialogAgent, FocusManager,
-    Footer, List, MessageList, Sidebar, StatusDialog, TextArea,
+    Footer, Header, List, MessageList, Sidebar, StatusDialog, TextArea,
 };
 use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
 use std::collections::HashMap;
@@ -689,69 +687,66 @@ async fn run_app<B: ratatui::backend::Backend>(
 }
 
 fn ui(f: &mut Frame, app: &mut TuiApp) {
-    let theme = &app.theme;
+    let area = f.area();
 
-    let chunks = Layout::default()
+    // Outer layout: header | body | input | footer
+    let outer = Layout::default()
         .direction(Direction::Vertical)
-        .margin(1)
         .constraints([
-            Constraint::Length(3),
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(3),
-            Constraint::Length(3),
+            Constraint::Length(2), // header
+            Constraint::Min(5),    // message list (+ optional sidebar)
+            Constraint::Length(4), // input textarea
+            Constraint::Length(1), // footer status bar
         ])
-        .split(f.area());
+        .split(area);
 
-    let title = Paragraph::new("ReOpenCode v0.1.0 - Press 'q' to quit")
-        .style(Style::default().fg(theme.primary()))
-        .block(Block::default().borders(Borders::ALL));
-    f.render_widget(title, chunks[0]);
+    // Header
+    let title = app
+        .session_id
+        .as_deref()
+        .map(|id| format!("#{}", &id[..8.min(id.len())]))
+        .unwrap_or_else(|| "New Session".to_string());
+    let mut hdr = Header::new(app.theme.clone());
+    hdr.set_session_title(title);
+    hdr.set_context(app.context_info.clone());
+    hdr.set_width(area.width);
+    hdr.render(f, outer[0]);
 
-    app.footer.render(f, chunks[1]);
-
-    app.message_list.render(f, chunks[2]);
-
-    app.input_component.render(f, chunks[3]);
-
-    // Render sidebar when expanded
+    // Body: sidebar left, messages right (or full-width if sidebar collapsed)
     if app.sidebar.is_expanded() {
-        let sidebar_width = app.sidebar.width();
-        let sidebar_chunks = Layout::default()
+        let sw = app.sidebar.width();
+        let body = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(0), Constraint::Length(sidebar_width)])
-            .split(f.area());
-
-        let sidebar_area = Rect::new(
-            sidebar_chunks[1].x,
-            sidebar_chunks[1].y,
-            sidebar_chunks[1].width,
-            sidebar_chunks[1].height,
-        );
-
-        app.sidebar.render(f, sidebar_area);
+            .constraints([Constraint::Length(sw), Constraint::Min(1)])
+            .split(outer[1]);
+        app.sidebar.render(f, body[0]);
+        app.message_list.render(f, body[1]);
+    } else {
+        app.message_list.render(f, outer[1]);
     }
 
+    // Input
+    app.input_component.render(f, outer[2]);
+
+    // Footer
+    app.footer.render(f, outer[3]);
+
+    // Overlay dialogs — drawn last so they appear on top
     if app.status_dialog.is_visible() {
-        app.status_dialog.render(f, f.area());
+        app.status_dialog.render(f, area);
     }
-
     if app.command_dialog.is_visible() {
-        app.command_dialog.render(f, f.area());
+        app.command_dialog.render(f, area);
     }
-
     if app.dialog_agent.is_visible() {
-        app.dialog_agent.render(f, f.area());
+        app.dialog_agent.render(f, area);
     }
-
     if app.session_list.is_visible() {
-        let session_area = Rect::new(
-            f.area().width / 4,
-            f.area().height / 4,
-            f.area().width / 2,
-            f.area().height / 2,
-        );
-        app.session_list.render(f, session_area);
+        let w = (area.width * 3 / 5).max(40).min(area.width);
+        let h = (area.height * 2 / 3).max(10).min(area.height);
+        let x = area.x + area.width.saturating_sub(w) / 2;
+        let y = area.y + area.height.saturating_sub(h) / 2;
+        app.session_list.render(f, Rect::new(x, y, w, h));
     }
 }
 

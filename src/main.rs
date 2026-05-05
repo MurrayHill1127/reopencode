@@ -1,4 +1,5 @@
 //! ReOpenCode (ROC) - Rust rewrite of opencode + oh-my-openagent
+#![allow(dead_code, unused_variables, unused_imports)]
 
 mod agent;
 mod bus;

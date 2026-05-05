@@ -184,7 +184,7 @@ impl Processor {
 
         // Track current text and reasoning parts
         let mut current_text: Option<TextPart> = None;
-        let reasoning_map: HashMap<String, ReasoningPart> = HashMap::new();
+        let _reasoning_map: HashMap<String, ReasoningPart> = HashMap::new();
 
         // Set status to busy
         status::set(&self.session_id, status::SessionStatusInfo::Busy);
@@ -201,7 +201,7 @@ impl Processor {
                 StreamEvent::TextDelta { delta } => {
                     self.handle_text_delta(&mut current_text, &delta).await;
                 }
-                StreamEvent::ReasoningDelta { delta } => {
+                StreamEvent::ReasoningDelta { delta: _ } => {
                     // For now, we'll need to track reasoning similar to text
                     // This is a simplified version
                     info!("processor: reasoning delta received");
@@ -380,7 +380,7 @@ impl Processor {
     }
 
     /// Calculate retry delay based on error type and attempt
-    fn retry_delay(&self, error: &ProcessError) -> u64 {
+    fn retry_delay(&self, _error: &ProcessError) -> u64 {
         // Exponential backoff with jitter
         let base_delay = 1000u64;
         let max_delay = 30000u64;

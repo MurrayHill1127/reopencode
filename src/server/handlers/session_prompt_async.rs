@@ -33,7 +33,7 @@ pub struct ModelRef {
 pub async fn prompt_async(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
-    Json(body): Json<PromptInput>,
+    Json(_body): Json<PromptInput>,
 ) -> Result<StatusCode, StatusCode> {
     info!("Async prompt for session: {}", session_id);
 
