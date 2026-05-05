@@ -3,6 +3,7 @@
 
 mod agent;
 mod bus;
+mod lsp;
 mod git;
 mod permission;
 mod snapshot;

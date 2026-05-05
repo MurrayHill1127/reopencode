@@ -7,6 +7,7 @@
 
 pub mod agent;
 pub mod bus;
+pub mod lsp;
 pub mod git;
 pub mod permission;
 pub mod snapshot;
