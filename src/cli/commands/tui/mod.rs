@@ -14,6 +14,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use futures::StreamExt;
 use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
@@ -22,6 +23,7 @@ use ratatui::{
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::io;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::mcp::types::McpStatus;
 use components::mcp_status::McpStatusPanel;
@@ -33,9 +35,16 @@ use components::{
 use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
 use std::collections::HashMap;
 use theme::ThemeContext;
-use transcript::{TranscriptMessage, create_assistant_message, create_user_message};
+use transcript::{MessageRole, TranscriptMessage, create_assistant_message, create_user_message};
 
 const SERVER_URL: &str = "http://127.0.0.1:4096";
+
+#[derive(Debug)]
+enum StreamChunk {
+    Text(String),
+    Done,
+    Error(String),
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionRequest {
@@ -93,6 +102,10 @@ pub struct TuiApp {
     pub command_dialog: CommandDialog,
     pub session_list: SessionList,
     pub dialog_agent: DialogAgent,
+    /// Receives text chunks from an in-progress SSE stream.
+    stream_rx: Option<UnboundedReceiver<StreamChunk>>,
+    /// When the current stream started (for elapsed-time tracking).
+    stream_started: Option<std::time::Instant>,
 }
 
 impl Default for TuiApp {
@@ -144,6 +157,8 @@ impl Default for TuiApp {
             command_dialog: CommandDialog::new(),
             session_list: SessionList::new(),
             dialog_agent: DialogAgent::new(),
+            stream_rx: None,
+            stream_started: None,
         }
     }
 }
@@ -480,64 +495,114 @@ impl TuiApp {
     }
 
     pub async fn send_message(&mut self, content: String) {
-        if let Some(ref session_id) = self.session_id {
-            let request = SendMessageRequest { content };
+        let Some(ref session_id) = self.session_id else {
+            let err = create_assistant_message("No active session", "system", "internal", None);
+            self.messages.push(err.clone());
+            self.message_list.push(err);
+            return;
+        };
 
-            match self
-                .client
-                .post(format!("{}/session/{}/message", SERVER_URL, session_id))
-                .json(&request)
-                .send()
-                .await
-            {
-                Ok(response) => {
-                    if response.status().is_success() {
-                        match response.text().await {
-                            Ok(text) => {
-                                let assistant_msg =
-                                    create_assistant_message(&text, "assistant", "default", None);
-                                self.messages.push(assistant_msg.clone());
-                                self.status = "Ready".to_string();
-                                self.message_list.push(assistant_msg);
-                            }
+        // Add placeholder message that chunks will stream into.
+        let placeholder = create_assistant_message("", "assistant", "default", None);
+        self.messages.push(placeholder.clone());
+        self.message_list.push(placeholder);
+        self.stream_started = Some(std::time::Instant::now());
+        self.status = "Streaming...".to_string();
+
+        let (tx, rx): (UnboundedSender<StreamChunk>, _) = unbounded_channel();
+        self.stream_rx = Some(rx);
+
+        let client = self.client.clone();
+        let url = format!("{}/session/{}/stream", SERVER_URL, session_id);
+        let request = SendMessageRequest { content };
+
+        tokio::spawn(async move {
+            let result = client.post(&url).json(&request).send().await;
+            match result {
+                Err(e) => { let _ = tx.send(StreamChunk::Error(e.to_string())); }
+                Ok(resp) if !resp.status().is_success() => {
+                    let _ = tx.send(StreamChunk::Error(format!("HTTP {}", resp.status())));
+                }
+                Ok(resp) => {
+                    let mut bytes = resp.bytes_stream();
+                    let mut buf = String::new();
+                    while let Some(chunk) = bytes.next().await {
+                        match chunk {
                             Err(e) => {
-                                let error_msg = create_assistant_message(
-                                    &format!("Parse error: {}", e),
-                                    "system",
-                                    "internal",
-                                    None,
-                                );
-                                self.messages.push(error_msg.clone());
-                                self.message_list.push(error_msg);
+                                let _ = tx.send(StreamChunk::Error(e.to_string()));
+                                return;
+                            }
+                            Ok(b) => {
+                                buf.push_str(&String::from_utf8_lossy(&b));
+                                // SSE events are delimited by \n\n
+                                while let Some(pos) = buf.find("\n\n") {
+                                    let event = buf[..pos].to_string();
+                                    buf = buf[pos + 2..].to_string();
+                                    for line in event.lines() {
+                                        if let Some(data) = line.strip_prefix("data: ") {
+                                            let _ = tx.send(StreamChunk::Text(data.to_string()));
+                                        }
+                                    }
+                                }
                             }
                         }
-                    } else {
-                        let error_msg = create_assistant_message(
-                            &format!("Server returned: {}", response.status()),
-                            "system",
-                            "internal",
-                            None,
-                        );
-                        self.messages.push(error_msg.clone());
-                        self.message_list.push(error_msg);
                     }
+                    let _ = tx.send(StreamChunk::Done);
                 }
-                Err(e) => {
-                    let error_msg = create_assistant_message(
-                        &format!("Failed to send: {}", e),
+            }
+        });
+    }
+
+    /// Drain pending SSE chunks and update the in-progress message.
+    pub fn process_stream_chunks(&mut self) {
+        use tokio::sync::mpsc::error::TryRecvError;
+        use transcript::PartType;
+
+        let Some(ref mut rx) = self.stream_rx else { return; };
+
+        loop {
+            match rx.try_recv() {
+                Ok(StreamChunk::Text(t)) => {
+                    if let Some(msg) = self.messages.last_mut() {
+                        if let Some(PartType::Text { text, .. }) = msg.parts.first_mut() {
+                            text.push_str(&t);
+                        }
+                    }
+                    self.message_list.append_last_text(&t);
+                }
+                Ok(StreamChunk::Done) => {
+                    let elapsed_ms = self.stream_started.take()
+                        .map(|s| s.elapsed().as_millis() as u64);
+                    if let Some(msg) = self.messages.last_mut() {
+                        if let MessageRole::Assistant { ref mut duration_ms, .. } = msg.role {
+                            *duration_ms = elapsed_ms;
+                        }
+                    }
+                    self.message_list.update_last_duration(elapsed_ms);
+                    self.stream_rx = None;
+                    self.status = "Ready".to_string();
+                    break;
+                }
+                Ok(StreamChunk::Error(e)) => {
+                    let err_msg = create_assistant_message(
+                        &format!("Stream error: {}", e),
                         "system",
                         "internal",
                         None,
                     );
-                    self.messages.push(error_msg.clone());
-                    self.message_list.push(error_msg);
+                    self.messages.push(err_msg.clone());
+                    self.message_list.push(err_msg);
+                    self.stream_rx = None;
+                    self.status = "Error".to_string();
+                    break;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    self.stream_rx = None;
+                    self.status = "Ready".to_string();
+                    break;
                 }
             }
-        } else {
-            let error_msg =
-                create_assistant_message("No active session", "system", "internal", None);
-            self.messages.push(error_msg.clone());
-            self.message_list.push(error_msg);
         }
     }
 
@@ -661,6 +726,9 @@ async fn run_app<B: ratatui::backend::Backend>(
     let mut last_update = std::time::Instant::now();
 
     while app.running {
+        // Drain any SSE chunks that arrived since last frame.
+        app.process_stream_chunks();
+
         terminal.draw(|f| ui(f, &mut *app))?;
 
         let now = std::time::Instant::now();
@@ -671,7 +739,9 @@ async fn run_app<B: ratatui::backend::Backend>(
         app.footer.update(delta);
         app.process_expired_toasts();
 
-        if crossterm::event::poll(std::time::Duration::from_millis(100))?
+        // Poll timeout: shorter when streaming so the UI refreshes fast.
+        let poll_ms = if app.stream_rx.is_some() { 33 } else { 100 };
+        if crossterm::event::poll(std::time::Duration::from_millis(poll_ms))?
             && let Event::Key(key) = event::read()?
             && let Some(msg) = app.handle_key(key)
         {

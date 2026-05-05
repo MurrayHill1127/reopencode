@@ -71,6 +71,36 @@ impl MessageList {
         self.follow_bottom.store(true, Relaxed);
     }
 
+    /// Append `text` to the last message's first non-synthetic text part.
+    /// If no such part exists, adds a new one.
+    pub fn append_last_text(&mut self, text: &str) {
+        use crate::cli::commands::tui::transcript::PartType;
+        if let Some(msg) = self.messages.last_mut() {
+            for part in &mut msg.parts {
+                if let PartType::Text { text: t, synthetic } = part {
+                    if !*synthetic {
+                        t.push_str(text);
+                        return;
+                    }
+                }
+            }
+            msg.parts.push(PartType::Text {
+                text: text.to_string(),
+                synthetic: false,
+            });
+        }
+    }
+
+    /// Update the `duration_ms` field of the last assistant message.
+    pub fn update_last_duration(&mut self, duration_ms: Option<u64>) {
+        use crate::cli::commands::tui::transcript::MessageRole;
+        if let Some(msg) = self.messages.last_mut() {
+            if let MessageRole::Assistant { duration_ms: ref mut d, .. } = msg.role {
+                *d = duration_ms;
+            }
+        }
+    }
+
     fn scroll_up_by(&self, lines: u16) {
         self.follow_bottom.store(false, Relaxed);
         let cur = self.scroll_offset.load(Relaxed);
