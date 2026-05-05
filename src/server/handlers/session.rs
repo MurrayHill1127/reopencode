@@ -3,13 +3,14 @@ use axum::{
     http::StatusCode,
     response::sse::{Event, Sse},
 };
+use futures::stream;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
-use tracing::{error, info};
+use tokio::sync::mpsc;
+use tracing::{error, info, warn};
 
 use crate::agent::{Agent, Message, Role};
-use crate::provider::Message as ProviderMessage;
-use crate::provider::MessageRole as ProviderMessageRole;
+use crate::provider::{Message as ProviderMessage, MessageRole as ProviderMessageRole, ToolDefinition};
 use crate::server::AppState;
 use crate::session::{Session, SessionStatus};
 
@@ -264,31 +265,157 @@ pub async fn stream_message(
     Path(session_id): Path<String>,
     Json(body): Json<SendMessageRequest>,
 ) -> Sse<impl futures::Stream<Item = Result<Event, Infallible>>> {
-    info!(
-        "Streaming message for session {}: {}",
-        session_id, body.content
-    );
+    info!("Streaming message for session {}", session_id);
 
-    let provider_messages = vec![ProviderMessage::new(
-        ProviderMessageRole::User,
-        body.content,
-    )];
+    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
 
-    let config = state.agent.config();
-    let stream = state.provider.chat_stream(
-        provider_messages,
-        &config.model,
-        config.temperature,
-        config.max_tokens,
-        &[],
-    );
+    // Clone what the spawned task needs.
+    let provider = state.provider.clone();
+    let session_manager = state.session_manager.clone();
+    let tools_registry = state.tools.clone();
+    let cwd = state.cwd.clone();
+    let config = state.agent.config().clone();
+    let user_content = body.content.clone();
 
-    let sse_stream = futures::stream::StreamExt::map(stream, |result| match result {
-        Ok(content) => Ok(Event::default().data(content)),
-        Err(e) => {
-            error!("Stream error: {}", e);
-            Ok(Event::default().data(format!("[ERROR] {}", e)))
+    tokio::spawn(async move {
+        // --- store user message ---
+        if session_manager.add_message(&session_id, "user", &user_content).await.is_err() {
+            let _ = tx.send("[ERROR] Failed to store user message".to_string());
+            return;
         }
+
+        // --- build tool definitions from registry ---
+        let tool_names = tools_registry.list();
+        let tool_defs: Vec<ToolDefinition> = tool_names.iter()
+            .filter_map(|name| tools_registry.get(name))
+            .map(|t| ToolDefinition::from(&t.to_agent_definition()))
+            .collect();
+
+        // --- build system prompt ---
+        let system_prompt = format!(
+            "You are an expert software engineering assistant running in the directory: {cwd}\n\n\
+             You have access to a set of tools to read files, write code, search the codebase, \
+             and run shell commands. Use them to complete the user's request thoroughly.\n\n\
+             Guidelines:\n\
+             - Read files before editing them\n\
+             - Prefer targeted edits over full rewrites\n\
+             - Run tests after making changes when possible\n\
+             - Explain your reasoning briefly before acting\n\
+             - If uncertain about a file's contents, read it first",
+            cwd = cwd
+        );
+
+        // --- load conversation history ---
+        let history = match session_manager.get_messages(&session_id).await {
+            Ok(h) => h,
+            Err(e) => {
+                let _ = tx.send(format!("[ERROR] Failed to load history: {e}"));
+                return;
+            }
+        };
+
+        // Build message list: system + history (history already includes the user message we just stored)
+        let mut messages: Vec<ProviderMessage> = Vec::new();
+        messages.push(ProviderMessage::new(ProviderMessageRole::System, &system_prompt));
+        for msg in &history {
+            let role = if msg.role == "user" {
+                ProviderMessageRole::User
+            } else {
+                ProviderMessageRole::Assistant
+            };
+            messages.push(ProviderMessage::new(role, &msg.content));
+        }
+
+        // --- agent loop ---
+        const MAX_STEPS: usize = 20;
+        let mut full_response = String::new();
+
+        for step in 0..MAX_STEPS {
+            let response = match provider.chat(
+                messages.clone(),
+                &config.model,
+                config.temperature,
+                config.max_tokens,
+                &tool_defs,
+            ).await {
+                Ok(r) => r,
+                Err(e) => {
+                    let msg = format!("[ERROR] Provider error: {e}");
+                    let _ = tx.send(msg);
+                    return;
+                }
+            };
+
+            // Stream any text content immediately
+            if !response.content.is_empty() {
+                full_response.push_str(&response.content);
+                // Send in small chunks so the TUI renders progressively
+                for chunk in response.content.split_inclusive(' ') {
+                    let _ = tx.send(chunk.to_string());
+                }
+            }
+
+            if response.tool_calls.is_empty() {
+                // Final response — done
+                break;
+            }
+
+            info!("Step {}: executing {} tool calls", step + 1, response.tool_calls.len());
+
+            // Append the assistant message with tool_calls to history
+            let assistant_msg = ProviderMessage {
+                role: ProviderMessageRole::Assistant,
+                content: response.content.clone(),
+                tool_call_id: None,
+                tool_calls: response.tool_calls.clone(),
+            };
+            messages.push(assistant_msg);
+
+            // Execute each tool call and append results
+            for call in &response.tool_calls {
+                let tool_name = &call.function.name;
+                let args: serde_json::Value = serde_json::from_str(&call.function.arguments)
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+
+                let result_text = match tools_registry.get(tool_name) {
+                    None => {
+                        warn!("Tool not found: {}", tool_name);
+                        format!("Error: tool '{}' not found", tool_name)
+                    }
+                    Some(tool) => {
+                        // Announce the tool call to the stream
+                        let announce = format!("\n\n**Tool: {}**\n```\n{}\n```\n\n", tool_name, args);
+                        let _ = tx.send(announce);
+
+                        match tool.execute(args).await {
+                            Ok(r) => r.output,
+                            Err(e) => format!("Error: {e}"),
+                        }
+                    }
+                };
+
+                messages.push(ProviderMessage {
+                    role: ProviderMessageRole::Tool,
+                    content: result_text,
+                    tool_call_id: Some(call.id.clone()),
+                    tool_calls: vec![],
+                });
+            }
+        }
+
+        // --- store assistant response ---
+        if !full_response.is_empty() {
+            if let Err(e) = session_manager.add_message(&session_id, "assistant", &full_response).await {
+                error!("Failed to store assistant response: {}", e);
+            }
+        }
+    });
+
+    // Convert mpsc channel to SSE stream
+    let sse_stream = stream::unfold(rx, |mut rx| async move {
+        rx.recv().await.map(|chunk| {
+            (Ok::<Event, Infallible>(Event::default().data(chunk)), rx)
+        })
     });
 
     Sse::new(sse_stream)

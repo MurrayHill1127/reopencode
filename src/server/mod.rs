@@ -17,6 +17,7 @@ use crate::permission::PermissionStore;
 use crate::provider::{OpenAiProvider, Provider, ProviderConfig};
 use crate::session::SessionManager;
 use crate::storage::{MessageStore, Storage};
+use crate::tool::registry::ToolRegistry;
 
 pub use handlers::permission::PermissionRequest;
 pub use routes::create_router;
@@ -52,6 +53,8 @@ pub struct AppState {
     pub bus: Arc<Bus>,
     pub mcp_manager: Arc<McpManager>,
     pub permission_store: PermissionStore,
+    pub tools: Arc<ToolRegistry>,
+    pub cwd: String,
 }
 
 impl AppState {
@@ -61,6 +64,7 @@ impl AppState {
         message_store: MessageStore,
         directory: impl Into<String>,
     ) -> Self {
+        let cwd = directory.into();
         let config =
             ProviderConfig::new("kimi", api_key.into()).with_base_url("https://api.moonshot.cn/v1");
 
@@ -71,8 +75,9 @@ impl AppState {
                 .with_temperature(0.7),
         );
 
-        let bus = Arc::new(Bus::new(directory));
+        let bus = Arc::new(Bus::new(cwd.clone()));
         let mcp_manager = Arc::new(McpManager::new());
+        let tools = Arc::new(build_tool_registry());
 
         Self {
             provider,
@@ -82,8 +87,28 @@ impl AppState {
             bus,
             mcp_manager,
             permission_store: PermissionStore::new(),
+            tools,
+            cwd,
         }
     }
+}
+
+fn build_tool_registry() -> ToolRegistry {
+    use crate::tool::*;
+    let registry = ToolRegistry::new();
+    registry.register(Box::new(bash::BashTool::new()));
+    registry.register(Box::new(read::ReadTool::new()));
+    registry.register(Box::new(write::WriteTool::new()));
+    registry.register(Box::new(edit::EditTool::new()));
+    registry.register(Box::new(glob::GlobTool::new()));
+    registry.register(Box::new(grep::GrepTool::new()));
+    registry.register(Box::new(ls::ListTool::new()));
+    registry.register(Box::new(todo::TodoWriteTool::new()));
+    registry.register(Box::new(todo::TodoReadTool::new()));
+    registry.register(Box::new(task::TaskTool::new()));
+    registry.register(Box::new(question::QuestionTool::new()));
+    registry.register(Box::new(webfetch::WebFetchTool::new()));
+    registry
 }
 
 pub fn build_app(state: AppState) -> Router {
