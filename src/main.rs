@@ -20,6 +20,8 @@ mod server;
 mod session;
 mod skill;
 mod storage;
+mod share;
+mod sync;
 mod tool;
 mod util;
 mod worktree;

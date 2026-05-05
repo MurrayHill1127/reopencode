@@ -24,6 +24,8 @@ pub mod server;
 pub mod session;
 pub mod skill;
 pub mod storage;
+pub mod share;
+pub mod sync;
 pub mod tool;
 pub mod util;
 pub mod worktree;
