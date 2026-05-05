@@ -28,7 +28,7 @@ pub enum Commands {
     /// Start HTTP server
     Serve {
         /// Port to listen on
-        #[arg(short, long, default_value = "8080")]
+        #[arg(short, long, default_value = "4096")]
         port: u16,
     },
 

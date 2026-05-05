@@ -10,7 +10,7 @@ pub mod transcript_renderer;
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEvent},
+    event::{self, Event, KeyEvent},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -693,7 +693,7 @@ impl TuiApp {
 pub async fn run() -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -704,11 +704,7 @@ pub async fn run() -> Result<()> {
     let result = run_app(&mut terminal, &mut app).await;
 
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     if let Err(err) = result {
@@ -726,9 +722,7 @@ async fn run_app<B: ratatui::backend::Backend>(
     let mut last_update = std::time::Instant::now();
 
     while app.running {
-        // Drain any SSE chunks that arrived since last frame.
         app.process_stream_chunks();
-
         terminal.draw(|f| ui(f, &mut *app))?;
 
         let now = std::time::Instant::now();
@@ -739,13 +733,26 @@ async fn run_app<B: ratatui::backend::Backend>(
         app.footer.update(delta);
         app.process_expired_toasts();
 
-        // Poll timeout: shorter when streaming so the UI refreshes fast.
         let poll_ms = if app.stream_rx.is_some() { 33 } else { 100 };
-        if crossterm::event::poll(std::time::Duration::from_millis(poll_ms))?
-            && let Event::Key(key) = event::read()?
-            && let Some(msg) = app.handle_key(key)
-        {
-            pending_message = Some(msg);
+
+        // Block waiting for the first event, then drain all queued events.
+        if crossterm::event::poll(std::time::Duration::from_millis(poll_ms))? {
+            loop {
+                match event::read()? {
+                    Event::Key(key) => {
+                        if let Some(msg) = app.handle_key(key) {
+                            pending_message = Some(msg);
+                        }
+                    }
+                    Event::Resize(_, _) => {
+                        // terminal.draw handles resize automatically
+                    }
+                    _ => {}
+                }
+                if !crossterm::event::poll(std::time::Duration::from_millis(0))? {
+                    break;
+                }
+            }
         }
 
         if let Some(msg) = pending_message.take() {
