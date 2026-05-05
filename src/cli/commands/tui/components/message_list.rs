@@ -168,24 +168,26 @@ impl MessageList {
 }
 
 fn role_badge(role: &MessageRole) -> (String, Style) {
+    // opencode palette
+    let primary = Color::Rgb(250, 178, 131); // #fab283 warm orange
+    let muted   = Color::Rgb(128, 128, 128); // #808080
+    let accent  = Color::Rgb(157, 124, 216); // #9d7cd8 purple
+
     match role {
         MessageRole::User => (
-            " You ".to_string(),
-            Style::default().fg(Color::Black).bg(Color::Cyan),
+            "you".to_string(),
+            Style::default().fg(primary).add_modifier(Modifier::BOLD),
         ),
         MessageRole::Assistant { agent, model_id, duration_ms } => {
-            let name = {
-                let mut c = agent.chars();
-                match c.next() {
-                    None => String::new(),
-                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-                }
-            };
             let dur = duration_ms
                 .map(|ms| format!("  {:.1}s", ms as f64 / 1000.0))
                 .unwrap_or_default();
-            let label = format!(" {} · {}{} ", name, model_id, dur);
-            (label, Style::default().fg(Color::Black).bg(Color::Green))
+            let label = if agent == "system" || agent == "internal" {
+                "system".to_string()
+            } else {
+                format!("{} · {}{}", agent, model_id, dur)
+            };
+            (label, Style::default().fg(accent).add_modifier(Modifier::BOLD))
         }
     }
 }
@@ -238,36 +240,26 @@ impl Component for MessageList {
     }
 
     fn render(&self, frame: &mut Frame, area: Rect) {
-        let border_style = if self.focused {
-            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(border_style);
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-
-        let text = self.build_text(inner.width);
+        // No border — render directly into the area
+        let text = self.build_text(area.width);
         let total = text.lines.len() as u16;
         self.last_total_lines.store(total, Relaxed);
-        self.last_visible_height.store(inner.height, Relaxed);
+        self.last_visible_height.store(area.height, Relaxed);
 
         let offset = if self.follow_bottom.load(Relaxed) {
-            total.saturating_sub(inner.height)
+            total.saturating_sub(area.height)
         } else {
-            self.scroll_offset.load(Relaxed).min(total.saturating_sub(inner.height))
+            self.scroll_offset.load(Relaxed).min(total.saturating_sub(area.height))
         };
         self.scroll_offset.store(offset, Relaxed);
 
         let para = Paragraph::new(text)
             .scroll((offset, 0))
             .wrap(Wrap { trim: false });
-        frame.render_widget(para, inner);
+        frame.render_widget(para, area);
 
-        // Scroll hint — shown when there is content above the current view.
-        if total > inner.height && offset > 0 && inner.width > 6 {
+        // Scroll position hint at top-right corner
+        if total > area.height && offset > 0 && area.width > 6 {
             let pct = offset as u32 * 100 / total.max(1) as u32;
             let hint = format!(" {}% ", pct);
             let hint_x = area.x + area.width.saturating_sub(hint.len() as u16 + 1);
@@ -275,7 +267,7 @@ impl Component for MessageList {
             frame.render_widget(
                 Paragraph::new(Span::styled(
                     hint,
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(Color::from_u32(0x484848)),
                 )),
                 hint_area,
             );

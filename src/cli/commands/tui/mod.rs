@@ -765,48 +765,42 @@ async fn run_app<B: ratatui::backend::Backend>(
 
 fn ui(f: &mut Frame, app: &mut TuiApp) {
     let area = f.area();
+    let theme = &app.theme;
 
-    // Outer layout: header | body | input | footer
+    // Fill background with near-black (#0a0a0a → Color::Rgb)
+    let bg_block = ratatui::widgets::Block::default()
+        .style(ratatui::style::Style::default().bg(theme.background()));
+    f.render_widget(bg_block, area);
+
+    // Layout: body (sidebar+messages) | input (3 rows) | footer (1 row)
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2), // header
-            Constraint::Min(5),    // message list (+ optional sidebar)
-            Constraint::Length(4), // input textarea
-            Constraint::Length(1), // footer status bar
+            Constraint::Min(5),    // body
+            Constraint::Length(3), // input prompt area
+            Constraint::Length(1), // footer
         ])
         .split(area);
 
-    // Header
-    let title = app
-        .session_id
-        .as_deref()
-        .map(|id| format!("#{}", &id[..8.min(id.len())]))
-        .unwrap_or_else(|| "New Session".to_string());
-    let mut hdr = Header::new(app.theme.clone());
-    hdr.set_session_title(title);
-    hdr.set_context(app.context_info.clone());
-    hdr.set_width(area.width);
-    hdr.render(f, outer[0]);
-
-    // Body: sidebar left, messages right (or full-width if sidebar collapsed)
-    if app.sidebar.is_expanded() {
-        let sw = app.sidebar.width();
+    // Body: sidebar (42 cols) | messages
+    const SIDEBAR_W: u16 = 42;
+    let show_sidebar = app.sidebar.is_expanded() && area.width > SIDEBAR_W + 20;
+    if show_sidebar {
         let body = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(sw), Constraint::Min(1)])
-            .split(outer[1]);
-        app.sidebar.render(f, body[0]);
-        app.message_list.render(f, body[1]);
+            .constraints([Constraint::Length(SIDEBAR_W), Constraint::Min(1)])
+            .split(outer[0]);
+        render_sidebar(f, app, body[0]);
+        render_messages(f, app, body[1]);
     } else {
-        app.message_list.render(f, outer[1]);
+        render_messages(f, app, outer[0]);
     }
 
-    // Input
-    app.input_component.render(f, outer[2]);
+    // Input prompt area
+    render_input(f, app, outer[1]);
 
     // Footer
-    app.footer.render(f, outer[3]);
+    render_footer(f, app, outer[2]);
 
     // Overlay dialogs — drawn last so they appear on top
     if app.status_dialog.is_visible() {
@@ -825,6 +819,235 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         let y = area.y + area.height.saturating_sub(h) / 2;
         app.session_list.render(f, Rect::new(x, y, w, h));
     }
+}
+
+// ─── sub-renderers ────────────────────────────────────────────────────────────
+
+fn render_sidebar(f: &mut Frame, app: &TuiApp, area: Rect) {
+    use ratatui::style::Style;
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::{Block, Paragraph};
+
+    let theme = &app.theme;
+
+    // Dark panel background
+    let panel = Block::default()
+        .style(Style::default().bg(theme.colors().background_panel));
+    f.render_widget(panel, area);
+
+    let inner = Rect {
+        x: area.x + 2,
+        y: area.y + 1,
+        width: area.width.saturating_sub(4),
+        height: area.height.saturating_sub(2),
+    };
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Session title
+    let title = app.session_id
+        .as_deref()
+        .map(|id| format!("Session #{}", &id[..8.min(id.len())]))
+        .unwrap_or_else(|| "New Session".to_string());
+    lines.push(Line::from(Span::styled(
+        title,
+        Style::default().fg(theme.text()).add_modifier(ratatui::style::Modifier::BOLD),
+    )));
+    lines.push(Line::from(""));
+
+    // Status
+    let status_color = if app.session_id.is_some() {
+        theme.success()
+    } else {
+        theme.colors().text_muted
+    };
+    lines.push(Line::from(Span::styled(
+        format!("● {}", app.status),
+        Style::default().fg(status_color),
+    )));
+    lines.push(Line::from(""));
+
+    // Hint line
+    lines.push(Line::from(vec![
+        Span::styled("Enter ", Style::default().fg(theme.primary())),
+        Span::styled("send  ", Style::default().fg(theme.colors().text_muted)),
+        Span::styled("Ctrl+b ", Style::default().fg(theme.primary())),
+        Span::styled("sidebar", Style::default().fg(theme.colors().text_muted)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("Ctrl+p ", Style::default().fg(theme.primary())),
+        Span::styled("sessions  ", Style::default().fg(theme.colors().text_muted)),
+        Span::styled("Ctrl+c ", Style::default().fg(theme.primary())),
+        Span::styled("quit", Style::default().fg(theme.colors().text_muted)),
+    ]));
+
+    // Version at bottom
+    let ver_y = area.y + area.height.saturating_sub(2);
+    if ver_y > inner.y {
+        let bottom_area = Rect { x: area.x + 2, y: ver_y, width: area.width.saturating_sub(4), height: 1 };
+        let ver_line = Line::from(vec![
+            Span::styled("●", Style::default().fg(theme.success())),
+            Span::styled(" Open", Style::default().fg(theme.colors().text_muted)),
+            Span::styled("Code", Style::default().fg(theme.text())),
+            Span::styled(" ROC", Style::default().fg(theme.primary())),
+        ]);
+        f.render_widget(Paragraph::new(ver_line), bottom_area);
+    }
+
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+fn render_messages(f: &mut Frame, app: &TuiApp, area: Rect) {
+    // Delegate to the existing MessageList component, but with padding
+    let inner = Rect {
+        x: area.x + 2,
+        y: area.y,
+        width: area.width.saturating_sub(4),
+        height: area.height,
+    };
+    app.message_list.render(f, inner);
+}
+
+fn render_input(f: &mut Frame, app: &TuiApp, area: Rect) {
+    use ratatui::style::Style;
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::Paragraph;
+
+    let theme = &app.theme;
+    let muted = theme.colors().text_muted;
+    let primary = theme.primary();
+    let text_color = theme.text();
+
+    // Top separator
+    let sep = "─".repeat(area.width as usize);
+    let sep_area = Rect { x: area.x, y: area.y, width: area.width, height: 1 };
+    f.render_widget(
+        Paragraph::new(Span::styled(sep, Style::default().fg(theme.colors().border))),
+        sep_area,
+    );
+
+    // Input content area (below separator)
+    let content_area = Rect {
+        x: area.x + 1,
+        y: area.y + 1,
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(1),
+    };
+
+    let input_text = app.input_component.text();
+    let is_streaming = app.stream_rx.is_some();
+
+    // Show streaming indicator or prompt
+    if is_streaming {
+        let line = Line::from(vec![
+            Span::styled("⠸ ", Style::default().fg(primary)),
+            Span::styled("Thinking…", Style::default().fg(muted)),
+        ]);
+        f.render_widget(Paragraph::new(line), content_area);
+    } else if input_text.is_empty() {
+        // Placeholder
+        let lines_area = Rect { x: content_area.x, y: content_area.y, width: content_area.width, height: 1 };
+        let hint_area = Rect { x: content_area.x, y: content_area.y + content_area.height.saturating_sub(1), width: content_area.width, height: 1 };
+
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("> ", Style::default().fg(primary)),
+                Span::styled("Ask anything…", Style::default().fg(muted)),
+            ])),
+            lines_area,
+        );
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("Enter", Style::default().fg(primary)),
+                Span::styled(" send  ", Style::default().fg(muted)),
+                Span::styled("Shift+Enter", Style::default().fg(primary)),
+                Span::styled(" newline", Style::default().fg(muted)),
+            ])),
+            hint_area,
+        );
+    } else {
+        // Show typed content
+        for (i, line) in input_text.lines().enumerate() {
+            if i as u16 >= content_area.height {
+                break;
+            }
+            let row_area = Rect {
+                x: content_area.x,
+                y: content_area.y + i as u16,
+                width: content_area.width,
+                height: 1,
+            };
+            let prefix = if i == 0 { "> " } else { "  " };
+            f.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled(prefix, Style::default().fg(primary)),
+                    Span::styled(line.to_string(), Style::default().fg(text_color)),
+                ])),
+                row_area,
+            );
+        }
+    }
+}
+
+fn render_footer(f: &mut Frame, app: &TuiApp, area: Rect) {
+    use ratatui::style::Style;
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::Paragraph;
+
+    let theme = &app.theme;
+    let muted = theme.colors().text_muted;
+    let success = theme.success();
+    let warning = theme.warning();
+    let text = theme.text();
+
+    // Left: current directory
+    let dir = &app.current_directory;
+    let dir_span = Span::styled(dir.clone(), Style::default().fg(muted));
+
+    // Right: LSP + MCP + hint
+    let mut right_spans: Vec<Span> = Vec::new();
+    if app.pending_permissions > 0 {
+        right_spans.push(Span::styled(
+            format!("△ {} Permission{}", app.pending_permissions, if app.pending_permissions > 1 { "s" } else { "" }),
+            Style::default().fg(warning),
+        ));
+        right_spans.push(Span::styled("  ", Style::default()));
+    }
+    right_spans.push(Span::styled(
+        if app.lsp_count > 0 { "●" } else { "○" },
+        Style::default().fg(if app.lsp_count > 0 { success } else { muted }),
+    ));
+    right_spans.push(Span::styled(
+        format!(" {} LSP  ", app.lsp_count),
+        Style::default().fg(text),
+    ));
+    right_spans.push(Span::styled("⊙ ", Style::default().fg(success)));
+    right_spans.push(Span::styled(
+        format!("{} MCP  ", app.mcp_statuses.len()),
+        Style::default().fg(text),
+    ));
+    right_spans.push(Span::styled("/status", Style::default().fg(muted)));
+
+    // Calculate layout widths safely
+    let right_len: usize = right_spans.iter().map(|s| s.content.len()).sum();
+    let total_w = area.width as usize;
+    let left_max = total_w.saturating_sub(right_len + 2);
+    let left_len = dir.len().min(left_max);
+    let gap = total_w.saturating_sub(left_len + right_len).max(1);
+
+    let mut all_spans = vec![Span::styled(
+        dir.chars().take(left_len).collect::<String>(),
+        Style::default().fg(muted),
+    )];
+    all_spans.push(Span::raw(" ".repeat(gap)));
+    all_spans.extend(right_spans);
+
+    let _ = dir_span;
+    f.render_widget(
+        Paragraph::new(Line::from(all_spans))
+            .style(Style::default().bg(theme.background())),
+        area,
+    );
 }
 
 #[cfg(test)]
