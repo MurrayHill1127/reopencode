@@ -193,6 +193,14 @@ fn parse_table_row(s: &str) -> Option<Vec<String>> {
 // ── Render ────────────────────────────────────────────────────────────────────
 
 pub fn render_parsed(parsed: &ParsedMarkdown, width: u16) -> Vec<Line<'static>> {
+    render_parsed_with_conceal(parsed, width, false)
+}
+
+pub fn render_parsed_concealed(parsed: &ParsedMarkdown, width: u16) -> Vec<Line<'static>> {
+    render_parsed_with_conceal(parsed, width, true)
+}
+
+fn render_parsed_with_conceal(parsed: &ParsedMarkdown, width: u16, conceal: bool) -> Vec<Line<'static>> {
     let w = width.max(10) as usize;
     let mut out: Vec<Line<'static>> = Vec::with_capacity(parsed.blocks.len() + 4);
 
@@ -233,7 +241,11 @@ pub fn render_parsed(parsed: &ParsedMarkdown, width: u16) -> Vec<Line<'static>> 
                 }
             }
             Block::CodeBlock { language, lines } => {
-                render_code_block(&mut out, language, lines, w);
+                if conceal {
+                    render_concealed_code(&mut out, language, lines.len(), w);
+                } else {
+                    render_code_block(&mut out, language, lines, w);
+                }
             }
             Block::TableRow(cells) => {
                 let col_w = if cells.is_empty() {
@@ -275,7 +287,11 @@ pub fn render_parsed(parsed: &ParsedMarkdown, width: u16) -> Vec<Line<'static>> 
 }
 
 pub fn render_markdown(content: &str, width: u16) -> Vec<Line<'static>> {
-    render_parsed(&parse(content), width)
+    render_parsed_with_conceal(&parse(content), width, false)
+}
+
+pub fn render_markdown_concealed(content: &str, width: u16) -> Vec<Line<'static>> {
+    render_parsed_with_conceal(&parse(content), width, true)
 }
 
 // ── Heading renderer ──────────────────────────────────────────────────────────
@@ -362,6 +378,37 @@ fn render_code_block(out: &mut Vec<Line<'static>>, language: &str, lines: &[Stri
     }
 
     // Bottom border: ╰─────────╯
+    out.push(Line::from(Span::styled(
+        format!("╰{}╯", "─".repeat(box_w.saturating_sub(2))),
+        Style::default().fg(C_BORDER),
+    )));
+}
+
+fn render_concealed_code(out: &mut Vec<Line<'static>>, language: &str, line_count: usize, w: usize) {
+    let box_w = w;
+    let label = if language.is_empty() {
+        format!(" code · {} lines ", line_count)
+    } else {
+        format!(" {} · {} lines ", language, line_count)
+    };
+    let dashes = box_w.saturating_sub(2 + label.width() + 2);
+    let top = format!("╭─{}{}╮", label, "─".repeat(dashes));
+
+    out.push(Line::from(vec![
+        Span::styled("╭─".to_string(), Style::default().fg(C_BORDER)),
+        Span::styled(label, Style::default().fg(C_INFO).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{}╮", "─".repeat(dashes)), Style::default().fg(C_BORDER)),
+    ]));
+
+    // Collapsed hint
+    let hint = " Ctrl+` to expand ";
+    let pad = box_w.saturating_sub(2 + hint.width() + 2);
+    out.push(Line::from(vec![
+        Span::styled("│ ".to_string(), Style::default().fg(C_BORDER)),
+        Span::styled(hint, Style::default().fg(C_TEXT_DIM).add_modifier(Modifier::ITALIC)),
+        Span::styled(format!("{} │", " ".repeat(pad)), Style::default().fg(C_BORDER)),
+    ]));
+
     out.push(Line::from(Span::styled(
         format!("╰{}╯", "─".repeat(box_w.saturating_sub(2))),
         Style::default().fg(C_BORDER),

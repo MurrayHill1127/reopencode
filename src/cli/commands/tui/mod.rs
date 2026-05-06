@@ -447,6 +447,17 @@ impl TuiApp {
             return None;
         }
 
+        // Ctrl+` toggles code block concealment
+        if key.code == KeyCode::BackTab || (key.code == KeyCode::Char('`') && key.modifiers == KeyModifiers::CONTROL) {
+            self.message_list.toggle_conceal();
+            self.footer.set_status(if self.message_list.code_concealed {
+                "Code blocks concealed".to_string()
+            } else {
+                "Code blocks expanded".to_string()
+            });
+            return None;
+        }
+
         if self.keybinds.matches("session_list", &key_info, leader_active) {
             if self.session_list.is_visible() {
                 self.session_list.hide();

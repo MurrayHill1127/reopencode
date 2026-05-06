@@ -68,6 +68,7 @@ pub struct MessageList {
     last_visible_height: AtomicU16,
     follow_bottom: AtomicBool,
     focused: bool,
+    pub code_concealed: bool,
 }
 
 impl MessageList {
@@ -85,11 +86,16 @@ impl MessageList {
             last_visible_height: AtomicU16::new(1),
             follow_bottom: AtomicBool::new(true),
             focused: false,
+            code_concealed: false,
         }
     }
 
     pub fn len(&self) -> usize { self.messages.len() }
     pub fn is_empty(&self) -> bool { self.messages.is_empty() }
+    pub fn toggle_conceal(&mut self) {
+        self.code_concealed = !self.code_concealed;
+        for rev in &mut self.revisions { *rev += 1; }
+    }
 
     pub fn clear(&mut self) {
         self.messages.clear();
@@ -174,7 +180,7 @@ impl MessageList {
         }
 
         // Re-render
-        let lines = build_cell_lines(&self.messages[idx], width);
+        let lines = build_cell_lines(&self.messages[idx], width, self.code_concealed);
         cell_mut.revision = rev;
         cell_mut.last_width = width;
         cell_mut.lines = lines;
@@ -188,7 +194,7 @@ impl Default for MessageList {
 
 // ── Cell line builder ─────────────────────────────────────────────────────────
 
-fn build_cell_lines(msg: &TranscriptMessage, width: u16) -> Vec<Line<'static>> {
+fn build_cell_lines(msg: &TranscriptMessage, width: u16, conceal: bool) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let w = width as usize;
 
@@ -227,7 +233,11 @@ fn build_cell_lines(msg: &TranscriptMessage, width: u16) -> Vec<Line<'static>> {
             PartType::Text { text, synthetic } if !synthetic => {
                 if text.trim().is_empty() { continue; }
                 let content_w = (w as u16).saturating_sub(2);
-                let rendered = markdown::render_markdown(text, content_w);
+                let rendered = if conceal {
+                    markdown::render_markdown_concealed(text, content_w)
+                } else {
+                    markdown::render_markdown(text, content_w)
+                };
                 for line in rendered {
                     // 2-column indent for body
                     let mut indented = vec![Span::raw("  ")];
@@ -701,7 +711,7 @@ mod tests {
     #[test]
     fn build_cell_lines_user() {
         let msg = user_msg("hello world");
-        let lines = build_cell_lines(&msg, 80);
+        let lines = build_cell_lines(&msg, 80, false);
         let flat: String = lines.iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
             .collect();
@@ -712,7 +722,7 @@ mod tests {
     #[test]
     fn build_cell_lines_assistant_has_model() {
         let msg = asst_msg("reply");
-        let lines = build_cell_lines(&msg, 80);
+        let lines = build_cell_lines(&msg, 80, false);
         let flat: String = lines.iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
             .collect();
