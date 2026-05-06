@@ -13,6 +13,7 @@ pub mod markdown;
 pub mod slash_commands;
 pub mod syntax;
 pub mod theme;
+pub mod tool_family;
 pub mod transcript;
 pub mod transcript_renderer;
 
@@ -38,7 +39,7 @@ use components::mcp_status::McpStatusPanel;
 use components::session_list::SessionList;
 use components::{
     AgentInfo, CommandDialog, CommandEntry, Component, ContextInfo, DialogAgent, FocusManager,
-    Header, LeftSidebar, McpServerInfo, MessageList, Sidebar, StatusDialog, TextArea,
+    Header, LeftSidebar, McpServerInfo, MessageList, Sidebar, SlashAutocomplete, StatusDialog, TextArea,
 };
 use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
 use slash_commands::{SlashCommand, parse_slash};
@@ -106,6 +107,7 @@ pub struct TuiApp {
     pub command_dialog: CommandDialog,
     pub session_list: SessionList,
     pub dialog_agent: DialogAgent,
+    pub slash_autocomplete: SlashAutocomplete,
     pub mcp_status_panel: McpStatusPanel,
 
     // ── Supporting state ──────────────────────────────────────────────────
@@ -130,6 +132,10 @@ pub struct TuiApp {
     stream_rx: Option<UnboundedReceiver<StreamChunk>>,
     stream_started: Option<std::time::Instant>,
     pub frame_count: u64,
+
+    // ── Staged Esc cancel ─────────────────────────────────────────────────
+    esc_stage: u8,
+    esc_stage_time: Option<std::time::Instant>,
 }
 
 impl Default for TuiApp {
@@ -174,6 +180,7 @@ impl Default for TuiApp {
             command_dialog: CommandDialog::new(),
             session_list: SessionList::new(),
             dialog_agent: DialogAgent::new(),
+            slash_autocomplete: SlashAutocomplete::new(),
             mcp_status_panel: McpStatusPanel::new(),
 
             keybinds: KeybindsConfig::default(),
@@ -194,6 +201,9 @@ impl Default for TuiApp {
             stream_rx: None,
             stream_started: None,
             frame_count: 0,
+
+            esc_stage: 0,
+            esc_stage_time: None,
         }
     }
 }
@@ -263,6 +273,45 @@ impl TuiApp {
         }
     }
 
+    fn execute_shell(&mut self, msg: &str) {
+        let cmd_str = msg.strip_prefix('!').unwrap_or(msg).trim().to_string();
+        if cmd_str.is_empty() { return; }
+
+        let parts: Vec<&str> = cmd_str.split_whitespace().collect();
+        if parts.is_empty() { return; }
+
+        let program = parts[0];
+        let args = &parts[1..];
+        let output = std::process::Command::new(program)
+            .args(args)
+            .output();
+
+        let result_text = match output {
+            Ok(out) => {
+                let mut s = format!("$ {}\n", cmd_str);
+                if !out.stdout.is_empty() {
+                    s.push_str(&String::from_utf8_lossy(&out.stdout));
+                }
+                if !out.stderr.is_empty() {
+                    s.push_str(&String::from_utf8_lossy(&out.stderr));
+                }
+                if !out.status.success() {
+                    s.push_str(&format!("\nexit code: {}", out.status.code().unwrap_or(-1)));
+                }
+                s
+            }
+            Err(e) => format!("$ {}\nFailed: {}", cmd_str, e),
+        };
+
+        let user_msg = create_user_message(msg);
+        self.messages.push(user_msg.clone());
+        self.message_list.push(user_msg);
+        let shell_msg = create_assistant_message(&result_text, "system", "shell", None);
+        self.messages.push(shell_msg.clone());
+        self.message_list.push(shell_msg);
+        self.status = "Shell command run".to_string();
+    }
+
     fn push_help_message(&mut self) {
         let text = "**Slash Commands**\n\
             \n\
@@ -329,6 +378,34 @@ impl TuiApp {
         let leader_active = self.leader_state.is_active();
         self.leader_state.update();
         if self.leader_state.check_and_handle(&key_info) { return None; }
+
+        // Esc: staged cancel (stream → clear composer → no-op)
+        if key.code == KeyCode::Esc && key.modifiers.is_empty() {
+            if self.stream_rx.is_some() {
+                self.stream_rx = None;
+                self.status = "Cancelled".to_string();
+                self.footer.set_streaming(false);
+                self.header.set_streaming(false);
+                self.input_component.set_streaming(false);
+                self.esc_stage = 1;
+                self.esc_stage_time = Some(std::time::Instant::now());
+                self.footer.set_status("Press Esc again to clear composer".to_string());
+                return None;
+            } else if !self.input_component.is_empty() {
+                self.input_component.clear();
+                self.esc_stage = 2;
+                self.esc_stage_time = Some(std::time::Instant::now());
+                self.footer.set_status("Composer cleared".to_string());
+                return None;
+            }
+            return None;
+        }
+
+        // Reset staged Esc on any other key
+        if self.esc_stage > 0 {
+            self.esc_stage = 0;
+            self.esc_stage_time = None;
+        }
 
         // Global bindings
         if self.keybinds.matches("app_exit", &key_info, leader_active) {
@@ -413,6 +490,24 @@ impl TuiApp {
             return None;
         }
 
+        // Slash autocomplete: Tab completes, Up/Down navigates
+        if self.slash_autocomplete.visible {
+            if key.code == KeyCode::Tab {
+                if let Some(cmd) = self.slash_autocomplete.take_completion() {
+                    self.input_component.set_text(format!("{} ", cmd));
+                }
+                return None;
+            }
+            if matches!(key.code, KeyCode::Up | KeyCode::Down) {
+                self.slash_autocomplete.handle_input(key);
+                return None;
+            }
+            if key.code == KeyCode::Esc {
+                self.slash_autocomplete.visible = false;
+                return None;
+            }
+        }
+
         // Tab focus cycling
         if self.keybinds.matches("agent_cycle", &key_info, leader_active) {
             self.focus_next();
@@ -431,6 +526,11 @@ impl TuiApp {
             // Slash commands are consumed here — not sent to the LLM
             if let Some(cmd) = parse_slash(&msg) {
                 self.execute_slash(cmd);
+                return None;
+            }
+            // Shell mode: !command runs locally
+            if msg.starts_with('!') {
+                self.execute_shell(&msg);
                 return None;
             }
             let user_msg = create_user_message(&msg);
@@ -684,7 +784,27 @@ async fn run_app<B: ratatui::backend::Backend>(
         app.footer.update(delta);
         app.process_expired_toasts();
 
+        // ── Esc stage timeout (3s) ───────────────────────────────────────
+        if app.esc_stage > 0 {
+            if let Some(t) = app.esc_stage_time {
+                if t.elapsed() > std::time::Duration::from_secs(3) {
+                    app.esc_stage = 0;
+                    app.esc_stage_time = None;
+                }
+            }
+        }
+
+        // ── Terminal title ────────────────────────────────────────────────
+        let title = if let Some(ref sid) = app.session_id {
+            format!("roc | {} ({})", app.session_title, &sid[..sid.len().min(8)])
+        } else {
+            "roc".to_string()
+        };
+        let _ = execute!(io::stdout(), crossterm::terminal::SetTitle(&title));
+
         // ── Per-frame state sync ──────────────────────────────────────────
+        // Slash autocomplete filter update
+        app.slash_autocomplete.update_filter(&app.input_component.text());
         // Footer enriched status
         app.footer.set_mode_slash(app.input_component.starts_with_slash());
         app.footer.set_token_pct(app.context_info.percentage.unwrap_or(0));
@@ -817,6 +937,9 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
     render_header(f, app, header_area);
     render_messages(f, app, messages_area);
     render_composer(f, app, composer_area);
+    if app.slash_autocomplete.visible {
+        app.slash_autocomplete.render(f, composer_area);
+    }
     render_footer(f, app, footer_area);
 
     // Overlay dialogs (rendered on top of everything)

@@ -39,15 +39,16 @@ const C_BORDER_ACTIVE: Color = Color::Rgb(96, 96, 96);
 
 pub struct TextArea {
     id: ComponentId,
-    /// The live text buffer, lines stored without trailing newlines.
     lines: Vec<String>,
-    /// Cursor position (row, col) — col is byte offset, not char index.
     cursor: (usize, usize),
     focused: bool,
     streaming: bool,
     placeholder: String,
-    /// Whether a submit was requested this frame (cleared by take_submit).
     submit_pending: bool,
+    // History
+    history: Vec<String>,
+    history_index: Option<usize>,
+    saved_input: Vec<String>,
 }
 
 impl TextArea {
@@ -60,6 +61,9 @@ impl TextArea {
             streaming: false,
             placeholder: "Ask anything…".to_string(),
             submit_pending: false,
+            history: Vec::new(),
+            history_index: None,
+            saved_input: Vec::new(),
         }
     }
 
@@ -121,6 +125,55 @@ impl TextArea {
         }
         let last = self.lines.len() - 1;
         self.cursor = (last, self.lines[last].len());
+    }
+
+    /// Push a submitted message to history.
+    pub fn push_history(&mut self, text: String) {
+        if !text.trim().is_empty() {
+            // Don't duplicate consecutive identical entries
+            if self.history.last() != Some(&text) {
+                self.history.push(text);
+            }
+        }
+    }
+
+    /// True when the first line starts with `!` (shell mode).
+    pub fn starts_with_exclamation(&self) -> bool {
+        self.lines.first().map(|l| l.starts_with('!')).unwrap_or(false)
+    }
+
+    fn history_prev(&mut self) {
+        if self.history.is_empty() { return; }
+        // Save current input on first history navigation
+        if self.history_index.is_none() {
+            self.saved_input = self.lines.clone();
+        }
+        let idx = match self.history_index {
+            None => self.history.len().saturating_sub(1),
+            Some(i) => i.saturating_sub(1),
+        };
+        self.history_index = Some(idx);
+        self.set_text(self.history[idx].clone());
+    }
+
+    fn history_next(&mut self) {
+        match self.history_index {
+            None => return,
+            Some(i) if i + 1 < self.history.len() => {
+                self.history_index = Some(i + 1);
+                self.set_text(self.history[i + 1].clone());
+            }
+            Some(_) => {
+                // Past end — restore saved input
+                self.history_index = None;
+                self.set_text(self.saved_input.join("\n"));
+            }
+        }
+    }
+
+    fn reset_history_nav(&mut self) {
+        self.history_index = None;
+        self.saved_input.clear();
     }
 
     // ── Editing helpers ───────────────────────────────────────────────────
@@ -319,6 +372,8 @@ impl Component for TextArea {
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 if !self.is_empty() {
                     self.submit_pending = true;
+                    self.push_history(self.text());
+                    self.reset_history_nav();
                 }
                 EventPropagation::Stop
             }
@@ -329,11 +384,26 @@ impl Component for TextArea {
                 self.insert_newline();
                 EventPropagation::Stop
             }
+            // History nav: Up at first line, first column
+            (KeyCode::Up, _) => {
+                if self.cursor == (0, 0) && self.lines.len() == 1 {
+                    self.history_prev();
+                } else {
+                    self.move_up();
+                }
+                EventPropagation::Stop
+            }
+            (KeyCode::Down, _) => {
+                if self.history_index.is_some() && self.cursor.0 + 1 >= self.lines.len() {
+                    self.history_next();
+                } else {
+                    self.move_down();
+                }
+                EventPropagation::Stop
+            }
             // Navigation
             (KeyCode::Left, _)     => { self.move_left();  EventPropagation::Stop }
             (KeyCode::Right, _)    => { self.move_right(); EventPropagation::Stop }
-            (KeyCode::Up, _)       => { self.move_up();    EventPropagation::Stop }
-            (KeyCode::Down, _)     => { self.move_down();  EventPropagation::Stop }
             (KeyCode::Home, _)     => { self.move_home();  EventPropagation::Stop }
             (KeyCode::End, _)      => { self.move_end();   EventPropagation::Stop }
             // Ctrl+A = line start, Ctrl+E = line end

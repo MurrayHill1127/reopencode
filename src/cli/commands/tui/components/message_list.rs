@@ -13,6 +13,7 @@
 
 use super::{Component, ComponentId, EventPropagation};
 use crate::cli::commands::tui::markdown;
+use crate::cli::commands::tui::tool_family::{ToolFamily, classify_tool};
 use crate::cli::commands::tui::transcript::{MessageRole, PartType, ToolStatus, TranscriptMessage};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -32,6 +33,13 @@ const C_TEXT_DIM: Color = Color::Rgb(80, 80, 80);
 const C_PRIMARY: Color = Color::Rgb(250, 178, 131); // user badge
 const C_ACCENT: Color = Color::Rgb(157, 124, 216);  // assistant badge
 const C_ERROR: Color = Color::Rgb(224, 108, 117);
+const C_SUCCESS: Color = Color::Rgb(127, 216, 143);
+const C_WARNING: Color = Color::Rgb(245, 167, 66);
+const C_INFO: Color = Color::Rgb(86, 182, 194);
+const C_REASONING_BG: Color = Color::Rgb(26, 22, 12); // warm amber tint
+const C_DIFF_ADD: Color = Color::Rgb(103, 185, 115);
+const C_DIFF_DEL: Color = Color::Rgb(220, 95, 105);
+const C_TOOL_BORDER: Color = Color::Rgb(55, 55, 65);
 const C_BG: Color = Color::Rgb(10, 10, 10);
 
 // ── Per-cell cache ────────────────────────────────────────────────────────────
@@ -229,41 +237,29 @@ fn build_cell_lines(msg: &TranscriptMessage, width: u16) -> Vec<Line<'static>> {
             }
             PartType::Reasoning { text } => {
                 lines.push(Line::from(vec![
-                    Span::styled("  Thinking", Style::default().fg(C_TEXT_DIM).add_modifier(Modifier::ITALIC)),
+                    Span::styled("  … thinking", Style::default().fg(C_WARNING).add_modifier(Modifier::BOLD)),
                 ]));
                 if !text.trim().is_empty() {
-                    let content_w = (w as u16).saturating_sub(4);
+                    let content_w = (w as u16).saturating_sub(6);
                     for line in markdown::render_markdown(text, content_w) {
-                        let mut indented = vec![Span::raw("    ")];
-                        indented.extend(line.spans);
+                        let mut indented = vec![
+                            Span::styled("    ╎ ", Style::default().fg(C_TOOL_BORDER)),
+                        ];
+                        // Add warm background to the reasoning body
+                        let warm_spans: Vec<Span<'static>> = line.spans.into_iter().map(|s| {
+                            Span {
+                                style: s.style.bg(C_REASONING_BG),
+                                content: s.content,
+                            }
+                        }).collect();
+                        indented.extend(warm_spans);
                         lines.push(Line::from(indented));
                     }
                 }
                 lines.push(Line::from(""));
             }
             PartType::Tool { name, status, input, output, error } => {
-                let (status_str, status_color) = match status {
-                    ToolStatus::Pending  => ("○ pending", C_TEXT_DIM),
-                    ToolStatus::Running  => ("◌ running", C_ACCENT),
-                    ToolStatus::Completed=> ("● done",    C_TEXT_MUTED),
-                    ToolStatus::Error    => ("✕ error",   C_ERROR),
-                };
-                lines.push(Line::from(vec![
-                    Span::raw("  "),
-                    Span::styled(name.clone(), Style::default().fg(C_TEXT_MUTED).add_modifier(Modifier::BOLD)),
-                    Span::raw("  "),
-                    Span::styled(status_str, Style::default().fg(status_color)),
-                ]));
-                if matches!(status, ToolStatus::Error) {
-                    if let Some(e) = error {
-                        lines.push(Line::from(vec![
-                            Span::raw("    "),
-                            Span::styled(e.clone(), Style::default().fg(C_ERROR)),
-                        ]));
-                    }
-                }
-                let _ = (input, output); // shown in tool name only for brevity
-                lines.push(Line::from(""));
+                render_tool_block(&mut lines, name, status, input.as_deref(), output.as_deref(), error.as_deref(), w);
             }
             _ => {}
         }
@@ -273,9 +269,274 @@ fn build_cell_lines(msg: &TranscriptMessage, width: u16) -> Vec<Line<'static>> {
 }
 
 fn shorten_model(s: &str) -> String {
-    // e.g. "claude-3-5-sonnet-20241022" → "claude-3.5-sonnet"
     let s = s.replace("claude-", "cl-");
     if s.len() > 18 { s[..18].to_string() } else { s }
+}
+
+// ── Rich tool rendering ───────────────────────────────────────────────────────
+
+fn render_tool_block(
+    lines: &mut Vec<Line<'static>>,
+    name: &str,
+    status: &ToolStatus,
+    input: Option<&str>,
+    output: Option<&str>,
+    error: Option<&str>,
+    w: usize,
+) {
+    let family = classify_tool(name);
+    let (status_str, status_color) = match status {
+        ToolStatus::Pending  => ("○ pending", C_TEXT_DIM),
+        ToolStatus::Running  => ("◌ running", C_ACCENT),
+        ToolStatus::Completed=> ("● done",    C_TEXT_MUTED),
+        ToolStatus::Error    => ("✕ error",   C_ERROR),
+    };
+
+    // Header: glyph + label + tool name + status
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(format!("{} {}", family.glyph(), family.label()), Style::default().fg(C_TEXT_MUTED).add_modifier(Modifier::BOLD)),
+        Span::raw("  "),
+        Span::styled(name.to_string(), Style::default().fg(C_INFO)),
+        Span::raw("  "),
+        Span::styled(status_str, Style::default().fg(status_color)),
+    ]));
+
+    // Error message
+    if matches!(status, ToolStatus::Error) {
+        if let Some(e) = error {
+            lines.push(Line::from(vec![
+                Span::raw("    "),
+                Span::styled(e.to_string(), Style::default().fg(C_ERROR)),
+            ]));
+        }
+    }
+
+    // Specialized body rendering
+    match family {
+        ToolFamily::Patch => render_patch_output(lines, name, input, output, w),
+        ToolFamily::Run => render_run_output(lines, input, output, w),
+        ToolFamily::Find | ToolFamily::Read | ToolFamily::Web => {
+            render_search_output(lines, output, w);
+        }
+        _ => {
+            if let Some(out) = output {
+                if !out.trim().is_empty() {
+                    for chunk in wrap_text(out.trim(), w.saturating_sub(6)) {
+                        lines.push(Line::from(vec![
+                            Span::raw("    "),
+                            Span::styled(chunk, Style::default().fg(C_TEXT_DIM)),
+                        ]));
+                    }
+                }
+            }
+        }
+    }
+
+    lines.push(Line::from(""));
+}
+
+fn render_patch_output(
+    lines: &mut Vec<Line<'static>>,
+    _name: &str,
+    input: Option<&str>,
+    output: Option<&str>,
+    w: usize,
+) {
+    let inner_w = w.saturating_sub(6);
+    if inner_w < 10 { return; }
+
+    if let Some(out) = output {
+        let diff_lines: Vec<&str> = out.lines().collect();
+        if diff_lines.is_empty() { return; }
+
+        let file_label = extract_file(input, diff_lines.as_slice());
+        let top = box_top(&file_label, inner_w);
+        lines.push(Line::from(vec![
+            Span::raw("    "),
+            Span::styled(top, Style::default().fg(C_TOOL_BORDER)),
+        ]));
+
+        for dline in &diff_lines {
+            let (dl, color) = classify_diff_line(dline);
+            let truncated = truncate_or_pad(&dl, inner_w);
+            lines.push(Line::from(vec![
+                Span::raw("    "),
+                Span::styled("│ ", Style::default().fg(C_TOOL_BORDER)),
+                Span::styled(truncated, Style::default().fg(color)),
+            ]));
+        }
+
+        let bot = format!("└{}┘", "─".repeat(inner_w));
+        lines.push(Line::from(vec![
+            Span::raw("    "),
+            Span::styled(bot, Style::default().fg(C_TOOL_BORDER)),
+        ]));
+    }
+}
+
+fn render_run_output(
+    lines: &mut Vec<Line<'static>>,
+    input: Option<&str>,
+    output: Option<&str>,
+    w: usize,
+) {
+    let inner_w = w.saturating_sub(6);
+    if inner_w < 10 { return; }
+
+    if let Some(inp) = input {
+        let cmd = extract_command(inp);
+        lines.push(Line::from(vec![
+            Span::raw("    "),
+            Span::styled(format!("$ {}", truncate_or_pad(&cmd, inner_w)), Style::default().fg(C_PRIMARY)),
+        ]));
+    }
+
+    if let Some(out) = output {
+        if !out.trim().is_empty() {
+            for line_str in out.lines().take(12) {
+                let truncated = truncate_or_pad(line_str, inner_w);
+                lines.push(Line::from(vec![
+                    Span::raw("    "),
+                    Span::styled(truncated, Style::default().fg(C_TEXT_DIM)),
+                ]));
+            }
+        }
+    }
+}
+
+fn render_search_output(
+    lines: &mut Vec<Line<'static>>,
+    output: Option<&str>,
+    w: usize,
+) {
+    let inner_w = w.saturating_sub(6);
+    if inner_w < 10 { return; }
+
+    if let Some(out) = output {
+        if out.trim().is_empty() { return; }
+        for rline in out.lines().take(10) {
+            let truncated = truncate_or_pad(rline, inner_w);
+            lines.push(Line::from(vec![
+                Span::raw("    "),
+                Span::styled(truncated, Style::default().fg(C_TEXT_DIM)),
+            ]));
+        }
+    }
+}
+
+// ── Diff helpers ──────────────────────────────────────────────────────────────
+
+fn classify_diff_line(line: &str) -> (String, Color) {
+    let display = line.to_string();
+    if display.starts_with("+++") || display.starts_with("---") {
+        (display, C_TEXT_MUTED)
+    } else if display.starts_with("@@") {
+        (display, C_INFO)
+    } else if display.starts_with('+') && !display.starts_with("+++") {
+        (display, C_DIFF_ADD)
+    } else if display.starts_with('-') && !display.starts_with("---") {
+        (display, C_DIFF_DEL)
+    } else {
+        (display, C_TEXT_DIM)
+    }
+}
+
+fn extract_file(input: Option<&str>, diff_lines: &[&str]) -> String {
+    for line in diff_lines {
+        if let Some(rest) = line.strip_prefix("+++ b/") {
+            return rest.to_string();
+        }
+        if let Some(rest) = line.strip_prefix("+++ ") {
+            return rest.to_string();
+        }
+    }
+    if let Some(inp) = input {
+        if let Some(path) = extract_json_field(inp, "path") {
+            return path;
+        }
+        if let Some(path) = extract_json_field(inp, "file_path") {
+            return path;
+        }
+    }
+    String::new()
+}
+
+fn extract_command(input: &str) -> String {
+    if let Some(cmd) = extract_json_field(input, "command") {
+        return cmd;
+    }
+    if let Some(cmd) = extract_json_field(input, "cmd") {
+        return cmd;
+    }
+    if input.len() > 80 { format!("{}…", &input[..80]) } else { input.to_string() }
+}
+
+fn extract_json_field(json: &str, key: &str) -> Option<String> {
+    let search = format!("\"{}\"", key);
+    if let Some(start) = json.find(&search) {
+        let after = &json[start + search.len()..];
+        if let Some(val_start) = after.find('"') {
+            let val = &after[val_start + 1..];
+            if let Some(val_end) = val.find('"') {
+                return Some(val[..val_end].to_string());
+            }
+        }
+    }
+    None
+}
+
+fn box_top(label: &str, w: usize) -> String {
+    if label.is_empty() {
+        format!("┌{}┐", "─".repeat(w))
+    } else {
+        let header = format!(" {} ", label);
+        let dashes = w.saturating_sub(header.len());
+        format!("┌{}{}┐", header, "─".repeat(dashes))
+    }
+}
+
+fn truncate_or_pad(s: &str, w: usize) -> String {
+    use unicode_width::UnicodeWidthStr;
+    if s.width() > w {
+        let mut out = String::new();
+        for c in s.chars() {
+            if out.width() + c.len_utf8() + 1 > w {
+                out.push('…');
+                break;
+            }
+            out.push(c);
+        }
+        out
+    } else {
+        format!("{:<width$}", s, width = w)
+    }
+}
+
+fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    use unicode_width::UnicodeWidthStr;
+    if width == 0 { return vec![text.to_string()]; }
+    let mut lines = Vec::new();
+    let mut cur = String::new();
+    let mut cur_w = 0usize;
+    for word in text.split_whitespace() {
+        let ww = word.width();
+        if cur_w == 0 {
+            cur.push_str(word);
+            cur_w = ww;
+        } else if cur_w + 1 + ww <= width {
+            cur.push(' ');
+            cur.push_str(word);
+            cur_w += 1 + ww;
+        } else {
+            lines.push(cur.clone());
+            cur = word.to_string();
+            cur_w = ww;
+        }
+    }
+    if !cur.is_empty() { lines.push(cur); }
+    if lines.is_empty() { lines.push(String::new()); }
+    lines
 }
 
 // ── Component impl ────────────────────────────────────────────────────────────
