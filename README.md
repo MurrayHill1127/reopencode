@@ -90,6 +90,7 @@ cargo build --release
 | `Enter` | 发送消息 |
 | `Ctrl+J` / `Shift+Enter` | 输入框内换行 |
 | `Ctrl+B` | 展开 / 折叠左侧会话侧边栏 |
+| `Ctrl+R` | 展开 / 折叠右侧信息侧边栏（上下文、MCP、LSP、Diffs） |
 | `Ctrl+P` | 打开会话列表浮层 |
 | `Ctrl+M` | 查看 MCP 状态 |
 | `Ctrl+C` | 取消流式输出 / 退出 |

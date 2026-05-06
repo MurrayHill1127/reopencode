@@ -38,7 +38,7 @@ use components::mcp_status::McpStatusPanel;
 use components::session_list::SessionList;
 use components::{
     AgentInfo, CommandDialog, CommandEntry, Component, ContextInfo, DialogAgent, FocusManager,
-    Header, LeftSidebar, MessageList, StatusDialog, TextArea,
+    Header, LeftSidebar, McpServerInfo, MessageList, Sidebar, StatusDialog, TextArea,
 };
 use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
 use slash_commands::{SlashCommand, parse_slash};
@@ -99,6 +99,7 @@ pub struct TuiApp {
     pub input_component: TextArea,
     pub footer: Footer,
     pub left_sidebar: LeftSidebar,
+    pub right_sidebar: Sidebar,
 
     // ── Overlay / dialog components ───────────────────────────────────────
     pub status_dialog: StatusDialog,
@@ -167,6 +168,7 @@ impl Default for TuiApp {
             input_component: TextArea::new(),
             footer,
             left_sidebar: LeftSidebar::new(),
+            right_sidebar: Sidebar::new(ThemeContext::default()),
 
             status_dialog: StatusDialog::new(),
             command_dialog: CommandDialog::new(),
@@ -272,7 +274,8 @@ impl TuiApp {
             \n\
             **Keyboard Shortcuts**\n\
             \n\
-            `Ctrl+B` — toggle sidebar\n\
+            `Ctrl+B` — toggle left sidebar\n\
+            `Ctrl+R` — toggle right sidebar (context, MCP, LSP)\n\
             `Ctrl+P` — session list overlay\n\
             `Ctrl+M` — MCP status\n\
             `Ctrl+C` — cancel streaming / quit\n\
@@ -342,13 +345,26 @@ impl TuiApp {
             return None;
         }
 
-        // Ctrl+B toggles the persistent sidebar
+        // Ctrl+B toggles left sidebar
         if key.code == KeyCode::Char('b') && key.modifiers == KeyModifiers::CONTROL {
             self.left_sidebar.toggle();
             if self.left_sidebar.is_visible() {
                 self.left_sidebar.on_focus();
                 self.input_component.on_blur();
             } else {
+                self.input_component.on_focus();
+            }
+            return None;
+        }
+
+        // Ctrl+R toggles right sidebar (context / MCP / LSP / diffs)
+        if key.code == KeyCode::Char('r') && key.modifiers == KeyModifiers::CONTROL {
+            self.right_sidebar.toggle();
+            if self.right_sidebar.is_expanded() {
+                self.right_sidebar.expand();
+                self.input_component.on_blur();
+            } else {
+                self.right_sidebar.collapse();
                 self.input_component.on_focus();
             }
             return None;
@@ -681,6 +697,18 @@ async fn run_app<B: ratatui::backend::Backend>(
             app.left_sidebar.set_token_pct(app.context_info.percentage.unwrap_or(0));
         }
 
+        // Sync right sidebar
+        if app.right_sidebar.is_expanded() {
+            app.right_sidebar.set_context(app.context_info.clone());
+            app.right_sidebar.set_session_title(app.session_title.clone());
+            let servers: Vec<McpServerInfo> = app
+                .mcp_statuses
+                .iter()
+                .map(|(name, status)| McpServerInfo::new(name.clone(), status.clone(), 0))
+                .collect();
+            app.right_sidebar.set_mcp_servers(servers);
+        }
+
         // ── Pending slash-command actions ─────────────────────────────────
         if app.pending_new_session {
             app.pending_new_session = false;
@@ -735,15 +763,35 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         area,
     );
 
-    // Horizontal split: optional sidebar | content
-    let (sidebar_area, content_area) = if app.left_sidebar.is_visible() {
-        let h = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(32), Constraint::Min(20)])
-            .split(area);
-        (Some(h[0]), h[1])
-    } else {
-        (None, area)
+    // Horizontal split: left sidebar | content | right sidebar
+    let left_visible = app.left_sidebar.is_visible();
+    let right_visible = app.right_sidebar.is_expanded();
+
+    let (left_area, content_area, right_area) = match (left_visible, right_visible) {
+        (true, true) => {
+            let h = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Length(32), Constraint::Min(20), Constraint::Length(40)])
+                .split(area);
+            (Some(h[0]), h[1], Some(h[2]))
+        }
+        (true, false) => {
+            let h = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Length(32), Constraint::Min(20)])
+                .split(area);
+            (Some(h[0]), h[1], None)
+        }
+        (false, true) => {
+            let h = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Min(20), Constraint::Length(40)])
+                .split(area);
+            (None, h[0], Some(h[1]))
+        }
+        (false, false) => {
+            (None, area, None)
+        }
     };
 
     // 4-zone vertical layout on content_area
@@ -760,8 +808,11 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
     let [header_area, messages_area, composer_area, footer_area] =
         [zones[0], zones[1], zones[2], zones[3]];
 
-    if let Some(sa) = sidebar_area {
+    if let Some(sa) = left_area {
         app.left_sidebar.render(f, sa);
+    }
+    if let Some(ra) = right_area {
+        app.right_sidebar.render(f, ra);
     }
     render_header(f, app, header_area);
     render_messages(f, app, messages_area);
