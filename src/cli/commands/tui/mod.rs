@@ -321,16 +321,21 @@ impl TuiApp {
             `/sessions` — toggle the sessions sidebar\n\
             `/help` — show this message\n\
             \n\
+            `!` prefix — run shell command locally\n\
+            \n\
             **Keyboard Shortcuts**\n\
             \n\
-            `Ctrl+B` — toggle left sidebar\n\
+            `Ctrl+B` — toggle left sidebar (sessions)\n\
             `Ctrl+R` — toggle right sidebar (context, MCP, LSP)\n\
+            `Ctrl+\\`` — toggle code block concealment\n\
             `Ctrl+P` — session list overlay\n\
             `Ctrl+M` — MCP status\n\
             `Ctrl+C` — cancel streaming / quit\n\
             `Ctrl+J` / `Shift+Enter` — newline in input\n\
-            `Tab` — cycle focus between input and message list\n\
-            `j`/`k` / `↑`/`↓` — scroll messages (when message list is focused)\n\
+            `Tab` — cycle focus / autocomplete slash cmd\n\
+            `↑`/`↓` (empty input) — prompt history\n\
+            `Esc` — 1st: cancel stream, 2nd: clear composer\n\
+            `j`/`k` — scroll messages (when msg list focused)\n\
             `g`/`G` — jump to top / bottom\n";
         let msg = create_assistant_message(text, "system", "internal", None);
         self.messages.push(msg.clone());
