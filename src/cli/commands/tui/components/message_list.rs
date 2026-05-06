@@ -109,9 +109,7 @@ impl MessageList {
                 if let PartType::Text { text: t, synthetic } = part {
                     if !*synthetic {
                         t.push_str(text);
-                        if let Some(rev) = self.revisions.last_mut() {
-                            *rev += 1;
-                        }
+                        if let Some(rev) = self.revisions.last_mut() { *rev += 1; }
                         return;
                     }
                 }

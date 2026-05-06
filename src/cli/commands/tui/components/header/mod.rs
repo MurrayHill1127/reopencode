@@ -99,8 +99,8 @@ impl Header {
 
         // ── Right side: context bar ──────────────────────────────────────
         let used_cols = (self.context_pct as usize * BAR_WIDTH / 100).min(BAR_WIDTH);
-        let bar: String = std::iter::repeat(BAR_USED).take(used_cols)
-            .chain(std::iter::repeat(BAR_EMPTY).take(BAR_WIDTH - used_cols))
+        let bar: String = std::iter::repeat_n(BAR_USED, used_cols)
+            .chain(std::iter::repeat_n(BAR_EMPTY, BAR_WIDTH - used_cols))
             .collect();
         let pct_str = format!(" {}%", self.context_pct);
         let right_str = format!("{}{}", bar, pct_str);
