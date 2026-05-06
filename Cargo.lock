@@ -2490,6 +2490,7 @@ dependencies = [
  "tracing-subscriber",
  "tui-input",
  "tui-textarea",
+ "unicode-width 0.2.0",
  "utoipa",
  "uuid",
  "walkdir",

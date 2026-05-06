@@ -1,12 +1,14 @@
-//! Footer Component
+//! Footer Component — DeepSeek-TUI inspired 1-line status bar.
 //!
-//! Displays footer information: directory path, welcome message, LSP/MCP/permissions indicators, /status hint.
+//! Layout:
 //!
-//! # Welcome Message Cycling
-//! - Hidden for 10 seconds
-//! - Visible for 5 seconds (shows "Get started /connect")
-//! - Repeats
-//! - Only shown when NOT connected (session_id is None)
+//! ```text
+//! ~/Projects/repo          ⠿ Thinking…              Ready
+//! ```
+//!
+//! Left: current working directory (muted, truncated to fit)
+//! Centre: animated Braille spinner + label while streaming
+//! Right: status text
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -14,321 +16,229 @@ use std::time::Duration;
 use crossterm::event::KeyEvent;
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
+    layout::Rect,
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
+use unicode_width::UnicodeWidthStr;
 
 use super::{Component, ComponentId, EventPropagation};
-use crate::cli::commands::tui::theme::ThemeContext;
 use crate::mcp::types::McpStatus;
 
-/// Welcome state for timer cycling
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WelcomeState {
-    /// Welcome hidden, countdown to show
-    Hidden(Duration),
-    /// Welcome visible, countdown to hide
-    Visible(Duration),
-}
+// ── Palette ───────────────────────────────────────────────────────────────────
 
-/// Timer constants matching TypeScript behavior
-const WELCOME_HIDDEN_SECS: u64 = 10;
-const WELCOME_VISIBLE_SECS: u64 = 5;
+const C_TEXT: Color = Color::Rgb(238, 238, 238);
+const C_TEXT_MUTED: Color = Color::Rgb(128, 128, 128);
+const C_TEXT_DIM: Color = Color::Rgb(80, 80, 80);
+const C_PRIMARY: Color = Color::Rgb(250, 178, 131);
+const C_ACCENT: Color = Color::Rgb(157, 124, 216);
+const C_SUCCESS: Color = Color::Rgb(127, 216, 143);
+const C_WARNING: Color = Color::Rgb(245, 167, 66);
+const C_ERROR: Color = Color::Rgb(224, 108, 117);
+const C_BG: Color = Color::Rgb(10, 10, 10);
 
-/// Footer component for TUI
+// ── Spinner ───────────────────────────────────────────────────────────────────
+
+const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER_MS: u64 = 80; // ms per frame
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 pub struct Footer {
     id: ComponentId,
-    /// Timer state for welcome message cycling
-    welcome_state: WelcomeState,
-    /// Theme context for colors
-    theme: ThemeContext,
-    /// Current directory path
-    directory: String,
-    /// MCP server statuses
-    mcp_statuses: HashMap<String, McpStatus>,
-    /// Number of LSP servers
-    lsp_count: usize,
-    /// Pending permission count
-    pending_permissions: usize,
-    /// Session ID (None = not connected)
-    session_id: Option<String>,
+    pub directory: String,
+    pub status: String,
+    pub streaming: bool,
+    pub pending_permissions: usize,
+    pub lsp_count: usize,
+    pub mcp_statuses: HashMap<String, McpStatus>,
+    pub session_id: Option<String>,
+    /// Spinner frame index
+    spinner_tick: u8,
+    /// Accumulated ms for spinner timing
+    spinner_accum: u64,
 }
 
 impl Footer {
-    /// Create a new Footer component
-    pub fn new(theme: ThemeContext) -> Self {
-        let current_dir = std::env::current_dir()
+    pub fn new() -> Self {
+        let directory = std::env::current_dir()
             .ok()
             .map(|p| {
-                let path_str = p.to_string_lossy().to_string();
+                let s = p.to_string_lossy().to_string();
                 if let Some(home) = dirs::home_dir() {
-                    let home_str = home.to_string_lossy();
-                    if path_str.starts_with(&*home_str) {
-                        return path_str.replacen(&*home_str, "~", 1);
+                    let h = home.to_string_lossy();
+                    if s.starts_with(&*h) {
+                        return s.replacen(&*h, "~", 1);
                     }
                 }
-                path_str
+                s
             })
             .unwrap_or_else(|| ".".to_string());
 
         Self {
             id: ComponentId::new(),
-            welcome_state: WelcomeState::Hidden(Duration::from_secs(WELCOME_HIDDEN_SECS)),
-            theme,
-            directory: current_dir,
-            mcp_statuses: HashMap::new(),
-            lsp_count: 0,
+            directory,
+            status: "Ready".to_string(),
+            streaming: false,
             pending_permissions: 0,
+            lsp_count: 0,
+            mcp_statuses: HashMap::new(),
             session_id: None,
+            spinner_tick: 0,
+            spinner_accum: 0,
         }
     }
 
-    /// Check if connected to a session
-    fn is_connected(&self) -> bool {
-        self.session_id.is_some()
-    }
+    pub fn set_directory(&mut self, d: String)             { self.directory = d; }
+    pub fn set_status(&mut self, s: String)                { self.status = s; }
+    pub fn set_streaming(&mut self, s: bool)               { self.streaming = s; }
+    pub fn set_session_id(&mut self, id: Option<String>)   { self.session_id = id; }
+    pub fn set_lsp_count(&mut self, n: usize)              { self.lsp_count = n; }
+    pub fn set_pending_permissions(&mut self, n: usize)    { self.pending_permissions = n; }
+    pub fn set_mcp_statuses(&mut self, m: HashMap<String, McpStatus>) { self.mcp_statuses = m; }
 
-    /// Check if welcome message should be shown
-    fn show_welcome(&self) -> bool {
-        !self.is_connected() && matches!(self.welcome_state, WelcomeState::Visible(_))
-    }
-
-    /// Set directory path
-    pub fn set_directory(&mut self, dir: String) {
-        self.directory = dir;
-    }
-
-    /// Set MCP statuses
-    pub fn set_mcp_statuses(&mut self, statuses: HashMap<String, McpStatus>) {
-        self.mcp_statuses = statuses;
-    }
-
-    /// Set LSP count
-    pub fn set_lsp_count(&mut self, count: usize) {
-        self.lsp_count = count;
-    }
-
-    /// Set pending permissions count
-    pub fn set_pending_permissions(&mut self, count: usize) {
-        self.pending_permissions = count;
-    }
-
-    /// Set session ID (None = not connected)
-    pub fn set_session_id(&mut self, id: Option<String>) {
-        self.session_id = id;
-    }
-
-    /// Get directory path
-    pub fn directory(&self) -> &str {
-        &self.directory
-    }
-}
-
-impl Component for Footer {
-    fn id(&self) -> ComponentId {
-        self.id
-    }
-
-    fn render(&self, frame: &mut Frame, area: Rect) {
-        // Split area into left (directory) and right (indicators)
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Min(10),    // Left: directory (flexible)
-                Constraint::Length(60), // Right: indicators (fixed width)
-            ])
-            .split(area);
-
-        // Left side: directory path
-        let directory_para = Paragraph::new(self.directory.as_str())
-            .style(Style::default().fg(self.theme.text_muted()));
-        frame.render_widget(directory_para, chunks[0]);
-
-        // Right side: welcome OR indicators
-        let right_content = if self.show_welcome() {
-            // Show welcome message
-            Line::from(vec![
-                Span::styled("Get started ", Style::default().fg(self.theme.text())),
-                Span::styled("/connect", Style::default().fg(self.theme.text_muted())),
-            ])
-        } else if self.is_connected() {
-            // Show indicators
-            let mut spans = Vec::new();
-
-            // Permissions indicator
-            if self.pending_permissions > 0 {
-                let perm_text = if self.pending_permissions == 1 {
-                    format!("△ {} Permission", self.pending_permissions)
-                } else {
-                    format!("△ {} Permissions", self.pending_permissions)
-                };
-                spans.push(Span::styled(
-                    perm_text,
-                    Style::default().fg(self.theme.warning()),
-                ));
-                spans.push(Span::raw("  "));
-            }
-
-            // LSP indicator
-            let lsp_color = if self.lsp_count > 0 {
-                self.theme.success()
-            } else {
-                self.theme.text_muted()
-            };
-            spans.push(Span::styled(
-                format!("• {} LSP", self.lsp_count),
-                Style::default().fg(lsp_color),
-            ));
-            spans.push(Span::raw("  "));
-
-            // MCP indicator
-            let mcp_count = self.mcp_statuses.len();
-            let all_ok = self
-                .mcp_statuses
-                .values()
-                .all(|s| matches!(s, McpStatus::Connected));
-            let mcp_color = if mcp_count == 0 {
-                self.theme.text_muted()
-            } else if all_ok {
-                self.theme.success()
-            } else {
-                self.theme.error()
-            };
-            spans.push(Span::styled(
-                format!("⊙ {} MCP", mcp_count),
-                Style::default().fg(mcp_color),
-            ));
-            spans.push(Span::raw("  "));
-
-            // /status hint
-            spans.push(Span::styled(
-                "/status",
-                Style::default().fg(self.theme.text_muted()),
-            ));
-
-            Line::from(spans)
-        } else {
-            // Not connected, not showing welcome - empty
-            Line::from(vec![])
-        };
-
-        let right_para = Paragraph::new(right_content);
-        frame.render_widget(right_para, chunks[1]);
-    }
-
-    fn update(&mut self, delta: Duration) {
-        // Only cycle welcome when NOT connected
-        if self.is_connected() {
-            return;
-        }
-
-        // Update timer state
-        self.welcome_state = match self.welcome_state {
-            WelcomeState::Hidden(remaining) => {
-                let new_remaining = remaining.saturating_sub(delta);
-                if new_remaining.is_zero() {
-                    // Transition to visible
-                    WelcomeState::Visible(Duration::from_secs(WELCOME_VISIBLE_SECS))
-                } else {
-                    WelcomeState::Hidden(new_remaining)
-                }
-            }
-            WelcomeState::Visible(remaining) => {
-                let new_remaining = remaining.saturating_sub(delta);
-                if new_remaining.is_zero() {
-                    // Transition to hidden
-                    WelcomeState::Hidden(Duration::from_secs(WELCOME_HIDDEN_SECS))
-                } else {
-                    WelcomeState::Visible(new_remaining)
-                }
-            }
-        };
-    }
-
-    fn handle_input(&mut self, _event: KeyEvent) -> EventPropagation {
-        EventPropagation::Continue
-    }
-
-    fn is_focusable(&self) -> bool {
-        false
-    }
+    pub fn directory(&self) -> &str { &self.directory }
+    pub fn is_connected(&self) -> bool { self.session_id.is_some() }
 }
 
 impl Default for Footer {
-    fn default() -> Self {
-        Self::new(ThemeContext::default())
-    }
+    fn default() -> Self { Self::new() }
 }
+
+impl Component for Footer {
+    fn id(&self) -> ComponentId { self.id }
+
+    fn render(&self, f: &mut Frame, area: Rect) {
+        let total_w = area.width as usize;
+        if total_w == 0 { return; }
+
+        // ── Right side: status ────────────────────────────────────────────
+        let (status_str, status_color) = if self.streaming {
+            ("Streaming".to_string(), C_ACCENT)
+        } else if !self.is_connected() {
+            ("Connecting…".to_string(), C_TEXT_DIM)
+        } else if self.pending_permissions > 0 {
+            (format!("△ {} pending", self.pending_permissions), C_WARNING)
+        } else {
+            (self.status.clone(), C_TEXT_MUTED)
+        };
+        let right_w = status_str.width();
+
+        // ── Centre: spinner while streaming ──────────────────────────────
+        let (centre_str, centre_color) = if self.streaming {
+            let frame = SPINNER[self.spinner_tick as usize % SPINNER.len()];
+            (format!(" {} Thinking…", frame), C_ACCENT)
+        } else {
+            // LSP/MCP indicators when connected
+            let lsp_color = if self.lsp_count > 0 { C_SUCCESS } else { C_TEXT_DIM };
+            let mcp_count = self.mcp_statuses.len();
+            let all_ok = self.mcp_statuses.values().all(|s| matches!(s, McpStatus::Connected));
+            let mcp_color = if mcp_count > 0 && all_ok { C_SUCCESS } else { C_TEXT_DIM };
+            let _ = (lsp_color, mcp_color);
+            (String::new(), C_TEXT_DIM)
+        };
+        let centre_w = centre_str.width();
+
+        // ── Left side: directory ──────────────────────────────────────────
+        let max_dir = total_w
+            .saturating_sub(centre_w)
+            .saturating_sub(right_w)
+            .saturating_sub(4); // margins
+
+        let dir = &self.directory;
+        let dir_str: String = if dir.width() > max_dir && max_dir > 3 {
+            let mut s = "…".to_string();
+            let chars: Vec<char> = dir.chars().collect();
+            let keep = chars.len().saturating_sub(max_dir.saturating_sub(1));
+            s.push_str(&chars[keep..].iter().collect::<String>());
+            s
+        } else {
+            dir.clone()
+        };
+        let left_w = dir_str.width();
+
+        // ── Gap calculations ──────────────────────────────────────────────
+        let used = left_w + centre_w + right_w;
+        let gap_total = total_w.saturating_sub(used);
+        let gap1 = if centre_w > 0 { gap_total / 2 } else { gap_total };
+        let gap2 = gap_total.saturating_sub(gap1);
+
+        // ── Assemble ──────────────────────────────────────────────────────
+        let mut spans: Vec<Span<'static>> = Vec::new();
+
+        spans.push(Span::styled(dir_str, Style::default().fg(C_TEXT_MUTED)));
+        spans.push(Span::raw(" ".repeat(gap1)));
+
+        if !centre_str.is_empty() {
+            spans.push(Span::styled(centre_str, Style::default().fg(centre_color).add_modifier(Modifier::BOLD)));
+        }
+
+        spans.push(Span::raw(" ".repeat(gap2)));
+        spans.push(Span::styled(status_str, Style::default().fg(status_color)));
+
+        f.render_widget(
+            Paragraph::new(Line::from(spans)).style(Style::default().bg(C_BG)),
+            area,
+        );
+    }
+
+    fn update(&mut self, delta: Duration) {
+        if self.streaming {
+            self.spinner_accum += delta.as_millis() as u64;
+            while self.spinner_accum >= SPINNER_MS {
+                self.spinner_accum -= SPINNER_MS;
+                self.spinner_tick = self.spinner_tick.wrapping_add(1);
+            }
+        } else {
+            self.spinner_tick = 0;
+            self.spinner_accum = 0;
+        }
+    }
+
+    fn handle_input(&mut self, _: KeyEvent) -> EventPropagation { EventPropagation::Continue }
+    fn is_focusable(&self) -> bool { false }
+    fn focused(&self) -> bool { false }
+    fn on_focus(&mut self) {}
+    fn on_blur(&mut self) {}
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_footer_new() {
-        let footer = Footer::new(ThemeContext::default());
-        assert!(!footer.is_connected());
-        assert!(!footer.show_welcome()); // Initially hidden
+    fn footer_new_not_connected() {
+        let f = Footer::new();
+        assert!(!f.is_connected());
     }
 
     #[test]
-    fn test_footer_connected_state() {
-        let mut footer = Footer::new(ThemeContext::default());
-        assert!(!footer.is_connected());
-
-        footer.set_session_id(Some("test-session".to_string()));
-        assert!(footer.is_connected());
-        assert!(!footer.show_welcome()); // Never show welcome when connected
+    fn footer_connected_after_session_set() {
+        let mut f = Footer::new();
+        f.set_session_id(Some("abc".into()));
+        assert!(f.is_connected());
     }
 
     #[test]
-    fn test_footer_welcome_cycle() {
-        let mut footer = Footer::new(ThemeContext::default());
-
-        // Initially hidden
-        assert!(matches!(footer.welcome_state, WelcomeState::Hidden(_)));
-        assert!(!footer.show_welcome());
-
-        // After 10s, should be visible
-        footer.update(Duration::from_secs(10));
-        assert!(matches!(footer.welcome_state, WelcomeState::Visible(_)));
-        assert!(footer.show_welcome());
-
-        // After 5s more, should be hidden again
-        footer.update(Duration::from_secs(5));
-        assert!(matches!(footer.welcome_state, WelcomeState::Hidden(_)));
-        assert!(!footer.show_welcome());
+    fn spinner_advances_on_update() {
+        let mut f = Footer::new();
+        f.streaming = true;
+        let tick_before = f.spinner_tick;
+        // 9 frames × 80ms = 720ms > 1 tick
+        f.update(Duration::from_millis(SPINNER_MS + 1));
+        assert_ne!(f.spinner_tick, tick_before);
     }
 
     #[test]
-    fn test_footer_no_welcome_when_connected() {
-        let mut footer = Footer::new(ThemeContext::default());
-        footer.set_session_id(Some("session".to_string()));
-
-        // Timer should not advance when connected
-        footer.update(Duration::from_secs(15));
-        // State should remain at initial hidden
-        assert!(matches!(footer.welcome_state, WelcomeState::Hidden(_)));
-    }
-
-    #[test]
-    fn test_footer_setters() {
-        let mut footer = Footer::new(ThemeContext::default());
-
-        footer.set_directory("/test/path".to_string());
-        assert_eq!(footer.directory(), "/test/path");
-
-        footer.set_lsp_count(3);
-        assert_eq!(footer.lsp_count, 3);
-
-        footer.set_pending_permissions(2);
-        assert_eq!(footer.pending_permissions, 2);
-
-        let mut mcp = HashMap::new();
-        mcp.insert("server1".to_string(), McpStatus::Connected);
-        footer.set_mcp_statuses(mcp);
-        assert_eq!(footer.mcp_statuses.len(), 1);
+    fn spinner_resets_when_not_streaming() {
+        let mut f = Footer::new();
+        f.streaming = true;
+        f.spinner_tick = 5;
+        f.streaming = false;
+        f.update(Duration::from_millis(100));
+        assert_eq!(f.spinner_tick, 0);
     }
 }

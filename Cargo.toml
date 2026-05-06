@@ -78,6 +78,7 @@ syntect = "5"
 syntect-tui = "3"
 html2md = "0.2"
 rmcp = { version = "1.2.0", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
+unicode-width = "=0.2.0"
 
 [dev-dependencies]
 tokio-test = "0.4"

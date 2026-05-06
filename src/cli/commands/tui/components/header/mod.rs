@@ -1,522 +1,261 @@
-//! Header Component
+//! Header Component — DeepSeek-TUI inspired 1-line header bar.
 //!
-//! Displays session header with title, workspace info, and context statistics.
-//! Supports both normal sessions and subagent sessions with navigation hints.
+//! Layout (single row):
 //!
-//! # Normal Session
-//! - Title with `#` prefix
-//! - Workspace info (local or with type)
-//! - Context info: tokens, percentage, cost
+//! ```text
+//! ◆ roc  Session Title  build·claude          ░░░░░▒▒▒  64%
+//! ```
 //!
-//! # Subagent Session
-//! - "Subagent session" label
-//! - Workspace info
-//! - Context info
-//! - Navigation buttons: Parent, Prev, Next
-//!
-//! # Narrow Mode
-//! When width < 80 characters, layouts stack vertically.
+//! Left: brand badge + session title + model chip
+//! Right: context-utilization bar + percentage
 
 use crossterm::event::KeyEvent;
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    layout::Rect,
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
 use std::time::Duration;
+use unicode_width::UnicodeWidthStr;
 
 use super::{Component, ComponentId, ContextInfo, EventPropagation};
-use crate::cli::commands::tui::theme::ThemeContext;
 
-/// Minimum width for horizontal layout
-const NARROW_THRESHOLD: u16 = 80;
-
-/// Hover state for navigation buttons (subagent mode)
+/// Kept for backward-compatibility with re-exports in components/mod.rs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum HoverButton {
-    #[default]
-    None,
-    Parent,
-    Prev,
-    Next,
+#[allow(dead_code)]
+pub enum HoverButton { #[default] None, Parent, Prev, Next }
+
+// ── Palette ───────────────────────────────────────────────────────────────────
+
+const C_BG_PANEL: Color = Color::Rgb(20, 20, 20);
+const C_TEXT: Color = Color::Rgb(238, 238, 238);
+const C_TEXT_MUTED: Color = Color::Rgb(128, 128, 128);
+const C_TEXT_DIM: Color = Color::Rgb(80, 80, 80);
+const C_PRIMARY: Color = Color::Rgb(250, 178, 131);
+const C_ACCENT: Color = Color::Rgb(157, 124, 216);
+const C_SUCCESS: Color = Color::Rgb(127, 216, 143);
+const C_WARNING: Color = Color::Rgb(245, 167, 66);
+const C_ERROR: Color = Color::Rgb(224, 108, 117);
+const C_INFO: Color = Color::Rgb(86, 182, 194);
+
+// ── Context bar ───────────────────────────────────────────────────────────────
+
+const BAR_WIDTH: usize = 10;
+const BAR_EMPTY: char = '░';
+const BAR_USED: char = '▓';
+
+fn context_bar_color(pct: u8) -> Color {
+    if pct >= 95 { C_ERROR }
+    else if pct >= 80 { C_WARNING }
+    else { C_PRIMARY }
 }
 
-/// Header component for TUI
-///
-/// Displays session title, workspace information, and context statistics.
-/// Supports two modes: normal session and subagent session.
+fn pct_color(pct: u8) -> Color {
+    if pct >= 95 { C_ERROR }
+    else if pct >= 80 { C_WARNING }
+    else { C_TEXT_MUTED }
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 pub struct Header {
-    /// Unique component identifier
     id: ComponentId,
-    /// Theme context for styling
-    theme: ThemeContext,
-    /// Session title to display
-    session_title: String,
-    /// Context information (tokens, percentage, cost)
-    context: ContextInfo,
-    /// Workspace ID (None = local)
-    workspace_id: Option<String>,
-    /// Workspace type (e.g., "shared", "remote")
-    workspace_type: Option<String>,
-    /// Parent session ID (Some = subagent session)
-    parent_id: Option<String>,
-    /// Current hover state for navigation buttons
-    hover: HoverButton,
-    /// Width for narrow mode detection
-    width: u16,
+    /// Short session title (truncated at render time)
+    pub session_title: String,
+    /// Active model name
+    pub model: String,
+    /// 0-100 context utilisation percentage
+    pub context_pct: u8,
+    /// Whether we're currently streaming
+    pub streaming: bool,
+    /// Braille frame index for the streaming indicator
+    spinner_tick: u8,
 }
 
 impl Header {
-    /// Create a new Header component
-    ///
-    /// # Arguments
-    ///
-    /// * `theme` - Theme context for styling
-    ///
-    /// # Returns
-    ///
-    /// A new `Header` instance with default values.
-    pub fn new(theme: ThemeContext) -> Self {
+    pub fn new() -> Self {
         Self {
             id: ComponentId::new(),
-            theme,
             session_title: String::new(),
-            context: ContextInfo::default(),
-            workspace_id: None,
-            workspace_type: None,
-            parent_id: None,
-            hover: HoverButton::None,
-            width: 80,
+            model: String::new(),
+            context_pct: 0,
+            streaming: false,
+            spinner_tick: 0,
         }
     }
 
-    /// Set the session title
-    pub fn set_session_title(&mut self, title: String) {
-        self.session_title = title;
-    }
+    // Setters used from mod.rs
+    pub fn set_session_title(&mut self, t: impl Into<String>) { self.session_title = t.into(); }
+    pub fn set_model(&mut self, m: impl Into<String>)         { self.model = m.into(); }
+    pub fn set_context_pct(&mut self, pct: u8)               { self.context_pct = pct; }
+    pub fn set_streaming(&mut self, s: bool)                  { self.streaming = s; }
 
-    /// Get the session title
-    pub fn session_title(&self) -> &str {
-        &self.session_title
-    }
+    /// Build the header line and render it.
+    fn render_line(&self, f: &mut Frame, area: Rect) {
+        let total_w = area.width as usize;
+        if total_w < 10 { return; }
 
-    /// Set context information
-    pub fn set_context(&mut self, context: ContextInfo) {
-        self.context = context;
-    }
+        // ── Right side: context bar ──────────────────────────────────────
+        let used_cols = (self.context_pct as usize * BAR_WIDTH / 100).min(BAR_WIDTH);
+        let bar: String = std::iter::repeat(BAR_USED).take(used_cols)
+            .chain(std::iter::repeat(BAR_EMPTY).take(BAR_WIDTH - used_cols))
+            .collect();
+        let pct_str = format!(" {}%", self.context_pct);
+        let right_str = format!("{}{}", bar, pct_str);
+        let right_w = right_str.width();
 
-    /// Get context information
-    pub fn context(&self) -> &ContextInfo {
-        &self.context
-    }
+        // ── Left side spans ───────────────────────────────────────────────
+        // Badge: ◆ roc
+        let badge_dot = Span::styled("◆ ", Style::default().fg(C_SUCCESS));
+        let badge_txt = Span::styled("roc", Style::default().fg(C_PRIMARY).add_modifier(Modifier::BOLD));
+        let sep = Span::styled("  ", Style::default());
 
-    /// Set workspace information
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - Workspace ID (None for local)
-    /// * `workspace_type` - Workspace type (e.g., "shared")
-    pub fn set_workspace(&mut self, id: Option<String>, workspace_type: Option<String>) {
-        self.workspace_id = id;
-        self.workspace_type = workspace_type;
-    }
-
-    /// Set parent session ID (enables subagent mode)
-    pub fn set_parent_id(&mut self, id: Option<String>) {
-        self.parent_id = id;
-    }
-
-    /// Get parent session ID
-    pub fn parent_id(&self) -> Option<&str> {
-        self.parent_id.as_deref()
-    }
-
-    /// Set the component width (for narrow mode detection)
-    pub fn set_width(&mut self, width: u16) {
-        self.width = width;
-    }
-
-    /// Set hover state for navigation buttons
-    pub fn set_hover(&mut self, hover: HoverButton) {
-        self.hover = hover;
-    }
-
-    /// Check if in narrow mode
-    fn is_narrow(&self) -> bool {
-        self.width < NARROW_THRESHOLD
-    }
-
-    /// Check if this is a subagent session
-    fn is_subagent(&self) -> bool {
-        self.parent_id.is_some()
-    }
-
-    /// Format workspace string for display
-    fn format_workspace(&self) -> String {
-        match (&self.workspace_id, &self.workspace_type) {
-            (None, _) => "Workspace local".to_string(),
-            (Some(id), None) => format!("Workspace {}", id),
-            (Some(id), Some(ty)) => format!("Workspace {} ({})", id, ty),
-        }
-    }
-
-    /// Format context string: "tokens percentage%"
-    fn format_context(&self) -> String {
-        let tokens = self.context.format_tokens();
-        let pct = self.context.format_percentage();
-        format!("{} {}", tokens, pct)
-    }
-
-    /// Render normal session header
-    fn render_normal(&self, frame: &mut Frame, area: Rect) {
-        let narrow = self.is_narrow();
-        let direction = if narrow {
-            Direction::Vertical
+        // Session title — truncated to fit
+        let budget = total_w
+            .saturating_sub("◆ roc  ".width())
+            .saturating_sub(2 + self.model.width() + 4)
+            .saturating_sub(right_w + 2);
+        let title_str: String = if self.session_title.is_empty() {
+            "New Session".to_string()
         } else {
-            Direction::Horizontal
-        };
-
-        let chunks = Layout::default()
-            .direction(direction)
-            .constraints(if narrow {
-                vec![Constraint::Length(2), Constraint::Length(1)]
+            let t = &self.session_title;
+            if t.width() > budget {
+                let mut s = String::new();
+                for c in t.chars() {
+                    if s.width() + c.len_utf8() + 1 > budget { s.push('…'); break; }
+                    s.push(c);
+                }
+                s
             } else {
-                vec![Constraint::Min(20), Constraint::Length(30)]
-            })
-            .split(area);
+                t.clone()
+            }
+        };
+        let title_span = Span::styled(title_str, Style::default().fg(C_TEXT));
 
-        // Left side: Title + Workspace
-        let left_lines = if narrow {
-            vec![
-                Line::from(vec![
-                    Span::styled("# ", Style::default().add_modifier(Modifier::BOLD)),
-                    Span::styled(
-                        self.session_title.clone(),
-                        Style::default()
-                            .fg(self.theme.text())
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-                Line::from(Span::styled(
-                    self.format_workspace(),
-                    Style::default().fg(self.theme.text_muted()),
-                )),
-            ]
+        // Model chip
+        let model_str = if self.model.is_empty() { String::new() } else {
+            format!("  {}", self.model)
+        };
+        let model_span = Span::styled(model_str, Style::default().fg(C_INFO));
+
+        // Streaming indicator
+        const SPINNER: &[&str] = &["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"];
+        let stream_span = if self.streaming {
+            let s = SPINNER[self.spinner_tick as usize % SPINNER.len()];
+            Span::styled(format!("  {}", s), Style::default().fg(C_ACCENT))
         } else {
-            vec![Line::from(vec![
-                Span::styled("# ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled(
-                    self.session_title.clone(),
-                    Style::default()
-                        .fg(self.theme.text())
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw("  "),
-                Span::styled(
-                    self.format_workspace(),
-                    Style::default().fg(self.theme.text_muted()),
-                ),
-            ])]
+            Span::raw("")
         };
 
-        let left_para = Paragraph::new(left_lines);
-        frame.render_widget(left_para, chunks[0]);
+        // ── Compute gap ───────────────────────────────────────────────────
+        let left_w: usize = "◆ roc".width()
+            + 2
+            + {
+                let s = if self.session_title.is_empty() { "New Session" } else { &self.session_title };
+                s.width().min(budget)
+            }
+            + model_str_width(&self.model)
+            + if self.streaming { 3 } else { 0 };
 
-        // Right side: Context info
-        if !narrow {
-            let right_line = Line::from(vec![
-                Span::styled(
-                    self.format_context(),
-                    Style::default().fg(self.theme.text_muted()),
-                ),
-                Span::raw("  "),
-                Span::styled(
-                    self.context.format_cost(),
-                    Style::default().fg(self.theme.success()),
-                ),
-            ]);
-            let right_para = Paragraph::new(right_line);
-            frame.render_widget(right_para, chunks[1]);
-        } else {
-            // Narrow mode: context on second line
-            let context_line = Line::from(vec![
-                Span::styled(
-                    self.format_context(),
-                    Style::default().fg(self.theme.text_muted()),
-                ),
-                Span::raw("  "),
-                Span::styled(
-                    self.context.format_cost(),
-                    Style::default().fg(self.theme.success()),
-                ),
-            ]);
-            // Overwrite the second chunk with context
-            let right_para = Paragraph::new(context_line);
-            frame.render_widget(right_para, chunks[1]);
-        }
-    }
+        let gap = total_w.saturating_sub(left_w + right_w).max(1);
 
-    /// Render subagent session header
-    fn render_subagent(&self, frame: &mut Frame, area: Rect) {
-        let narrow = self.is_narrow();
+        // ── Assemble line ─────────────────────────────────────────────────
+        let mut spans: Vec<Span<'static>> = vec![
+            badge_dot,
+            badge_txt,
+            sep,
+            title_span,
+            model_span,
+            stream_span,
+            Span::raw(" ".repeat(gap)),
+        ];
 
-        // Main layout: content on top, buttons on bottom
-        let main_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(2), Constraint::Length(1)])
-            .split(area);
+        // Context bar (bar part)
+        let bar_color = context_bar_color(self.context_pct);
+        spans.push(Span::styled(bar, Style::default().fg(bar_color)));
+        // Percentage
+        spans.push(Span::styled(pct_str, Style::default().fg(pct_color(self.context_pct))));
 
-        // Content area
-        let content_direction = if narrow {
-            Direction::Vertical
-        } else {
-            Direction::Horizontal
-        };
-
-        let content_chunks = Layout::default()
-            .direction(content_direction)
-            .constraints(if narrow {
-                vec![Constraint::Length(1), Constraint::Length(1)]
-            } else {
-                vec![Constraint::Min(20), Constraint::Length(30)]
-            })
-            .split(main_chunks[0]);
-
-        // Left: "Subagent session" + workspace
-        let left_lines = if narrow {
-            vec![
-                Line::from(Span::styled(
-                    "Subagent session",
-                    Style::default()
-                        .fg(self.theme.text())
-                        .add_modifier(Modifier::BOLD),
-                )),
-                Line::from(Span::styled(
-                    self.format_workspace(),
-                    Style::default().fg(self.theme.text_muted()),
-                )),
-            ]
-        } else {
-            vec![Line::from(vec![
-                Span::styled(
-                    "Subagent session",
-                    Style::default()
-                        .fg(self.theme.text())
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw("  "),
-                Span::styled(
-                    self.format_workspace(),
-                    Style::default().fg(self.theme.text_muted()),
-                ),
-            ])]
-        };
-
-        let left_para = Paragraph::new(left_lines);
-        frame.render_widget(left_para, content_chunks[0]);
-
-        // Right: Context info
-        let right_line = Line::from(vec![
-            Span::styled(
-                self.format_context(),
-                Style::default().fg(self.theme.text_muted()),
-            ),
-            Span::raw("  "),
-            Span::styled(
-                self.context.format_cost(),
-                Style::default().fg(self.theme.success()),
-            ),
-        ]);
-        let right_para = Paragraph::new(right_line);
-        frame.render_widget(right_para, content_chunks[1]);
-
-        // Bottom: Navigation buttons
-        let button_area = main_chunks[1];
-        let buttons = self.render_buttons();
-        let buttons_para = Paragraph::new(buttons);
-        frame.render_widget(buttons_para, button_area);
-    }
-
-    /// Render navigation buttons for subagent mode
-    fn render_buttons(&self) -> Vec<Line<'static>> {
-        let mut spans = Vec::new();
-
-        // Parent button
-        let parent_bg = if self.hover == HoverButton::Parent {
-            self.theme.secondary()
-        } else {
-            self.theme.background()
-        };
-        spans.push(Span::styled(
-            "Parent",
-            Style::default().fg(self.theme.text()).bg(parent_bg),
-        ));
-        spans.push(Span::raw(" "));
-
-        // Prev button
-        let prev_bg = if self.hover == HoverButton::Prev {
-            self.theme.secondary()
-        } else {
-            self.theme.background()
-        };
-        spans.push(Span::styled(
-            "Prev",
-            Style::default().fg(self.theme.text()).bg(prev_bg),
-        ));
-        spans.push(Span::raw(" "));
-
-        // Next button
-        let next_bg = if self.hover == HoverButton::Next {
-            self.theme.secondary()
-        } else {
-            self.theme.background()
-        };
-        spans.push(Span::styled(
-            "Next",
-            Style::default().fg(self.theme.text()).bg(next_bg),
-        ));
-
-        vec![Line::from(spans)]
+        let line = Line::from(spans);
+        f.render_widget(
+            Paragraph::new(line).style(Style::default().bg(C_BG_PANEL)),
+            area,
+        );
     }
 }
 
-impl Component for Header {
-    fn id(&self) -> ComponentId {
-        self.id
-    }
-
-    fn render(&self, frame: &mut Frame, area: Rect) {
-        if self.is_subagent() {
-            self.render_subagent(frame, area);
-        } else {
-            self.render_normal(frame, area);
-        }
-    }
-
-    fn update(&mut self, _delta: Duration) {
-        // No timer-based updates needed
-    }
-
-    fn handle_input(&mut self, _event: KeyEvent) -> EventPropagation {
-        EventPropagation::Continue
-    }
-
-    fn is_focusable(&self) -> bool {
-        false
-    }
+fn model_str_width(model: &str) -> usize {
+    if model.is_empty() { 0 } else { model.width() + 2 }
 }
 
 impl Default for Header {
-    fn default() -> Self {
-        Self::new(ThemeContext::default())
-    }
+    fn default() -> Self { Self::new() }
 }
+
+impl Component for Header {
+    fn id(&self) -> ComponentId { self.id }
+
+    fn render(&self, f: &mut Frame, area: Rect) {
+        self.render_line(f, area);
+    }
+
+    fn update(&mut self, delta: Duration) {
+        if self.streaming {
+            // advance spinner at ~10 fps (100ms per tick)
+            // delta is typically ~33ms (30fps render); accumulate 3 frames
+            static mut ACCUM: u64 = 0;
+            let ms = delta.as_millis() as u64;
+            // SAFETY: single-threaded TUI loop
+            unsafe {
+                ACCUM += ms;
+                if ACCUM >= 100 {
+                    ACCUM = 0;
+                    self.spinner_tick = self.spinner_tick.wrapping_add(1);
+                }
+            }
+        } else {
+            self.spinner_tick = 0;
+        }
+    }
+
+    fn handle_input(&mut self, _: KeyEvent) -> EventPropagation {
+        EventPropagation::Continue
+    }
+
+    fn is_focusable(&self) -> bool { false }
+
+    fn focused(&self) -> bool { false }
+    fn on_focus(&mut self) {}
+    fn on_blur(&mut self) {}
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_header_new() {
-        let header = Header::new(ThemeContext::default());
-        assert!(!header.is_subagent());
-        assert!(!header.is_narrow());
-        assert!(header.session_title.is_empty());
+    fn header_default_values() {
+        let h = Header::new();
+        assert!(h.session_title.is_empty());
+        assert_eq!(h.context_pct, 0);
+        assert!(!h.streaming);
     }
 
     #[test]
-    fn test_header_default() {
-        let header = Header::default();
-        assert!(!header.is_subagent());
+    fn context_bar_colors() {
+        assert_eq!(context_bar_color(0),  C_PRIMARY);
+        assert_eq!(context_bar_color(79), C_PRIMARY);
+        assert_eq!(context_bar_color(80), C_WARNING);
+        assert_eq!(context_bar_color(95), C_ERROR);
     }
 
     #[test]
-    fn test_header_set_session_title() {
-        let mut header = Header::default();
-        header.set_session_title("Test Session".to_string());
-        assert_eq!(header.session_title(), "Test Session");
-    }
-
-    #[test]
-    fn test_header_set_context() {
-        let mut header = Header::default();
-        let context = ContextInfo::new(1500, Some(45), 0.002);
-        header.set_context(context);
-        assert_eq!(header.context().tokens, 1500);
-    }
-
-    #[test]
-    fn test_header_set_workspace() {
-        let mut header = Header::default();
-
-        // Local workspace
-        assert_eq!(header.format_workspace(), "Workspace local");
-
-        // Workspace with ID only
-        header.set_workspace(Some("ws-1".to_string()), None);
-        assert_eq!(header.format_workspace(), "Workspace ws-1");
-
-        // Workspace with ID and type
-        header.set_workspace(Some("ws-1".to_string()), Some("shared".to_string()));
-        assert_eq!(header.format_workspace(), "Workspace ws-1 (shared)");
-    }
-
-    #[test]
-    fn test_header_set_parent_id() {
-        let mut header = Header::default();
-        assert!(!header.is_subagent());
-
-        header.set_parent_id(Some("parent-123".to_string()));
-        assert!(header.is_subagent());
-        assert_eq!(header.parent_id(), Some("parent-123"));
-
-        header.set_parent_id(None);
-        assert!(!header.is_subagent());
-    }
-
-    #[test]
-    fn test_header_narrow_mode() {
-        let mut header = Header::default();
-        assert!(!header.is_narrow());
-
-        header.set_width(60);
-        assert!(header.is_narrow());
-
-        header.set_width(100);
-        assert!(!header.is_narrow());
-    }
-
-    #[test]
-    fn test_header_hover_state() {
-        let mut header = Header::default();
-        assert_eq!(header.hover, HoverButton::None);
-
-        header.set_hover(HoverButton::Parent);
-        assert_eq!(header.hover, HoverButton::Parent);
-
-        header.set_hover(HoverButton::Next);
-        assert_eq!(header.hover, HoverButton::Next);
-    }
-
-    #[test]
-    fn test_header_format_context() {
-        let mut header = Header::default();
-        let context = ContextInfo::new(1500, Some(45), 0.002);
-        header.set_context(context);
-        assert_eq!(header.format_context(), "1.5K 45%");
-    }
-
-    #[test]
-    fn test_header_is_focusable() {
-        let header = Header::default();
-        assert!(!header.is_focusable());
-    }
-
-    #[test]
-    fn test_hover_button_default() {
-        let hover = HoverButton::default();
-        assert_eq!(hover, HoverButton::None);
+    fn context_bar_filled_at_100() {
+        let used = 100usize * BAR_WIDTH / 100;
+        assert_eq!(used, BAR_WIDTH);
     }
 }

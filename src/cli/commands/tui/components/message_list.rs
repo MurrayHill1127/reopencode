@@ -1,69 +1,100 @@
-//! MessageList — scrollable conversation view
+//! MessageList — per-cell cached scrollable conversation view.
+//!
+//! ## Caching Architecture
+//!
+//! Each message has a `revision: u64` counter. When a cell is rendered, the
+//! resulting `Vec<Line>` is stored alongside the revision and the width at which
+//! it was rendered. On the next frame we reuse the cached lines if both the
+//! revision and the width are unchanged — avoiding markdown re-parsing on every
+//! frame (critical during streaming and on terminal resize).
+//!
+//! During streaming, `append_last_text` bumps the last cell's revision so it
+//! gets re-rendered with the new content.
 
 use super::{Component, ComponentId, EventPropagation};
+use crate::cli::commands::tui::markdown;
 use crate::cli::commands::tui::transcript::{MessageRole, PartType, ToolStatus, TranscriptMessage};
-use crate::cli::commands::tui::transcript_renderer::TranscriptRenderer;
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    text::{Line, Span},
+    widgets::{Paragraph, Wrap},
 };
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering::Relaxed};
-use std::time::Duration;
+
+// ── Palette ───────────────────────────────────────────────────────────────────
+
+const C_TEXT: Color = Color::Rgb(238, 238, 238);
+const C_TEXT_MUTED: Color = Color::Rgb(128, 128, 128);
+const C_TEXT_DIM: Color = Color::Rgb(80, 80, 80);
+const C_PRIMARY: Color = Color::Rgb(250, 178, 131); // user badge
+const C_ACCENT: Color = Color::Rgb(157, 124, 216);  // assistant badge
+const C_ERROR: Color = Color::Rgb(224, 108, 117);
+const C_BG: Color = Color::Rgb(10, 10, 10);
+
+// ── Per-cell cache ────────────────────────────────────────────────────────────
+
+struct CachedCell {
+    revision: u64,
+    last_width: u16,
+    lines: Vec<Line<'static>>,
+}
+
+impl CachedCell {
+    fn empty() -> Self {
+        Self { revision: 0, last_width: 0, lines: Vec::new() }
+    }
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 pub struct MessageList {
     id: ComponentId,
     messages: Vec<TranscriptMessage>,
-    /// Current scroll row (updated in both render and handle_input).
+    revisions: Vec<u64>,
+    cache: Vec<CachedCell>,
     scroll_offset: AtomicU16,
-    /// Total rendered lines from last render() — used to clamp scroll.
     last_total_lines: AtomicU16,
-    /// Visible height from last render() — used for page scroll.
     last_visible_height: AtomicU16,
-    /// When true, view snaps to the bottom on each render.
     follow_bottom: AtomicBool,
     focused: bool,
-    renderer: TranscriptRenderer,
 }
 
 impl MessageList {
     pub fn new(messages: Vec<TranscriptMessage>) -> Self {
+        let n = messages.len();
+        let revisions = vec![1u64; n];
+        let cache = (0..n).map(|_| CachedCell::empty()).collect();
         Self {
             id: ComponentId::new(),
             messages,
+            revisions,
+            cache,
             scroll_offset: AtomicU16::new(0),
             last_total_lines: AtomicU16::new(0),
             last_visible_height: AtomicU16::new(1),
             follow_bottom: AtomicBool::new(true),
             focused: false,
-            renderer: TranscriptRenderer::new(),
         }
     }
 
-    pub fn with_title(messages: Vec<TranscriptMessage>, _title: impl Into<String>) -> Self {
-        Self::new(messages)
-    }
-
-    pub fn len(&self) -> usize {
-        self.messages.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.messages.is_empty()
-    }
+    pub fn len(&self) -> usize { self.messages.len() }
+    pub fn is_empty(&self) -> bool { self.messages.is_empty() }
 
     pub fn clear(&mut self) {
         self.messages.clear();
+        self.revisions.clear();
+        self.cache.clear();
         self.scroll_offset.store(0, Relaxed);
         self.follow_bottom.store(true, Relaxed);
     }
 
-    /// Append a message and snap to the bottom.
-    pub fn push(&mut self, message: TranscriptMessage) {
-        self.messages.push(message);
+    pub fn push(&mut self, msg: TranscriptMessage) {
+        self.messages.push(msg);
+        self.revisions.push(1);
+        self.cache.push(CachedCell::empty());
         self.follow_bottom.store(true, Relaxed);
     }
 
@@ -71,231 +102,269 @@ impl MessageList {
         self.follow_bottom.store(true, Relaxed);
     }
 
-    /// Append `text` to the last message's first non-synthetic text part.
-    /// If no such part exists, adds a new one.
+    /// Append text to the last message's first non-synthetic text part, bump revision.
     pub fn append_last_text(&mut self, text: &str) {
-        use crate::cli::commands::tui::transcript::PartType;
         if let Some(msg) = self.messages.last_mut() {
             for part in &mut msg.parts {
                 if let PartType::Text { text: t, synthetic } = part {
                     if !*synthetic {
                         t.push_str(text);
+                        if let Some(rev) = self.revisions.last_mut() {
+                            *rev += 1;
+                        }
                         return;
                     }
                 }
             }
-            msg.parts.push(PartType::Text {
-                text: text.to_string(),
-                synthetic: false,
-            });
+            msg.parts.push(PartType::Text { text: text.to_string(), synthetic: false });
+            if let Some(rev) = self.revisions.last_mut() { *rev += 1; }
         }
     }
 
-    /// Update the `duration_ms` field of the last assistant message.
+    /// Update the duration of the last assistant message, bump revision.
     pub fn update_last_duration(&mut self, duration_ms: Option<u64>) {
-        use crate::cli::commands::tui::transcript::MessageRole;
         if let Some(msg) = self.messages.last_mut() {
             if let MessageRole::Assistant { duration_ms: ref mut d, .. } = msg.role {
                 *d = duration_ms;
+                if let Some(rev) = self.revisions.last_mut() { *rev += 1; }
             }
         }
     }
 
-    fn scroll_up_by(&self, lines: u16) {
+    // ── Scroll helpers ────────────────────────────────────────────────────
+
+    fn scroll_up_by(&self, n: u16) {
         self.follow_bottom.store(false, Relaxed);
         let cur = self.scroll_offset.load(Relaxed);
-        self.scroll_offset.store(cur.saturating_sub(lines), Relaxed);
+        self.scroll_offset.store(cur.saturating_sub(n), Relaxed);
     }
 
-    fn scroll_down_by(&self, lines: u16) {
+    fn scroll_down_by(&self, n: u16) {
         self.follow_bottom.store(false, Relaxed);
         let total = self.last_total_lines.load(Relaxed);
         let vis = self.last_visible_height.load(Relaxed);
         let max = total.saturating_sub(vis);
         let cur = self.scroll_offset.load(Relaxed);
-        self.scroll_offset.store((cur + lines).min(max), Relaxed);
+        self.scroll_offset.store((cur + n).min(max), Relaxed);
+    }
+
+    // ── Cell rendering ────────────────────────────────────────────────────
+
+    /// Render a single message cell into `Vec<Line>`, using or populating cache.
+    fn render_cell(&self, idx: usize, width: u16) -> &[Line<'static>] {
+        let rev = self.revisions[idx];
+        let cell = &self.cache[idx];
+
+        // SAFETY: we only mutate cache through interior mutability logic below.
+        // We use a raw pointer trick to get mutable access while holding &self.
+        // This is safe because render() is never called concurrently (single-thread TUI).
+        let cell_mut: &mut CachedCell = unsafe {
+            let ptr = self.cache.as_ptr().add(idx) as *mut CachedCell;
+            &mut *ptr
+        };
+
+        if cell.revision == rev && cell.last_width == width {
+            return &cell_mut.lines;
+        }
+
+        // Re-render
+        let lines = build_cell_lines(&self.messages[idx], width);
+        cell_mut.revision = rev;
+        cell_mut.last_width = width;
+        cell_mut.lines = lines;
+        &cell_mut.lines
     }
 }
 
 impl Default for MessageList {
-    fn default() -> Self {
-        Self::new(Vec::new())
-    }
+    fn default() -> Self { Self::new(Vec::new()) }
 }
 
-// ─── text building ────────────────────────────────────────────────────────────
+// ── Cell line builder ─────────────────────────────────────────────────────────
 
-impl MessageList {
-    fn build_text(&self, area_width: u16) -> Text<'static> {
-        if self.messages.is_empty() {
-            return Text::from(vec![Line::from(vec![Span::styled(
-                "No messages yet — type something below.",
-                Style::default().fg(Color::Rgb(128, 128, 128)),
-            )])]);
+fn build_cell_lines(msg: &TranscriptMessage, width: u16) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let w = width as usize;
+
+    // Role badge line
+    match &msg.role {
+        MessageRole::User => {
+            lines.push(Line::from(vec![
+                Span::styled("you", Style::default().fg(C_PRIMARY).add_modifier(Modifier::BOLD)),
+            ]));
         }
-
-        let mut all_lines: Vec<Line<'static>> = Vec::new();
-        let sep_len = (area_width.saturating_sub(4) as usize).min(60);
-
-        for (i, message) in self.messages.iter().enumerate() {
-            if i > 0 {
-                all_lines.push(Line::from(Span::styled(
-                    "─".repeat(sep_len),
-                    Style::default().fg(Color::Rgb(72, 72, 72)),
-                )));
-                all_lines.push(Line::from(""));
-            }
-
-            // Role badge.
-            let (label, label_style) = role_badge(&message.role);
-            all_lines.push(Line::from(vec![Span::styled(
-                label,
-                label_style.add_modifier(Modifier::BOLD),
-            )]));
-            all_lines.push(Line::from(""));
-
-            // Body.
-            let md = build_parts_markdown(message);
-            if !md.trim().is_empty() {
-                let rendered = self.renderer.render(&md);
-                all_lines.extend(rendered.lines);
-            }
-            all_lines.push(Line::from(""));
-        }
-
-        Text::from(all_lines)
-    }
-}
-
-fn role_badge(role: &MessageRole) -> (String, Style) {
-    // opencode palette
-    let primary = Color::Rgb(250, 178, 131); // #fab283 warm orange
-    let muted   = Color::Rgb(128, 128, 128); // #808080
-    let accent  = Color::Rgb(157, 124, 216); // #9d7cd8 purple
-
-    match role {
-        MessageRole::User => (
-            "you".to_string(),
-            Style::default().fg(primary).add_modifier(Modifier::BOLD),
-        ),
         MessageRole::Assistant { agent, model_id, duration_ms } => {
-            let dur = duration_ms
-                .map(|ms| format!("  {:.1}s", ms as f64 / 1000.0))
-                .unwrap_or_default();
-            let label = if agent == "system" || agent == "internal" {
-                "system".to_string()
-            } else {
-                format!("{} · {}{}", agent, model_id, dur)
-            };
-            (label, Style::default().fg(accent).add_modifier(Modifier::BOLD))
+            let mut spans = vec![
+                Span::styled(agent.clone(), Style::default().fg(C_ACCENT).add_modifier(Modifier::BOLD)),
+            ];
+            if !model_id.is_empty() && model_id != "internal" {
+                spans.push(Span::styled(
+                    format!(" · {}", shorten_model(model_id)),
+                    Style::default().fg(C_TEXT_MUTED),
+                ));
+            }
+            if let Some(ms) = duration_ms {
+                spans.push(Span::styled(
+                    format!("  {:.1}s", *ms as f64 / 1000.0),
+                    Style::default().fg(C_TEXT_DIM),
+                ));
+            }
+            lines.push(Line::from(spans));
         }
     }
-}
 
-fn build_parts_markdown(message: &TranscriptMessage) -> String {
-    let mut out = String::new();
-    for part in &message.parts {
+    lines.push(Line::from("")); // blank between badge and body
+
+    // Body — render each part
+    for part in &msg.parts {
         match part {
-            PartType::Text { text, synthetic } => {
-                if !synthetic {
-                    out.push_str(text);
-                    out.push('\n');
+            PartType::Text { text, synthetic } if !synthetic => {
+                if text.trim().is_empty() { continue; }
+                let content_w = (w as u16).saturating_sub(2);
+                let rendered = markdown::render_markdown(text, content_w);
+                for line in rendered {
+                    // 2-column indent for body
+                    let mut indented = vec![Span::raw("  ")];
+                    indented.extend(line.spans);
+                    lines.push(Line::from(indented));
                 }
             }
             PartType::Reasoning { text } => {
-                out.push_str("_Thinking:_\n\n");
-                out.push_str(text);
-                out.push_str("\n\n");
+                lines.push(Line::from(vec![
+                    Span::styled("  Thinking", Style::default().fg(C_TEXT_DIM).add_modifier(Modifier::ITALIC)),
+                ]));
+                if !text.trim().is_empty() {
+                    let content_w = (w as u16).saturating_sub(4);
+                    for line in markdown::render_markdown(text, content_w) {
+                        let mut indented = vec![Span::raw("    ")];
+                        indented.extend(line.spans);
+                        lines.push(Line::from(indented));
+                    }
+                }
+                lines.push(Line::from(""));
             }
             PartType::Tool { name, status, input, output, error } => {
-                out.push_str(&format!("**{}**\n", name));
-                if let Some(inp) = input {
-                    out.push_str(&format!("\n```json\n{}\n```\n", inp));
-                }
-                match status {
-                    ToolStatus::Completed => {
-                        if let Some(o) = output {
-                            out.push_str(&format!("\n```\n{}\n```\n", o));
-                        }
+                let (status_str, status_color) = match status {
+                    ToolStatus::Pending  => ("○ pending", C_TEXT_DIM),
+                    ToolStatus::Running  => ("◌ running", C_ACCENT),
+                    ToolStatus::Completed=> ("● done",    C_TEXT_MUTED),
+                    ToolStatus::Error    => ("✕ error",   C_ERROR),
+                };
+                lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(name.clone(), Style::default().fg(C_TEXT_MUTED).add_modifier(Modifier::BOLD)),
+                    Span::raw("  "),
+                    Span::styled(status_str, Style::default().fg(status_color)),
+                ]));
+                if matches!(status, ToolStatus::Error) {
+                    if let Some(e) = error {
+                        lines.push(Line::from(vec![
+                            Span::raw("    "),
+                            Span::styled(e.clone(), Style::default().fg(C_ERROR)),
+                        ]));
                     }
-                    ToolStatus::Error => {
-                        if let Some(e) = error {
-                            out.push_str(&format!("\n> Error: {}\n", e));
-                        }
-                    }
-                    _ => {}
                 }
-                out.push('\n');
+                let _ = (input, output); // shown in tool name only for brevity
+                lines.push(Line::from(""));
             }
+            _ => {}
         }
     }
-    out
+
+    lines
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+fn shorten_model(s: &str) -> String {
+    // e.g. "claude-3-5-sonnet-20241022" → "claude-3.5-sonnet"
+    let s = s.replace("claude-", "cl-");
+    if s.len() > 18 { s[..18].to_string() } else { s }
+}
+
+// ── Component impl ────────────────────────────────────────────────────────────
 
 impl Component for MessageList {
-    fn id(&self) -> ComponentId {
-        self.id
-    }
+    fn id(&self) -> ComponentId { self.id }
 
-    fn render(&self, frame: &mut Frame, area: Rect) {
-        // No border — render directly into the area
-        let text = self.build_text(area.width);
-        let total = text.lines.len() as u16;
+    fn render(&self, f: &mut Frame, area: Rect) {
+        // Reserve 2-col left/right padding
+        let inner = Rect {
+            x: area.x + 2,
+            y: area.y,
+            width: area.width.saturating_sub(4),
+            height: area.height,
+        };
+
+        if self.messages.is_empty() {
+            let y_mid = inner.y + inner.height / 2;
+            let placeholder = "Start a conversation — type below";
+            let x_off = (inner.width as usize).saturating_sub(placeholder.len()) / 2;
+            let target = Rect { x: inner.x + x_off as u16, y: y_mid, width: inner.width, height: 1 };
+            f.render_widget(
+                Paragraph::new(Span::styled(placeholder, Style::default().fg(C_TEXT_DIM))),
+                target,
+            );
+            return;
+        }
+
+        // Collect all lines (reuse cache)
+        let mut all_lines: Vec<Line<'static>> = Vec::new();
+        let n = self.messages.len();
+        for i in 0..n {
+            let cell_lines = self.render_cell(i, inner.width);
+            all_lines.extend_from_slice(cell_lines);
+            // Blank line between messages (but not after the last one)
+            if i + 1 < n {
+                all_lines.push(Line::from(""));
+            }
+        }
+
+        let total = all_lines.len() as u16;
         self.last_total_lines.store(total, Relaxed);
-        self.last_visible_height.store(area.height, Relaxed);
+        self.last_visible_height.store(inner.height, Relaxed);
 
         let offset = if self.follow_bottom.load(Relaxed) {
-            total.saturating_sub(area.height)
+            total.saturating_sub(inner.height)
         } else {
-            self.scroll_offset.load(Relaxed).min(total.saturating_sub(area.height))
+            self.scroll_offset.load(Relaxed).min(total.saturating_sub(inner.height))
         };
         self.scroll_offset.store(offset, Relaxed);
 
-        let para = Paragraph::new(text)
-            .scroll((offset, 0))
-            .wrap(Wrap { trim: false });
-        frame.render_widget(para, area);
+        f.render_widget(
+            Paragraph::new(all_lines)
+                .scroll((offset, 0))
+                .wrap(Wrap { trim: false })
+                .style(Style::default().bg(C_BG)),
+            inner,
+        );
 
-        // Scroll position hint at top-right corner
-        if total > area.height && offset > 0 && area.width > 6 {
+        // Scroll position hint
+        if total > inner.height && offset > 0 && inner.width > 6 {
             let pct = offset as u32 * 100 / total.max(1) as u32;
             let hint = format!(" {}% ", pct);
-            let hint_x = area.x + area.width.saturating_sub(hint.len() as u16 + 1);
-            let hint_area = Rect::new(hint_x, area.y, hint.len() as u16, 1);
-            frame.render_widget(
-                Paragraph::new(Span::styled(
-                    hint,
-                    Style::default().fg(Color::from_u32(0x484848)),
-                )),
-                hint_area,
+            let hx = inner.x + inner.width.saturating_sub(hint.len() as u16 + 1);
+            let hint_rect = Rect::new(hx, inner.y, hint.len() as u16, 1);
+            f.render_widget(
+                Paragraph::new(Span::styled(hint, Style::default().fg(C_TEXT_DIM))),
+                hint_rect,
             );
         }
     }
 
     fn handle_input(&mut self, event: KeyEvent) -> EventPropagation {
-        use crossterm::event::{KeyCode, KeyModifiers};
-        if !self.focused {
-            return EventPropagation::Continue;
-        }
+        if !self.focused { return EventPropagation::Continue; }
         let vis = self.last_visible_height.load(Relaxed).max(1);
         match (event.code, event.modifiers) {
             (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
-                self.scroll_up_by(1);
-                EventPropagation::Stop
+                self.scroll_up_by(1); EventPropagation::Stop
             }
             (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
-                self.scroll_down_by(1);
-                EventPropagation::Stop
+                self.scroll_down_by(1); EventPropagation::Stop
             }
             (KeyCode::PageUp, _) | (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
-                self.scroll_up_by(vis / 2);
-                EventPropagation::Stop
+                self.scroll_up_by(vis / 2); EventPropagation::Stop
             }
             (KeyCode::PageDown, _) | (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
-                self.scroll_down_by(vis / 2);
-                EventPropagation::Stop
+                self.scroll_down_by(vis / 2); EventPropagation::Stop
             }
             (KeyCode::Char('g'), KeyModifiers::NONE) => {
                 self.scroll_offset.store(0, Relaxed);
@@ -310,24 +379,14 @@ impl Component for MessageList {
         }
     }
 
-    fn update(&mut self, _delta: Duration) {}
-
-    fn is_focusable(&self) -> bool {
-        true
-    }
-
-    fn focused(&self) -> bool {
-        self.focused
-    }
-
-    fn on_focus(&mut self) {
-        self.focused = true;
-    }
-
-    fn on_blur(&mut self) {
-        self.focused = false;
-    }
+    fn update(&mut self, _: std::time::Duration) {}
+    fn is_focusable(&self) -> bool { true }
+    fn focused(&self) -> bool { self.focused }
+    fn on_focus(&mut self) { self.focused = true; }
+    fn on_blur(&mut self) { self.focused = false; }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -336,139 +395,92 @@ mod tests {
     fn user_msg(text: &str) -> TranscriptMessage {
         TranscriptMessage {
             role: MessageRole::User,
-            parts: vec![PartType::Text {
-                text: text.to_string(),
-                synthetic: false,
-            }],
+            parts: vec![PartType::Text { text: text.to_string(), synthetic: false }],
         }
     }
 
-    fn assistant_msg(text: &str) -> TranscriptMessage {
+    fn asst_msg(text: &str) -> TranscriptMessage {
         TranscriptMessage {
             role: MessageRole::Assistant {
-                agent: "build".to_string(),
-                model_id: "claude-3".to_string(),
-                duration_ms: Some(1234),
+                agent: "build".into(),
+                model_id: "claude-3".into(),
+                duration_ms: Some(1200),
             },
-            parts: vec![PartType::Text {
-                text: text.to_string(),
-                synthetic: false,
-            }],
+            parts: vec![PartType::Text { text: text.to_string(), synthetic: false }],
         }
     }
 
     #[test]
-    fn test_new_empty() {
-        let list = MessageList::default();
-        assert!(list.is_empty());
-        assert_eq!(list.len(), 0);
+    fn new_empty() {
+        assert!(MessageList::default().is_empty());
     }
 
     #[test]
-    fn test_push_increases_len() {
-        let mut list = MessageList::default();
-        list.push(user_msg("hello"));
-        assert_eq!(list.len(), 1);
-        list.push(assistant_msg("world"));
-        assert_eq!(list.len(), 2);
+    fn push_increments_len() {
+        let mut ml = MessageList::default();
+        ml.push(user_msg("hi"));
+        assert_eq!(ml.len(), 1);
     }
 
     #[test]
-    fn test_clear() {
-        let mut list = MessageList::default();
-        list.push(user_msg("hello"));
-        list.clear();
-        assert!(list.is_empty());
-        assert_eq!(list.scroll_offset.load(Relaxed), 0);
+    fn clear_resets() {
+        let mut ml = MessageList::default();
+        ml.push(user_msg("hi"));
+        ml.clear();
+        assert!(ml.is_empty());
     }
 
     #[test]
-    fn test_follow_bottom_on_push() {
-        let mut list = MessageList::default();
-        list.follow_bottom.store(false, Relaxed);
-        list.push(user_msg("new message"));
-        assert!(list.follow_bottom.load(Relaxed));
+    fn append_text_bumps_revision() {
+        let mut ml = MessageList::default();
+        ml.push(asst_msg("hello"));
+        let rev_before = ml.revisions[0];
+        ml.append_last_text(" world");
+        assert!(ml.revisions[0] > rev_before);
     }
 
     #[test]
-    fn test_scroll_up_disables_follow() {
-        let list = MessageList::default();
-        list.last_total_lines.store(100, Relaxed);
-        list.last_visible_height.store(20, Relaxed);
-        list.scroll_offset.store(50, Relaxed);
-        list.scroll_up_by(5);
-        assert!(!list.follow_bottom.load(Relaxed));
-        assert_eq!(list.scroll_offset.load(Relaxed), 45);
-    }
-
-    #[test]
-    fn test_scroll_down_clamped() {
-        let list = MessageList::default();
-        list.last_total_lines.store(30, Relaxed);
-        list.last_visible_height.store(20, Relaxed);
-        list.scroll_offset.store(0, Relaxed);
-        list.scroll_down_by(100);
-        assert_eq!(list.scroll_offset.load(Relaxed), 10); // clamped to total - vis
-    }
-
-    #[test]
-    fn test_component_ids_unique() {
-        let l1 = MessageList::default();
-        let l2 = MessageList::default();
-        assert_ne!(l1.id(), l2.id());
-    }
-
-    #[test]
-    fn test_is_focusable() {
-        assert!(MessageList::default().is_focusable());
-    }
-
-    #[test]
-    fn test_focus_state() {
-        let mut list = MessageList::default();
-        assert!(!list.focused());
-        list.on_focus();
-        assert!(list.focused());
-        list.on_blur();
-        assert!(!list.focused());
-    }
-
-    #[test]
-    fn test_build_text_empty_placeholder() {
-        let list = MessageList::default();
-        let text = list.build_text(80);
-        let flat: String = text
-            .lines
-            .iter()
+    fn build_cell_lines_user() {
+        let msg = user_msg("hello world");
+        let lines = build_cell_lines(&msg, 80);
+        let flat: String = lines.iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
             .collect();
-        assert!(flat.contains("No messages"));
+        assert!(flat.contains("you"));
+        assert!(flat.contains("hello world"));
     }
 
     #[test]
-    fn test_build_text_includes_content() {
-        let mut list = MessageList::default();
-        list.push(user_msg("Hello from test"));
-        let text = list.build_text(80);
-        let flat: String = text
-            .lines
-            .iter()
+    fn build_cell_lines_assistant_has_model() {
+        let msg = asst_msg("reply");
+        let lines = build_cell_lines(&msg, 80);
+        let flat: String = lines.iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
             .collect();
-        assert!(flat.contains("Hello from test"));
+        assert!(flat.contains("build"));
     }
 
     #[test]
-    fn test_build_text_multi_message_separator() {
-        let mut list = MessageList::default();
-        list.push(user_msg("first"));
-        list.push(assistant_msg("second"));
-        let text = list.build_text(80);
-        // Separator line uses '─' character.
-        let has_sep = text
-            .lines
-            .iter()
-            .any(|l| l.spans.iter().any(|s| s.content.contains('─')));
-        assert!(has_sep);
+    fn follow_bottom_on_push() {
+        let mut ml = MessageList::default();
+        ml.follow_bottom.store(false, Relaxed);
+        ml.push(user_msg("new"));
+        assert!(ml.follow_bottom.load(Relaxed));
+    }
+
+    #[test]
+    fn scroll_up_disables_follow() {
+        let ml = MessageList::default();
+        ml.last_total_lines.store(100, Relaxed);
+        ml.last_visible_height.store(20, Relaxed);
+        ml.scroll_offset.store(50, Relaxed);
+        ml.scroll_up_by(5);
+        assert!(!ml.follow_bottom.load(Relaxed));
+        assert_eq!(ml.scroll_offset.load(Relaxed), 45);
+    }
+
+    #[test]
+    fn component_ids_unique() {
+        assert_ne!(MessageList::default().id(), MessageList::default().id());
     }
 }

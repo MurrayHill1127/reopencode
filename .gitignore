@@ -72,3 +72,6 @@ node_modules/
 # 文档构建产物
 docs/_build/
 docs/build/
+
+# 本地启动脚本（不推送远程）
+start.sh
