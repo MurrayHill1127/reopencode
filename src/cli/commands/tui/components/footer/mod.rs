@@ -1,14 +1,14 @@
-//! Footer Component — DeepSeek-TUI inspired 1-line status bar.
+//! Footer Component — 1-line status bar.
 //!
-//! Layout:
+//! ## Layout when idle
 //!
 //! ```text
-//! ~/Projects/repo          ⠿ Thinking…              Ready
+//! ~/Projects/ROC   build·cl-3.5   I  0%   ^B ^P
 //! ```
 //!
-//! Left: current working directory (muted, truncated to fit)
-//! Centre: animated Braille spinner + label while streaming
-//! Right: status text
+//! Left: current working directory (muted, truncated)
+//! Centre: agent · model (INFO color) — or Braille spinner while streaming
+//! Right: mode indicator + token % + keybind hints
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -28,20 +28,19 @@ use crate::mcp::types::McpStatus;
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 
-const C_TEXT: Color = Color::Rgb(238, 238, 238);
 const C_TEXT_MUTED: Color = Color::Rgb(128, 128, 128);
 const C_TEXT_DIM: Color = Color::Rgb(80, 80, 80);
 const C_PRIMARY: Color = Color::Rgb(250, 178, 131);
 const C_ACCENT: Color = Color::Rgb(157, 124, 216);
 const C_SUCCESS: Color = Color::Rgb(127, 216, 143);
 const C_WARNING: Color = Color::Rgb(245, 167, 66);
-const C_ERROR: Color = Color::Rgb(224, 108, 117);
+const C_INFO: Color = Color::Rgb(86, 182, 194);
 const C_BG: Color = Color::Rgb(10, 10, 10);
 
 // ── Spinner ───────────────────────────────────────────────────────────────────
 
 const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const SPINNER_MS: u64 = 80; // ms per frame
+const SPINNER_MS: u64 = 80;
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -54,9 +53,12 @@ pub struct Footer {
     pub lsp_count: usize,
     pub mcp_statuses: HashMap<String, McpStatus>,
     pub session_id: Option<String>,
-    /// Spinner frame index
+    // ── New fields for enriched status bar ────────────────────────────────
+    pub agent: String,
+    pub model_short: String,
+    pub token_pct: u8,
+    pub mode_slash: bool,
     spinner_tick: u8,
-    /// Accumulated ms for spinner timing
     spinner_accum: u64,
 }
 
@@ -85,6 +87,10 @@ impl Footer {
             lsp_count: 0,
             mcp_statuses: HashMap::new(),
             session_id: None,
+            agent: String::new(),
+            model_short: String::new(),
+            token_pct: 0,
+            mode_slash: false,
             spinner_tick: 0,
             spinner_accum: 0,
         }
@@ -97,6 +103,10 @@ impl Footer {
     pub fn set_lsp_count(&mut self, n: usize)              { self.lsp_count = n; }
     pub fn set_pending_permissions(&mut self, n: usize)    { self.pending_permissions = n; }
     pub fn set_mcp_statuses(&mut self, m: HashMap<String, McpStatus>) { self.mcp_statuses = m; }
+    pub fn set_agent(&mut self, a: String)                 { self.agent = a; }
+    pub fn set_model_short(&mut self, m: String)           { self.model_short = m; }
+    pub fn set_token_pct(&mut self, p: u8)                 { self.token_pct = p; }
+    pub fn set_mode_slash(&mut self, s: bool)              { self.mode_slash = s; }
 
     pub fn directory(&self) -> &str { &self.directory }
     pub fn is_connected(&self) -> bool { self.session_id.is_some() }
@@ -113,74 +123,11 @@ impl Component for Footer {
         let total_w = area.width as usize;
         if total_w == 0 { return; }
 
-        // ── Right side: status ────────────────────────────────────────────
-        let (status_str, status_color) = if self.streaming {
-            ("Streaming".to_string(), C_ACCENT)
-        } else if !self.is_connected() {
-            ("Connecting…".to_string(), C_TEXT_DIM)
-        } else if self.pending_permissions > 0 {
-            (format!("△ {} pending", self.pending_permissions), C_WARNING)
+        if self.streaming {
+            self.render_streaming(f, area, total_w);
         } else {
-            (self.status.clone(), C_TEXT_MUTED)
-        };
-        let right_w = status_str.width();
-
-        // ── Centre: spinner while streaming ──────────────────────────────
-        let (centre_str, centre_color) = if self.streaming {
-            let frame = SPINNER[self.spinner_tick as usize % SPINNER.len()];
-            (format!(" {} Thinking…", frame), C_ACCENT)
-        } else {
-            // LSP/MCP indicators when connected
-            let lsp_color = if self.lsp_count > 0 { C_SUCCESS } else { C_TEXT_DIM };
-            let mcp_count = self.mcp_statuses.len();
-            let all_ok = self.mcp_statuses.values().all(|s| matches!(s, McpStatus::Connected));
-            let mcp_color = if mcp_count > 0 && all_ok { C_SUCCESS } else { C_TEXT_DIM };
-            let _ = (lsp_color, mcp_color);
-            (String::new(), C_TEXT_DIM)
-        };
-        let centre_w = centre_str.width();
-
-        // ── Left side: directory ──────────────────────────────────────────
-        let max_dir = total_w
-            .saturating_sub(centre_w)
-            .saturating_sub(right_w)
-            .saturating_sub(4); // margins
-
-        let dir = &self.directory;
-        let dir_str: String = if dir.width() > max_dir && max_dir > 3 {
-            let mut s = "…".to_string();
-            let chars: Vec<char> = dir.chars().collect();
-            let keep = chars.len().saturating_sub(max_dir.saturating_sub(1));
-            s.push_str(&chars[keep..].iter().collect::<String>());
-            s
-        } else {
-            dir.clone()
-        };
-        let left_w = dir_str.width();
-
-        // ── Gap calculations ──────────────────────────────────────────────
-        let used = left_w + centre_w + right_w;
-        let gap_total = total_w.saturating_sub(used);
-        let gap1 = if centre_w > 0 { gap_total / 2 } else { gap_total };
-        let gap2 = gap_total.saturating_sub(gap1);
-
-        // ── Assemble ──────────────────────────────────────────────────────
-        let mut spans: Vec<Span<'static>> = Vec::new();
-
-        spans.push(Span::styled(dir_str, Style::default().fg(C_TEXT_MUTED)));
-        spans.push(Span::raw(" ".repeat(gap1)));
-
-        if !centre_str.is_empty() {
-            spans.push(Span::styled(centre_str, Style::default().fg(centre_color).add_modifier(Modifier::BOLD)));
+            self.render_idle(f, area, total_w);
         }
-
-        spans.push(Span::raw(" ".repeat(gap2)));
-        spans.push(Span::styled(status_str, Style::default().fg(status_color)));
-
-        f.render_widget(
-            Paragraph::new(Line::from(spans)).style(Style::default().bg(C_BG)),
-            area,
-        );
     }
 
     fn update(&mut self, delta: Duration) {
@@ -201,6 +148,101 @@ impl Component for Footer {
     fn focused(&self) -> bool { false }
     fn on_focus(&mut self) {}
     fn on_blur(&mut self) {}
+}
+
+impl Footer {
+    fn render_streaming(&self, f: &mut Frame, area: Rect, total_w: usize) {
+        let frame = SPINNER[self.spinner_tick as usize % SPINNER.len()];
+        let centre_str = format!(" {} Thinking…", frame);
+        let right_str = "Streaming";
+        let centre_w = centre_str.width();
+        let right_w = right_str.width();
+        let max_dir = total_w.saturating_sub(centre_w + right_w + 4);
+        let dir_str = truncate_left(&self.directory, max_dir);
+        let left_w = dir_str.width();
+        let used = left_w + centre_w + right_w;
+        let gap = total_w.saturating_sub(used);
+        let gap1 = gap / 2;
+        let gap2 = gap.saturating_sub(gap1);
+        let spans = vec![
+            Span::styled(dir_str, Style::default().fg(C_TEXT_MUTED)),
+            Span::raw(" ".repeat(gap1)),
+            Span::styled(centre_str, Style::default().fg(C_ACCENT).add_modifier(Modifier::BOLD)),
+            Span::raw(" ".repeat(gap2)),
+            Span::styled(right_str, Style::default().fg(C_ACCENT)),
+        ];
+        f.render_widget(
+            Paragraph::new(Line::from(spans)).style(Style::default().bg(C_BG)),
+            area,
+        );
+    }
+
+    fn render_idle(&self, f: &mut Frame, area: Rect, total_w: usize) {
+        // ── Right: mode + token% + hints ─────────────────────────────────
+        let (mode_char, mode_color) = if self.mode_slash {
+            ("/", C_PRIMARY)
+        } else {
+            ("I", C_TEXT_DIM)
+        };
+
+        let right_str = if self.pending_permissions > 0 {
+            format!("△ {} pending", self.pending_permissions)
+        } else if !self.is_connected() {
+            "Connecting…".to_string()
+        } else {
+            format!("{}  {}%  ^B ^P", mode_char, self.token_pct)
+        };
+        let right_color = if self.pending_permissions > 0 { C_WARNING }
+            else if !self.is_connected() { C_TEXT_DIM }
+            else { mode_color };
+        let right_w = right_str.width();
+
+        // ── Centre: agent · model ─────────────────────────────────────────
+        let centre_str = if !self.agent.is_empty() && !self.model_short.is_empty() {
+            format!(" {}·{}", self.agent, self.model_short)
+        } else if !self.agent.is_empty() {
+            format!(" {}", self.agent)
+        } else {
+            String::new()
+        };
+        let centre_w = centre_str.width();
+
+        // ── Left: directory ───────────────────────────────────────────────
+        let max_dir = total_w.saturating_sub(centre_w + right_w + 4);
+        let dir_str = truncate_left(&self.directory, max_dir);
+        let left_w = dir_str.width();
+
+        // ── Gap math ──────────────────────────────────────────────────────
+        let used = left_w + centre_w + right_w;
+        let gap = total_w.saturating_sub(used);
+        let gap1 = if centre_w > 0 { gap / 2 } else { gap };
+        let gap2 = gap.saturating_sub(gap1);
+
+        // ── Assemble ──────────────────────────────────────────────────────
+        let mut spans: Vec<Span<'static>> = vec![
+            Span::styled(dir_str, Style::default().fg(C_TEXT_MUTED)),
+            Span::raw(" ".repeat(gap1)),
+        ];
+        if !centre_str.is_empty() {
+            spans.push(Span::styled(centre_str, Style::default().fg(C_INFO)));
+        }
+        spans.push(Span::raw(" ".repeat(gap2)));
+        spans.push(Span::styled(right_str, Style::default().fg(right_color)));
+
+        f.render_widget(
+            Paragraph::new(Line::from(spans)).style(Style::default().bg(C_BG)),
+            area,
+        );
+    }
+}
+
+fn truncate_left(s: &str, max: usize) -> String {
+    if s.width() <= max || max < 4 {
+        return s.to_string();
+    }
+    let chars: Vec<char> = s.chars().collect();
+    let keep = chars.len().saturating_sub(max.saturating_sub(1));
+    format!("…{}", chars[keep..].iter().collect::<String>())
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -227,7 +269,6 @@ mod tests {
         let mut f = Footer::new();
         f.streaming = true;
         let tick_before = f.spinner_tick;
-        // 9 frames × 80ms = 720ms > 1 tick
         f.update(Duration::from_millis(SPINNER_MS + 1));
         assert_ne!(f.spinner_tick, tick_before);
     }
@@ -240,5 +281,18 @@ mod tests {
         f.streaming = false;
         f.update(Duration::from_millis(100));
         assert_eq!(f.spinner_tick, 0);
+    }
+
+    #[test]
+    fn setters_work() {
+        let mut f = Footer::new();
+        f.set_agent("build".into());
+        f.set_model_short("cl-3.5".into());
+        f.set_token_pct(42);
+        f.set_mode_slash(true);
+        assert_eq!(f.agent, "build");
+        assert_eq!(f.model_short, "cl-3.5");
+        assert_eq!(f.token_pct, 42);
+        assert!(f.mode_slash);
     }
 }

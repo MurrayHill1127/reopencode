@@ -104,6 +104,11 @@ impl TextArea {
         self.cursor
     }
 
+    /// Returns true when the first line starts with `/` (slash-command mode).
+    pub fn starts_with_slash(&self) -> bool {
+        self.lines.first().map(|l| l.starts_with('/')).unwrap_or(false)
+    }
+
     pub fn line_count(&self) -> usize {
         self.lines.len()
     }

@@ -10,6 +10,7 @@ pub mod components;
 pub mod events;
 pub mod keybindings;
 pub mod markdown;
+pub mod slash_commands;
 pub mod syntax;
 pub mod theme;
 pub mod transcript;
@@ -37,9 +38,10 @@ use components::mcp_status::McpStatusPanel;
 use components::session_list::SessionList;
 use components::{
     AgentInfo, CommandDialog, CommandEntry, Component, ContextInfo, DialogAgent, FocusManager,
-    Header, MessageList, StatusDialog, TextArea,
+    Header, LeftSidebar, MessageList, StatusDialog, TextArea,
 };
 use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
+use slash_commands::{SlashCommand, parse_slash};
 use std::collections::HashMap;
 use theme::ThemeContext;
 use transcript::{MessageRole, TranscriptMessage, create_assistant_message, create_user_message};
@@ -96,6 +98,7 @@ pub struct TuiApp {
     pub message_list: MessageList,
     pub input_component: TextArea,
     pub footer: Footer,
+    pub left_sidebar: LeftSidebar,
 
     // ── Overlay / dialog components ───────────────────────────────────────
     pub status_dialog: StatusDialog,
@@ -114,6 +117,10 @@ pub struct TuiApp {
     pub pending_permissions: usize,
     pub context_info: ContextInfo,
     pub focus_manager: FocusManager,
+
+    // ── Slash-command pending actions ─────────────────────────────────────
+    pending_new_session: bool,
+    pending_new_title: Option<String>,
 
     // ── Toast expiry state ────────────────────────────────────────────────
     pub toasts: Vec<(usize, u64)>,
@@ -159,6 +166,7 @@ impl Default for TuiApp {
             message_list: MessageList::new(vec![]),
             input_component: TextArea::new(),
             footer,
+            left_sidebar: LeftSidebar::new(),
 
             status_dialog: StatusDialog::new(),
             command_dialog: CommandDialog::new(),
@@ -175,6 +183,9 @@ impl Default for TuiApp {
             pending_permissions: 0,
             context_info: ContextInfo::default(),
             focus_manager: FocusManager::new(),
+
+            pending_new_session: false,
+            pending_new_title: None,
 
             toasts: Vec::new(),
 
@@ -221,10 +232,73 @@ impl TuiApp {
         self.command_dialog.set_commands(commands);
     }
 
+    fn execute_slash(&mut self, cmd: SlashCommand) {
+        match cmd {
+            SlashCommand::Exit => { self.running = false; }
+            SlashCommand::New { title } => {
+                self.pending_new_session = true;
+                self.pending_new_title = title;
+            }
+            SlashCommand::Clear => {
+                self.messages.clear();
+                self.message_list.clear();
+                self.status = "Cleared".to_string();
+                self.footer.set_status("Cleared".to_string());
+            }
+            SlashCommand::Help => { self.push_help_message(); }
+            SlashCommand::Sessions => {
+                self.left_sidebar.toggle();
+                if self.left_sidebar.is_visible() { self.left_sidebar.on_focus(); }
+            }
+            SlashCommand::Unknown(name) => {
+                let err = create_assistant_message(
+                    &format!("Unknown command: /{}\n\nAvailable commands:\n  /exit    — quit\n  /new [title] — new session\n  /clear   — clear conversation\n  /help    — show this help\n  /sessions — toggle sidebar", name),
+                    "system", "internal", None,
+                );
+                self.messages.push(err.clone());
+                self.message_list.push(err);
+            }
+        }
+    }
+
+    fn push_help_message(&mut self) {
+        let text = "**Slash Commands**\n\
+            \n\
+            `/exit` — quit roc\n\
+            `/new [title]` — create a new session\n\
+            `/clear` — clear the current conversation\n\
+            `/sessions` — toggle the sessions sidebar\n\
+            `/help` — show this message\n\
+            \n\
+            **Keyboard Shortcuts**\n\
+            \n\
+            `Ctrl+B` — toggle sidebar\n\
+            `Ctrl+P` — session list overlay\n\
+            `Ctrl+M` — MCP status\n\
+            `Ctrl+C` — cancel streaming / quit\n\
+            `Ctrl+J` / `Shift+Enter` — newline in input\n\
+            `Tab` — cycle focus between input and message list\n\
+            `j`/`k` / `↑`/`↓` — scroll messages (when message list is focused)\n\
+            `g`/`G` — jump to top / bottom\n";
+        let msg = create_assistant_message(text, "system", "internal", None);
+        self.messages.push(msg.clone());
+        self.message_list.push(msg);
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<String> {
         use components::EventPropagation;
 
         // Overlay components get priority
+        if self.left_sidebar.is_visible() && self.left_sidebar.is_focused() {
+            if self.left_sidebar.handle_input(key) == EventPropagation::Stop {
+                if !self.left_sidebar.is_focused() {
+                    // Sidebar blurred — return focus to input
+                    self.input_component.on_focus();
+                }
+                return None;
+            }
+        }
+
         if self.session_list.is_visible() && self.session_list.focused() {
             if self.session_list.handle_input(key) == EventPropagation::Stop {
                 return None;
@@ -264,6 +338,18 @@ impl TuiApp {
                 self.input_component.set_streaming(false);
             } else {
                 self.running = false;
+            }
+            return None;
+        }
+
+        // Ctrl+B toggles the persistent sidebar
+        if key.code == KeyCode::Char('b') && key.modifiers == KeyModifiers::CONTROL {
+            self.left_sidebar.toggle();
+            if self.left_sidebar.is_visible() {
+                self.left_sidebar.on_focus();
+                self.input_component.on_blur();
+            } else {
+                self.input_component.on_focus();
             }
             return None;
         }
@@ -326,6 +412,11 @@ impl TuiApp {
 
         // Check if user pressed Enter to submit
         if let Some(msg) = self.input_component.take_submit() {
+            // Slash commands are consumed here — not sent to the LLM
+            if let Some(cmd) = parse_slash(&msg) {
+                self.execute_slash(cmd);
+                return None;
+            }
             let user_msg = create_user_message(&msg);
             self.messages.push(user_msg.clone());
             self.message_list.push(user_msg);
@@ -368,9 +459,12 @@ impl TuiApp {
                         self.session_id = Some(session.id.clone());
                         self.session_title = session.title.clone();
                         self.header.set_session_title(&session.title);
-                        self.footer.set_session_id(Some(session.id));
+                        self.footer.set_session_id(Some(session.id.clone()));
                         self.status = "Ready".to_string();
                         self.footer.set_status("Ready".into());
+                        // Populate sidebar with the new session
+                        self.left_sidebar.set_current(Some(session.id.clone()));
+                        self.left_sidebar.set_sessions(vec![(session.id, session.title)]);
                     }
                     Err(e) => { self.status = format!("Parse error: {}", e); }
                 }
@@ -446,6 +540,10 @@ impl TuiApp {
         self.input_component.set_streaming(on);
         if on {
             self.status = "Streaming…".to_string();
+            let agent = self.dialog_agent.current_agent().unwrap_or("build").to_string();
+            let model = shorten_model_id(&self.header.model);
+            self.footer.set_agent(agent);
+            self.footer.set_model_short(model);
         }
     }
 
@@ -570,6 +668,35 @@ async fn run_app<B: ratatui::backend::Backend>(
         app.footer.update(delta);
         app.process_expired_toasts();
 
+        // ── Per-frame state sync ──────────────────────────────────────────
+        // Footer enriched status
+        app.footer.set_mode_slash(app.input_component.starts_with_slash());
+        app.footer.set_token_pct(app.context_info.percentage.unwrap_or(0));
+        // Sync sidebar context info
+        if app.left_sidebar.is_visible() {
+            app.left_sidebar.set_agent(
+                app.dialog_agent.current_agent().unwrap_or("build").to_string(),
+                app.header.model.clone(),
+            );
+            app.left_sidebar.set_token_pct(app.context_info.percentage.unwrap_or(0));
+        }
+
+        // ── Pending slash-command actions ─────────────────────────────────
+        if app.pending_new_session {
+            app.pending_new_session = false;
+            let _title = app.pending_new_title.take();
+            app.init_session().await;
+        }
+        if let Some(sess_id) = app.left_sidebar.take_pending_select() {
+            app.session_id = Some(sess_id.clone());
+            app.messages.clear();
+            app.message_list.clear();
+            app.status = "Session switched".to_string();
+            app.footer.set_status("Session switched".to_string());
+            app.header.set_session_title(&sess_id[..8.min(sess_id.len())]);
+            app.input_component.on_focus();
+        }
+
         let poll_ms = if app.stream_rx.is_some() { 33 } else { 100 };
 
         if crossterm::event::poll(std::time::Duration::from_millis(poll_ms))? {
@@ -608,7 +735,18 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         area,
     );
 
-    // 4-zone vertical layout
+    // Horizontal split: optional sidebar | content
+    let (sidebar_area, content_area) = if app.left_sidebar.is_visible() {
+        let h = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(32), Constraint::Min(20)])
+            .split(area);
+        (Some(h[0]), h[1])
+    } else {
+        (None, area)
+    };
+
+    // 4-zone vertical layout on content_area
     let zones = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -617,11 +755,14 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
             Constraint::Length(5), // composer (border + 3 content + border)
             Constraint::Length(1), // footer
         ])
-        .split(area);
+        .split(content_area);
 
     let [header_area, messages_area, composer_area, footer_area] =
         [zones[0], zones[1], zones[2], zones[3]];
 
+    if let Some(sa) = sidebar_area {
+        app.left_sidebar.render(f, sa);
+    }
     render_header(f, app, header_area);
     render_messages(f, app, messages_area);
     render_composer(f, app, composer_area);
@@ -667,6 +808,12 @@ fn render_composer(f: &mut Frame, app: &mut TuiApp, area: Rect) {
 
 fn render_footer(f: &mut Frame, app: &TuiApp, area: Rect) {
     app.footer.render(f, area);
+}
+
+fn shorten_model_id(s: &str) -> String {
+    if s.is_empty() { return String::new(); }
+    let s = s.replace("claude-", "cl-");
+    if s.len() > 14 { s[..14].to_string() } else { s }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
