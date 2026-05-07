@@ -767,8 +767,8 @@ impl TuiApp {
         loop {
             match rx.try_recv() {
                 Ok(StreamChunk::Text(t)) => {
-                    // Restore newlines from sentinel (server replaces \n → \x00N for SSE transport)
-                    let decoded = t.replace("\x00N", "\n");
+                    // Restore newlines from SOH sentinel (server replaces \n → \x01 for SSE transport)
+                    let decoded = t.replace('\x01', "\n");
                     if let Some(msg) = self.messages.last_mut() {
                         if let Some(PartType::Text { text, .. }) = msg.parts.first_mut() {
                             text.push_str(&decoded);

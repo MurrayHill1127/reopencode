@@ -340,7 +340,7 @@ pub async fn stream_message(
             ).await {
                 Ok(r) => r,
                 Err(e) => {
-                    let msg = format!("[ERROR] Provider error: {e}").replace('\n', "\x00N");
+                    let msg = format!("[ERROR] Provider error: {e}").replace('\n', "\x01");
                     let _ = tx.send(msg);
                     return;
                 }
@@ -350,10 +350,8 @@ pub async fn stream_message(
             if !response.content.is_empty() {
                 full_response.push_str(&response.content);
                 // SSE data fields cannot contain newlines (axum asserts this).
-                // Replace \n with a sentinel to safely transport paragraphs through SSE.
-                const NL: &str = "\n";
-                const SENTINEL: &str = "\x00N";
-                let safe_content = response.content.replace(NL, SENTINEL);
+                // Replace \n with \x01 (SOH) to safely transport paragraphs.
+                let safe_content = response.content.replace('\n', "\x01");
                 for chunk in safe_content.split_inclusive(' ') {
                     let _ = tx.send(chunk.to_string());
                 }
@@ -389,7 +387,7 @@ pub async fn stream_message(
                     Some(tool) => {
                         // Announce the tool call to the stream
                         let announce = format!("**Tool: {}**\n```\n{}\n```\n", tool_name, args);
-                        let safe = announce.replace('\n', "\x00N");
+                        let safe = announce.replace('\n', "\x01");
                         let _ = tx.send(safe);
 
                         match tool.execute(args).await {
