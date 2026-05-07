@@ -767,8 +767,8 @@ impl TuiApp {
         loop {
             match rx.try_recv() {
                 Ok(StreamChunk::Text(t)) => {
-                    // JSON-decode the chunk (server JSON-encodes to safely transport newlines through SSE)
-                    let decoded: String = serde_json::from_str(&t).unwrap_or_else(|_| t.clone());
+                    // Restore newlines from sentinel (server replaces \n → \x00N for SSE transport)
+                    let decoded = t.replace("\x00N", "\n");
                     if let Some(msg) = self.messages.last_mut() {
                         if let Some(PartType::Text { text, .. }) = msg.parts.first_mut() {
                             text.push_str(&decoded);

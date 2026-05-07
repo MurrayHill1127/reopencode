@@ -340,9 +340,8 @@ pub async fn stream_message(
             ).await {
                 Ok(r) => r,
                 Err(e) => {
-                    let msg = format!("[ERROR] Provider error: {e}");
-                    let encoded = serde_json::to_string(&msg).unwrap_or_else(|_| String::new());
-                    let _ = tx.send(encoded);
+                    let msg = format!("[ERROR] Provider error: {e}").replace('\n', "\x00N");
+                    let _ = tx.send(msg);
                     return;
                 }
             };
@@ -350,11 +349,13 @@ pub async fn stream_message(
             // Stream any text content immediately
             if !response.content.is_empty() {
                 full_response.push_str(&response.content);
-                // Send in small chunks so the TUI renders progressively.
-                // JSON-encode each chunk to safely transport newlines through SSE.
-                for chunk in response.content.split_inclusive(' ') {
-                    let encoded = serde_json::to_string(chunk).unwrap_or_else(|_| String::new());
-                    let _ = tx.send(encoded);
+                // SSE data fields cannot contain newlines (axum asserts this).
+                // Replace \n with a sentinel to safely transport paragraphs through SSE.
+                const NL: &str = "\n";
+                const SENTINEL: &str = "\x00N";
+                let safe_content = response.content.replace(NL, SENTINEL);
+                for chunk in safe_content.split_inclusive(' ') {
+                    let _ = tx.send(chunk.to_string());
                 }
             }
 
@@ -388,8 +389,8 @@ pub async fn stream_message(
                     Some(tool) => {
                         // Announce the tool call to the stream
                         let announce = format!("**Tool: {}**\n```\n{}\n```\n", tool_name, args);
-                        let encoded = serde_json::to_string(&announce).unwrap_or_else(|_| String::new());
-                        let _ = tx.send(encoded);
+                        let safe = announce.replace('\n', "\x00N");
+                        let _ = tx.send(safe);
 
                         match tool.execute(args).await {
                             Ok(r) => r.output,
