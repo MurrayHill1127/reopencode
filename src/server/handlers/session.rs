@@ -384,14 +384,17 @@ pub async fn stream_message(
                 }
             };
 
-            // Stream any text content immediately
+            // Stream text content with small chunks for real-time feel
             if !response.content.is_empty() {
                 full_response.push_str(&response.content);
-                // SSE data fields cannot contain newlines (axum asserts this).
-                // Replace \n with \x01 (SOH) to safely transport paragraphs.
                 let safe_content = response.content.replace('\n', "\x01");
-                for chunk in safe_content.split_inclusive(' ') {
-                    let _ = tx.send(chunk.to_string());
+                // Send in 3-char micro-chunks for smooth streaming animation
+                let chars: Vec<char> = safe_content.chars().collect();
+                for chunk in chars.chunks(3) {
+                    let s: String = chunk.iter().collect();
+                    if !s.is_empty() {
+                        let _ = tx.send(s);
+                    }
                 }
             }
 
