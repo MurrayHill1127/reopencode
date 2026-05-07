@@ -767,12 +767,14 @@ impl TuiApp {
         loop {
             match rx.try_recv() {
                 Ok(StreamChunk::Text(t)) => {
+                    // JSON-decode the chunk (server JSON-encodes to safely transport newlines through SSE)
+                    let decoded: String = serde_json::from_str(&t).unwrap_or_else(|_| t.clone());
                     if let Some(msg) = self.messages.last_mut() {
                         if let Some(PartType::Text { text, .. }) = msg.parts.first_mut() {
-                            text.push_str(&t);
+                            text.push_str(&decoded);
                         }
                     }
-                    self.message_list.append_last_text(&t);
+                    self.message_list.append_last_text(&decoded);
                 }
                 Ok(StreamChunk::Done) => {
                     let elapsed = self.stream_started.take().map(|s| s.elapsed().as_millis() as u64);

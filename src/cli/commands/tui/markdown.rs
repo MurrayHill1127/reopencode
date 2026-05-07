@@ -785,4 +785,86 @@ mod tests {
         assert_eq!(md.blocks.len(), 1);
         assert!(matches!(&md.blocks[0], Block::Heading { level: 2, .. }));
     }
+
+    #[test]
+    fn real_llm_markdown_output() {
+        // Typical Claude/DeepSeek response with code, bold, lists, etc.
+        let content = "## Solution\n\nHere is the fix for your bug:\n\nThe issue was in the `login` function.\n\n```rust\nfn login(user: &str) -> bool {\n    user != \"admin\"\n}\n```\n\n**Key changes:**\n\n- Added input validation\n- Fixed the null check\n\n> Note: restart the server after applying.\n\nLet me know if you need anything else!";
+        let lines = super::render_markdown(content, 80);
+        
+        // Should produce multiple lines
+        assert!(lines.len() > 5, "Expected >5 lines, got {}", lines.len());
+        
+        // Check heading H2 rendered with bold+color
+        let heading_line = &lines[0];
+        let has_h2_bold = heading_line.spans.iter().any(|s| {
+            s.style.add_modifier.contains(Modifier::BOLD) 
+            && s.content.contains("Solution")
+        });
+        assert!(has_h2_bold, "H2 heading should be bold. Spans: {:?}", heading_line.spans.iter().map(|s| &*s.content).collect::<Vec<_>>());
+        
+        // Check inline code has C_INFO color
+        let has_code_color = lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.style.fg == Some(super::C_INFO) && s.content.contains("login"))
+        });
+        assert!(has_code_color, "Inline code `login` should have C_INFO color");
+        
+        // Check code block has border
+        let has_border = lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.content.contains('╭') && s.style.fg == Some(super::C_BORDER))
+        });
+        assert!(has_border, "Code block should have top border");
+        
+        // Check bold text
+        let has_bold = lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.style.add_modifier.contains(Modifier::BOLD) && s.content.contains("Key changes"))
+        });
+        assert!(has_bold, "**Key changes:** should be bold");
+        
+        // Check blockquote
+        let has_quote = lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.content.contains('┃'))
+        });
+        assert!(has_quote, "Blockquote should have ┃ bar");
+        
+        // Check list items
+        let has_list = lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.content.contains('•'))
+        });
+        assert!(has_list, "List should have bullet points");
+    }
+    
+    #[test]
+    fn streaming_text_accumulation() {
+        // Simulate SSE streaming: text arrives in chunks
+        let full_text = "## Title\n\n**bold** and `code`\n\n- item 1\n- item 2";
+        
+        // Chunks like the server sends (split by space, keep space)
+        let chunks: Vec<String> = full_text.split_inclusive(' ').map(|s| s.to_string()).collect();
+        
+        // Accumulate like append_last_text does
+        let mut accumulated = String::new();
+        for chunk in &chunks {
+            accumulated.push_str(chunk);
+        }
+        
+        assert_eq!(accumulated, full_text, "SSE-style accumulation must preserve original text");
+        
+        // Now render the accumulated text
+        let lines = super::render_markdown(&accumulated, 80);
+        assert!(lines.len() > 3);
+        
+        // Verify bold rendering
+        let has_bold = lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.style.add_modifier.contains(Modifier::BOLD) && s.content.contains("bold"))
+        });
+        assert!(has_bold, "Bold from accumulated text should render");
+        
+        // Verify inline code
+        let has_code = lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.style.fg == Some(super::C_INFO) && s.content.contains("code"))
+        });
+        assert!(has_code, "Inline code from accumulated text should render");
+    }
 }
+

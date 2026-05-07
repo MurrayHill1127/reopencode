@@ -341,7 +341,8 @@ pub async fn stream_message(
                 Ok(r) => r,
                 Err(e) => {
                     let msg = format!("[ERROR] Provider error: {e}");
-                    let _ = tx.send(msg);
+                    let encoded = serde_json::to_string(&msg).unwrap_or_else(|_| String::new());
+                    let _ = tx.send(encoded);
                     return;
                 }
             };
@@ -349,9 +350,11 @@ pub async fn stream_message(
             // Stream any text content immediately
             if !response.content.is_empty() {
                 full_response.push_str(&response.content);
-                // Send in small chunks so the TUI renders progressively
+                // Send in small chunks so the TUI renders progressively.
+                // JSON-encode each chunk to safely transport newlines through SSE.
                 for chunk in response.content.split_inclusive(' ') {
-                    let _ = tx.send(chunk.to_string());
+                    let encoded = serde_json::to_string(chunk).unwrap_or_else(|_| String::new());
+                    let _ = tx.send(encoded);
                 }
             }
 
@@ -384,8 +387,9 @@ pub async fn stream_message(
                     }
                     Some(tool) => {
                         // Announce the tool call to the stream
-                        let announce = format!("\n\n**Tool: {}**\n```\n{}\n```\n\n", tool_name, args);
-                        let _ = tx.send(announce);
+                        let announce = format!("**Tool: {}**\n```\n{}\n```\n", tool_name, args);
+                        let encoded = serde_json::to_string(&announce).unwrap_or_else(|_| String::new());
+                        let _ = tx.send(encoded);
 
                         match tool.execute(args).await {
                             Ok(r) => r.output,
