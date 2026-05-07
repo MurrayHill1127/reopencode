@@ -267,7 +267,7 @@ pub async fn stream_message(
 ) -> Sse<impl futures::Stream<Item = Result<Event, Infallible>>> {
     info!("Streaming message for session {}", session_id);
 
-    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+    let (tx, rx) = mpsc::unbounded_channel::<String>();
 
     // Clone what the spawned task needs.
     let provider = state.provider.clone();

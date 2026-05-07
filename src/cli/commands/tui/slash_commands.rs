@@ -17,6 +17,12 @@ pub enum SlashCommand {
     Help,
     /// `/sessions` — toggle the session sidebar.
     Sessions,
+    /// `/undo` — revert to last user message.
+    Undo,
+    /// `/redo` — restore undone messages.
+    Redo,
+    /// `/copy` — copy last assistant message to clipboard.
+    Copy,
     /// Unrecognised command name (preserved for error messaging).
     Unknown(String),
 }
@@ -46,6 +52,9 @@ pub fn parse_slash(input: &str) -> Option<SlashCommand> {
         "clear" => SlashCommand::Clear,
         "help" | "h" | "?" => SlashCommand::Help,
         "sessions" | "session" | "s" => SlashCommand::Sessions,
+        "undo" => SlashCommand::Undo,
+        "redo" => SlashCommand::Redo,
+        "copy" | "y" => SlashCommand::Copy,
         other => SlashCommand::Unknown(other.to_string()),
     })
 }

@@ -283,6 +283,68 @@ impl TextArea {
         self.lines = vec![String::new()];
         self.cursor = (0, 0);
     }
+
+    fn move_word_left(&mut self) {
+        let (row, col) = self.cursor;
+        let line = &self.lines[row];
+        // Skip trailing whitespace
+        let mut pos = col;
+        while pos > 0 && line.as_bytes().get(pos.saturating_sub(1)) == Some(&b' ') {
+            pos = pos.saturating_sub(1);
+        }
+        // Skip to start of word
+        while pos > 0 && line.as_bytes().get(pos.saturating_sub(1)) != Some(&b' ') {
+            pos = pos.saturating_sub(1);
+        }
+        self.cursor.1 = pos;
+    }
+
+    fn move_word_right(&mut self) {
+        let (row, col) = self.cursor;
+        let line = &self.lines[row];
+        let mut pos = col;
+        // Skip word characters
+        while pos < line.len() && line.as_bytes().get(pos) != Some(&b' ') {
+            pos += 1;
+        }
+        // Skip whitespace
+        while pos < line.len() && line.as_bytes().get(pos) == Some(&b' ') {
+            pos += 1;
+        }
+        self.cursor.1 = pos;
+    }
+
+    fn delete_word_backward(&mut self) {
+        let (row, col) = self.cursor;
+        if col == 0 && row > 0 {
+            // Merge with previous line
+            let cur = self.lines.remove(row);
+            let prev_len = self.lines[row - 1].len();
+            self.lines[row - 1].push_str(&cur);
+            self.cursor = (row - 1, prev_len);
+            return;
+        }
+        let old_col = col;
+        self.move_word_left();
+        let new_col = self.cursor.1;
+        self.lines[row].drain(new_col..old_col);
+        self.cursor.1 = new_col;
+    }
+
+    fn delete_word_forward(&mut self) {
+        let (row, col) = self.cursor;
+        let line = &self.lines[row];
+        if col >= line.len() && row + 1 < self.lines.len() {
+            let next = self.lines.remove(row + 1);
+            self.lines[row].push_str(&next);
+            return;
+        }
+        let old_col = col;
+        self.move_word_right();
+        let new_col = self.cursor.1;
+        self.lines[row].drain(old_col..new_col);
+        self.cursor.1 = old_col;
+    }
 }
 
 impl Default for TextArea {
@@ -402,6 +464,8 @@ impl Component for TextArea {
                 EventPropagation::Stop
             }
             // Navigation
+            (KeyCode::Left, KeyModifiers::CONTROL)  => { self.move_word_left(); EventPropagation::Stop }
+            (KeyCode::Right, KeyModifiers::CONTROL) => { self.move_word_right(); EventPropagation::Stop }
             (KeyCode::Left, _)     => { self.move_left();  EventPropagation::Stop }
             (KeyCode::Right, _)    => { self.move_right(); EventPropagation::Stop }
             (KeyCode::Home, _)     => { self.move_home();  EventPropagation::Stop }
@@ -410,6 +474,8 @@ impl Component for TextArea {
             (KeyCode::Char('a'), KeyModifiers::CONTROL) => { self.move_home(); EventPropagation::Stop }
             (KeyCode::Char('e'), KeyModifiers::CONTROL) => { self.move_end();  EventPropagation::Stop }
             // Delete
+            (KeyCode::Backspace, KeyModifiers::ALT) | (KeyCode::Char('w'), KeyModifiers::CONTROL) => { self.delete_word_backward(); EventPropagation::Stop }
+            (KeyCode::Delete, KeyModifiers::CONTROL) => { self.delete_word_forward(); EventPropagation::Stop }
             (KeyCode::Backspace, _) => { self.backspace();    EventPropagation::Stop }
             (KeyCode::Delete, _)    => { self.delete_char();  EventPropagation::Stop }
             // Ctrl+U = clear all

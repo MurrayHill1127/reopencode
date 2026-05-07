@@ -45,7 +45,7 @@ use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
 use slash_commands::{SlashCommand, parse_slash};
 use std::collections::HashMap;
 use theme::ThemeContext;
-use transcript::{MessageRole, TranscriptMessage, create_assistant_message, create_user_message};
+use transcript::{MessageRole, PartType, TranscriptMessage, create_assistant_message, create_user_message};
 
 use components::footer::Footer;
 
@@ -136,6 +136,9 @@ pub struct TuiApp {
     // ── Staged Esc cancel ─────────────────────────────────────────────────
     esc_stage: u8,
     esc_stage_time: Option<std::time::Instant>,
+
+    // ── Undo/redo stacks ──────────────────────────────────────────────────
+    undo_stack: Vec<Vec<TranscriptMessage>>,
 }
 
 impl Default for TuiApp {
@@ -204,6 +207,8 @@ impl Default for TuiApp {
 
             esc_stage: 0,
             esc_stage_time: None,
+
+            undo_stack: Vec::new(),
         }
     }
 }
@@ -262,6 +267,9 @@ impl TuiApp {
                 self.left_sidebar.toggle();
                 if self.left_sidebar.is_visible() { self.left_sidebar.on_focus(); }
             }
+            SlashCommand::Undo => { self.undo(); }
+            SlashCommand::Redo => { self.redo(); }
+            SlashCommand::Copy => { self.copy_last(); }
             SlashCommand::Unknown(name) => {
                 let err = create_assistant_message(
                     &format!("Unknown command: /{}\n\nAvailable commands:\n  /exit    — quit\n  /new [title] — new session\n  /clear   — clear conversation\n  /help    — show this help\n  /sessions — toggle sidebar", name),
@@ -312,6 +320,75 @@ impl TuiApp {
         self.status = "Shell command run".to_string();
     }
 
+    fn undo(&mut self) {
+        // Find last user message boundary
+        let split_at = (0..self.messages.len()).rev()
+            .find(|&i| matches!(self.messages[i].role, MessageRole::User));
+
+        match split_at {
+            Some(pos) => {
+                let removed: Vec<TranscriptMessage> = self.messages.drain(pos..).collect();
+                let count = removed.len();
+                // Rebuild message_list from remaining messages
+                self.message_list.clear();
+                for msg in &self.messages {
+                    self.message_list.push(msg.clone());
+                }
+                self.undo_stack.push(removed);
+                self.status = format!("Undone {} messages (use /redo to restore)", count);
+                self.footer.set_status(self.status.clone());
+            }
+            None => {
+                self.status = "Nothing to undo".to_string();
+                self.footer.set_status(self.status.clone());
+            }
+        }
+    }
+
+    fn redo(&mut self) {
+        if let Some(restored) = self.undo_stack.pop() {
+            let count = restored.len();
+            for msg in restored {
+                self.messages.push(msg.clone());
+                self.message_list.push(msg);
+            }
+            self.status = format!("Restored {} messages", count);
+            self.footer.set_status(self.status.clone());
+        } else {
+            self.status = "Nothing to redo".to_string();
+            self.footer.set_status(self.status.clone());
+        }
+    }
+
+    fn copy_last(&mut self) {
+        // Find last assistant message with text content
+        let text: String = self.messages.iter().rev()
+            .filter(|m| matches!(m.role, MessageRole::Assistant { .. }))
+            .flat_map(|m| m.parts.iter())
+            .filter_map(|p| match p {
+                PartType::Text { text, synthetic } if !synthetic => Some(text.as_str()),
+                _ => None,
+            })
+            .take(1)
+            .collect::<Vec<_>>()
+            .join("");
+
+        if text.is_empty() {
+            self.status = "Nothing to copy".to_string();
+            self.footer.set_status(self.status.clone());
+            return;
+        }
+
+        // Try platform clipboard
+        let result = try_copy_to_clipboard(&text);
+        if result {
+            self.status = "Copied to clipboard".to_string();
+        } else {
+            self.status = format!("Message ({} chars):\n{}", text.len(), &text[..text.len().min(200)]);
+        }
+        self.footer.set_status(self.status.clone());
+    }
+
     fn push_help_message(&mut self) {
         let text = "**Slash Commands**\n\
             \n\
@@ -319,6 +396,8 @@ impl TuiApp {
             `/new [title]` — create a new session\n\
             `/clear` — clear the current conversation\n\
             `/sessions` — toggle the sessions sidebar\n\
+            `/undo` — revert to last user message\n\
+            `/redo` — restore undone messages\n\
             `/help` — show this message\n\
             \n\
             `!` prefix — run shell command locally\n\
@@ -884,6 +963,44 @@ async fn run_app<B: ratatui::backend::Backend>(
     }
 
     Ok(())
+}
+
+// ── Clipboard ─────────────────────────────────────────────────────────────────
+
+fn try_copy_to_clipboard(text: &str) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        use std::io::Write;
+        std::process::Command::new("pbcopy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .ok()
+            .and_then(|mut child| {
+                child.stdin.take()?.write_all(text.as_bytes()).ok()?;
+                child.wait().ok()
+            })
+            .is_some()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write;
+        let has_wl = std::env::var("WAYLAND_DISPLAY").is_ok();
+        let cmd = if has_wl { "wl-copy" } else { "xclip" };
+        std::process::Command::new(cmd)
+            .arg(if has_wl { "" } else { "-selection" })
+            .arg(if has_wl { "" } else { "clipboard" })
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .ok()
+            .and_then(|mut child| {
+                child.stdin.take()?.write_all(text.as_bytes()).ok()
+            })
+            .is_some()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        false
+    }
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
