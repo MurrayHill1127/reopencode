@@ -23,6 +23,8 @@ pub enum SlashCommand {
     Redo,
     /// `/copy` — copy last assistant message to clipboard.
     Copy,
+    /// `/debug` — dump last assistant message text for debugging.
+    Debug,
     /// Unrecognised command name (preserved for error messaging).
     Unknown(String),
 }
@@ -55,6 +57,7 @@ pub fn parse_slash(input: &str) -> Option<SlashCommand> {
         "undo" => SlashCommand::Undo,
         "redo" => SlashCommand::Redo,
         "copy" | "y" => SlashCommand::Copy,
+        "debug" => SlashCommand::Debug,
         other => SlashCommand::Unknown(other.to_string()),
     })
 }

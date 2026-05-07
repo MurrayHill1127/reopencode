@@ -752,4 +752,74 @@ mod tests {
     fn component_ids_unique() {
         assert_ne!(MessageList::default().id(), MessageList::default().id());
     }
+
+    #[test]
+    fn streaming_markdown_full_pipeline() {
+        // Simulate real SSE streaming with sentinel-encoded chunks
+        let original = "## Fix\n\nHere is **bold** and `code`.\n\n```rust\nfn main() {}\n```\n\n- item 1\n- item 2";
+
+        // Server replaces \n with \x01 before SSE
+        let safe = original.replace('\n', "\x01");
+
+        // Server splits by spaces
+        let chunks: Vec<String> = safe.split_inclusive(' ').map(|s| s.to_string()).collect();
+        assert!(chunks.len() > 1, "should produce multiple chunks");
+
+        // Create placeholder like send_message does
+        let mut ml = MessageList::default();
+        ml.push(asst_msg(""));
+
+        // Simulate streaming: TUI receives chunks, decodes \x01 → \n
+        for chunk in &chunks {
+            let decoded = chunk.replace('\x01', "\n");
+            ml.append_last_text(&decoded);
+        }
+
+        // Verify full text was reconstructed
+        let full_text: String = ml.messages[0].parts.iter()
+            .filter_map(|p| match p {
+                PartType::Text { text, synthetic: false } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(full_text, original, "SSE round-trip must preserve text exactly");
+
+        // Render
+        let lines = build_cell_lines(&ml.messages[0], 80, false);
+        let all_text: String = lines.iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+
+        // Verify markdown was rendered
+        assert!(all_text.contains("Fix"), "should contain heading text");
+        assert!(all_text.contains("bold"), "should contain bold text");
+        assert!(all_text.contains("code"), "should contain inline code text");
+        assert!(all_text.contains("fn main"), "should contain code block text");
+        assert!(all_text.contains("item 1"), "should contain list text");
+
+        // Verify bold styling
+        let has_bold = lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.style.add_modifier.contains(Modifier::BOLD) && s.content.contains("bold"))
+        });
+        assert!(has_bold, "**bold** should be rendered with BOLD modifier. Lines: {:?}",
+            lines.iter().map(|l| l.spans.iter().map(|s| format!("{:?}:{:?}", s.content, s.style)).collect::<Vec<_>>()).collect::<Vec<_>>());
+
+        // Verify inline code styling
+        let has_code = lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.style.fg == Some(C_INFO) && s.content.contains("code"))
+        });
+        assert!(has_code, "`code` should be rendered with C_INFO color");
+
+        // Verify code block border
+        let has_border = lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.content.contains('╭'))
+        });
+        assert!(has_border, "code block should have border");
+
+        // Verify list bullet
+        let has_bullet = lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.content.contains('•'))
+        });
+        assert!(has_bullet, "list items should have bullet points");
+    }
 }

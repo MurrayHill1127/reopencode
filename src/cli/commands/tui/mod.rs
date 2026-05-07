@@ -270,6 +270,7 @@ impl TuiApp {
             SlashCommand::Undo => { self.undo(); }
             SlashCommand::Redo => { self.redo(); }
             SlashCommand::Copy => { self.copy_last(); }
+            SlashCommand::Debug => { self.debug_last(); }
             SlashCommand::Unknown(name) => {
                 let err = create_assistant_message(
                     &format!("Unknown command: /{}\n\nAvailable commands:\n  /exit    — quit\n  /new [title] — new session\n  /clear   — clear conversation\n  /help    — show this help\n  /sessions — toggle sidebar", name),
@@ -387,6 +388,44 @@ impl TuiApp {
             self.status = format!("Message ({} chars):\n{}", text.len(), &text[..text.len().min(200)]);
         }
         self.footer.set_status(self.status.clone());
+    }
+
+    fn debug_last(&mut self) {
+        let text = self.messages.iter().rev()
+            .filter(|m| matches!(m.role, MessageRole::Assistant { .. }))
+            .flat_map(|m| m.parts.iter())
+            .filter_map(|p| match p {
+                PartType::Text { text, synthetic } if !synthetic => Some(text.as_str()),
+                _ => None,
+            })
+            .next();
+
+        let info = if let Some(text) = text {
+            let nl_count = text.matches('\n').count();
+            let soh_count = text.matches('\x01').count();
+            let preview: String = text.chars().take(500).collect();
+            format!(
+                "**Debug Info**\n\
+                - Length: {} chars\n\
+                - Newlines: {}\n\
+                - SOH bytes (\\x01): {}\n\
+                - Has code fence: {}\n\
+                - Has bold: {}\n\
+                \n**First 500 chars:**\n```\n{}\n```",
+                text.len(),
+                nl_count,
+                soh_count,
+                text.contains("```"),
+                text.contains("**"),
+                preview,
+            )
+        } else {
+            "No assistant message found".to_string()
+        };
+
+        let debug_msg = create_assistant_message(&info, "system", "debug", None);
+        self.messages.push(debug_msg.clone());
+        self.message_list.push(debug_msg);
     }
 
     fn push_help_message(&mut self) {
