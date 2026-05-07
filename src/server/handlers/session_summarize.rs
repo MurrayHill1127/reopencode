@@ -2,69 +2,106 @@ use axum::{
     extract::{Json, Path, State},
     http::StatusCode,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::info;
 
+use crate::provider::{Message as ProviderMessage, MessageRole as ProviderMessageRole};
 use crate::server::AppState;
 
-/// Request body for summarizing a session
 #[derive(Debug, Deserialize)]
 pub struct SummarizeRequest {
-    /// Provider ID for the model to use
     pub provider_id: String,
-    /// Model ID for summarization
     pub model_id: String,
-    /// Whether this is an auto-summarization
     #[serde(default)]
     pub auto: bool,
 }
 
-/// Summarize a session using AI compaction
+#[derive(Debug, Serialize)]
+pub struct SummarizeResponse {
+    pub success: bool,
+    pub messages_compacted: usize,
+    pub summary_length: usize,
+}
+
+/// Summarize a session using AI compaction.
 ///
 /// POST /session/{id}/summarize
-/// Generates a concise summary of the session using AI to preserve key information.
-///
-/// Note: This endpoint currently returns success but the actual AI compaction
-/// logic needs to be implemented when the infrastructure is ready.
+/// Reads session messages, generates a concise summary via the provider,
+/// and replaces earlier messages with the summary system message.
 pub async fn summarize(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<SummarizeRequest>,
-) -> Result<Json<bool>, StatusCode> {
+) -> Result<Json<SummarizeResponse>, StatusCode> {
     info!(
         "Summarizing session: {} with model {}/{} (auto: {})",
         id, body.provider_id, body.model_id, body.auto
     );
 
-    // Verify session exists
-    match state.session_manager.get_session(&id).await {
-        Ok(session) => {
-            // Clean up any existing revert state
-            if session.revert.is_some() {
-                if let Err(e) = state.session_manager.clear_revert(&id).await {
-                    tracing::warn!("Failed to clear revert state during summarization: {}", e);
-                }
-            }
+    let session = state.session_manager.get_session(&id).await.map_err(|e| {
+        if e.is_not_found() { StatusCode::NOT_FOUND } else { StatusCode::INTERNAL_SERVER_ERROR }
+    })?;
 
-            // TODO: Implement actual AI summarization
-            // This would involve:
-            // 1. Getting messages from the session
-            // 2. Finding the last user message's agent
-            // 3. Creating a compaction request
-            // 4. Starting the prompt loop with the compaction
+    // Clear existing revert state
+    if session.revert.is_some() {
+        let _ = state.session_manager.clear_revert(&id).await;
+    }
 
-            // For now, return success to indicate the endpoint is working
-            // The actual summarization logic can be implemented when
-            // the AI compaction infrastructure is ready
-            Ok(Json(true))
+    // Get all messages
+    let messages = state.session_manager.get_messages(&id).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if messages.len() < 4 {
+        return Ok(Json(SummarizeResponse { success: true, messages_compacted: 0, summary_length: 0 }));
+    }
+
+    // Build conversation text from the earliest half of messages
+    let split = messages.len() / 2;
+    let to_compact: Vec<_> = messages.iter().take(split).collect();
+    let compacted_count = to_compact.len();
+
+    let conversation_text: String = to_compact
+        .iter()
+        .map(|m| format!("[{}]: {}",
+            m.role,
+            &m.content[..m.content.len().min(2000)]))
+        .collect::<Vec<_>>()
+        .join("\n---\n");
+
+    let summary_prompt = format!(
+        "Summarize this conversation segment concisely. Preserve:\n\
+         - Key decisions made\n\
+         - Files that were created, edited, or deleted\n\
+         - Commands that were run and their results\n\
+         - Unresolved issues or questions\n\n\
+         Use no more than 5-10 bullet points.\n\n{}",
+        conversation_text
+    );
+
+    match state.provider.chat(
+        vec![ProviderMessage::new(ProviderMessageRole::User, &summary_prompt)],
+        "moonshot-v1-8k",
+        0.3,
+        Some(1024),
+        &[],
+    ).await {
+        Ok(response) => {
+            let summary = format!(
+                "[Compacted context — {} messages summarized]\n{}",
+                compacted_count, response.content
+            );
+            // Store as a system message
+            let _ = state.session_manager.add_message(&id, "system", &summary).await;
+            let summary_len = summary.len();
+
+            info!("Session {} compacted: {} messages → {} chars summary", id, compacted_count, summary_len);
+            Ok(Json(SummarizeResponse {
+                success: true,
+                messages_compacted: compacted_count,
+                summary_length: summary_len,
+            }))
         }
         Err(e) => {
-            if e.is_not_found() {
-                Err(StatusCode::NOT_FOUND)
-            } else {
-                tracing::error!("Failed to get session for summarization: {}", e);
-                Err(StatusCode::INTERNAL_SERVER_ERROR)
-            }
+            tracing::error!("Compaction failed: {:?}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }

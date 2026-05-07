@@ -330,9 +330,45 @@ pub async fn stream_message(
 
         // --- agent loop ---
         const MAX_STEPS: usize = 20;
+        const COMPACT_TOKEN_LIMIT: usize = 80_000;
         let mut full_response = String::new();
 
         for step in 0..MAX_STEPS {
+            // --- compaction check: if messages are getting too large, summarize ---
+            let total_chars: usize = messages.iter().map(|m| m.content.len()).sum();
+            let est_tokens = total_chars / 4;
+            if est_tokens > COMPACT_TOKEN_LIMIT && messages.len() > 4 {
+                let keep_recent = messages.len() / 2;
+                let to_summarize: Vec<_> = messages.drain(1..keep_recent).collect();
+                if !to_summarize.is_empty() {
+                    let conversation_text: String = to_summarize
+                        .iter()
+                        .map(|m| format!("[{}]: {}",
+                            match m.role { ProviderMessageRole::User => "user", _ => "assistant" },
+                            &m.content[..m.content.len().min(2000)]))
+                        .collect::<Vec<_>>()
+                        .join("\n---\n");
+
+                    let summary_prompt = format!(
+                        "Summarize this conversation segment concisely, preserving key decisions, \
+                         file paths changed, commands run, and unresolved issues:\n\n{}",
+                        conversation_text
+                    );
+
+                    if let Ok(summary_resp) = provider.chat(
+                        vec![ProviderMessage::new(ProviderMessageRole::User, &summary_prompt)],
+                        &config.model,
+                        0.3,
+                        Some(1024),
+                        &[],
+                    ).await {
+                        let summary = format!("[Compacted context — {} messages summarized]\n{}",
+                            to_summarize.len(), summary_resp.content);
+                        messages.insert(1, ProviderMessage::new(ProviderMessageRole::System, &summary));
+                        info!("Compacted {} messages, est_tokens was {}", to_summarize.len(), est_tokens);
+                    }
+                }
+            }
             let response = match provider.chat(
                 messages.clone(),
                 &config.model,
