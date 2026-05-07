@@ -12,13 +12,10 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
-const C_TEXT: Color = Color::Rgb(238, 238, 238);
-const C_TEXT_MUTED: Color = Color::Rgb(128, 128, 128);
-const C_PRIMARY: Color = Color::Rgb(250, 178, 131);
-const C_ACCENT: Color = Color::Rgb(157, 124, 216);
-const C_BG_ELEM: Color = Color::Rgb(22, 22, 30);
-const C_BORDER: Color = Color::Rgb(72, 72, 72);
-const C_SEL_BG: Color = Color::Rgb(40, 40, 55);
+use crate::cli::commands::tui::palette::{
+    BORDER as C_BORDER, PRIMARY as C_PRIMARY, SECONDARY as C_ACCENT, SURFACE as C_BG_ELEM,
+    SURFACE_HI as C_SEL_BG, TEXT as C_TEXT, TEXT_MUTED as C_TEXT_MUTED,
+};
 
 /// Known slash commands with descriptions.
 const COMMANDS: &[(&str, &str)] = &[

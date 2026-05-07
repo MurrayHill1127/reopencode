@@ -28,14 +28,11 @@ use crate::mcp::types::McpStatus;
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 
-const C_TEXT_MUTED: Color = Color::Rgb(128, 128, 128);
-const C_TEXT_DIM: Color = Color::Rgb(80, 80, 80);
-const C_PRIMARY: Color = Color::Rgb(250, 178, 131);
-const C_ACCENT: Color = Color::Rgb(157, 124, 216);
-const C_SUCCESS: Color = Color::Rgb(127, 216, 143);
-const C_WARNING: Color = Color::Rgb(245, 167, 66);
-const C_INFO: Color = Color::Rgb(86, 182, 194);
-const C_BG: Color = Color::Rgb(10, 10, 10);
+use crate::cli::commands::tui::palette::{
+    BG as C_BG, INFO as C_INFO, PRIMARY as C_PRIMARY, SECONDARY as C_ACCENT,
+    SUCCESS as C_SUCCESS, TEXT_DIM as C_TEXT_DIM, TEXT_MUTED as C_TEXT_MUTED,
+    WARNING as C_WARNING,
+};
 
 // ── Spinner ───────────────────────────────────────────────────────────────────
 

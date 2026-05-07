@@ -28,17 +28,11 @@ use unicode_width::UnicodeWidthStr;
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 
-const C_TEXT: Color = Color::Rgb(238, 238, 238);
-const C_TEXT_MUTED: Color = Color::Rgb(128, 128, 128);
-const C_TEXT_DIM: Color = Color::Rgb(80, 80, 80);
-const C_PRIMARY: Color = Color::Rgb(250, 178, 131);
-const C_ACCENT: Color = Color::Rgb(157, 124, 216);
-const C_SUCCESS: Color = Color::Rgb(127, 216, 143);
-const C_WARNING: Color = Color::Rgb(245, 167, 66);
-const C_INFO: Color = Color::Rgb(86, 182, 194);
-const C_BG_PANEL: Color = Color::Rgb(15, 15, 15);
-const C_BORDER: Color = Color::Rgb(50, 50, 50);
-const C_SEL_BG: Color = Color::Rgb(40, 40, 50);
+use crate::cli::commands::tui::palette::{
+    BORDER as C_BORDER, INFO as C_INFO, PRIMARY as C_PRIMARY, SECONDARY as C_ACCENT,
+    SUCCESS as C_SUCCESS, SURFACE as C_BG_PANEL, SURFACE_HI as C_SEL_BG,
+    TEXT as C_TEXT, TEXT_DIM as C_TEXT_DIM, TEXT_MUTED as C_TEXT_MUTED, WARNING as C_WARNING,
+};
 
 const BAR_WIDTH: usize = 10;
 const BAR_USED: char = '▓';

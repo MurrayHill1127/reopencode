@@ -27,13 +27,10 @@ use std::time::Duration;
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 
-const C_TEXT: Color = Color::Rgb(238, 238, 238);
-const C_TEXT_MUTED: Color = Color::Rgb(128, 128, 128);
-const C_BG: Color = Color::Rgb(10, 10, 10);
-const C_PRIMARY: Color = Color::Rgb(250, 178, 131);
-const C_ACCENT: Color = Color::Rgb(157, 124, 216);
-const C_BORDER: Color = Color::Rgb(72, 72, 72);
-const C_BORDER_ACTIVE: Color = Color::Rgb(96, 96, 96);
+use crate::cli::commands::tui::palette::{
+    BG as C_BG, BORDER as C_BORDER, BORDER_ACTIVE as C_BORDER_ACTIVE,
+    PRIMARY as C_PRIMARY, SECONDARY as C_ACCENT, TEXT as C_TEXT, TEXT_MUTED as C_TEXT_MUTED,
+};
 
 // ── Component ─────────────────────────────────────────────────────────────────
 

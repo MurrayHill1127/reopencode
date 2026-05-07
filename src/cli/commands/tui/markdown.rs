@@ -13,22 +13,14 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 
-// ── Palette ───────────────────────────────────────────────────────────────────
+// ── Palette (re-exports from shared module, kept for backward compat) ─────────
 
-pub const C_TEXT: Color = Color::Rgb(238, 238, 238);
-pub const C_TEXT_MUTED: Color = Color::Rgb(128, 128, 128);
-pub const C_TEXT_DIM: Color = Color::Rgb(80, 80, 80);
-pub const C_PRIMARY: Color = Color::Rgb(250, 178, 131);
-pub const C_ACCENT: Color = Color::Rgb(157, 124, 216);
-pub const C_INFO: Color = Color::Rgb(86, 182, 194);
-pub const C_SUCCESS: Color = Color::Rgb(127, 216, 143);
-pub const C_ERROR: Color = Color::Rgb(224, 108, 117);
-pub const C_WARNING: Color = Color::Rgb(245, 167, 66);
-pub const C_BG_ELEM: Color = Color::Rgb(22, 22, 30);
-pub const C_BORDER: Color = Color::Rgb(72, 72, 72);
-const C_H2: Color = Color::Rgb(215, 195, 120);
-const C_H3: Color = Color::Rgb(160, 200, 240);
-const C_QUOTE_BAR: Color = Color::Rgb(100, 90, 140);
+use crate::cli::commands::tui::palette::{
+    BG as C_BG_ELEM, BORDER as C_BORDER, ERROR as C_ERROR, H1, H2 as C_H2, H3 as C_H3,
+    INFO as C_INFO, PRIMARY as C_PRIMARY, QUOTE_BAR as C_QUOTE_BAR, SECONDARY as C_ACCENT,
+    SUCCESS as C_SUCCESS, TEXT as C_TEXT, TEXT_DIM as C_TEXT_DIM, TEXT_MUTED as C_TEXT_MUTED,
+    WARNING as C_WARNING,
+};
 
 // ── Block AST ─────────────────────────────────────────────────────────────────
 

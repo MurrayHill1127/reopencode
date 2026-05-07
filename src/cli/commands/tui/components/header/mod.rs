@@ -29,16 +29,11 @@ pub enum HoverButton { #[default] None, Parent, Prev, Next }
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 
-const C_BG_PANEL: Color = Color::Rgb(20, 20, 20);
-const C_TEXT: Color = Color::Rgb(238, 238, 238);
-const C_TEXT_MUTED: Color = Color::Rgb(128, 128, 128);
-const C_TEXT_DIM: Color = Color::Rgb(80, 80, 80);
-const C_PRIMARY: Color = Color::Rgb(250, 178, 131);
-const C_ACCENT: Color = Color::Rgb(157, 124, 216);
-const C_SUCCESS: Color = Color::Rgb(127, 216, 143);
-const C_WARNING: Color = Color::Rgb(245, 167, 66);
-const C_ERROR: Color = Color::Rgb(224, 108, 117);
-const C_INFO: Color = Color::Rgb(86, 182, 194);
+use crate::cli::commands::tui::palette::{
+    ERROR as C_ERROR, INFO as C_INFO, PRIMARY as C_PRIMARY, SECONDARY as C_ACCENT,
+    SUCCESS as C_SUCCESS, SURFACE as C_BG_PANEL, TEXT as C_TEXT, TEXT_DIM as C_TEXT_DIM,
+    TEXT_MUTED as C_TEXT_MUTED, WARNING as C_WARNING,
+};
 
 // ── Context bar ───────────────────────────────────────────────────────────────
 

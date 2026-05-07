@@ -10,6 +10,7 @@ pub mod components;
 pub mod events;
 pub mod keybindings;
 pub mod markdown;
+pub mod palette;
 pub mod slash_commands;
 pub mod syntax;
 pub mod theme;
@@ -1053,7 +1054,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
     use ratatui::style::Style;
     use ratatui::widgets::Block;
     f.render_widget(
-        Block::default().style(Style::default().bg(ratatui::style::Color::Rgb(10, 10, 10))),
+        Block::default().style(Style::default().bg(palette::BG)),
         area,
     );
 
