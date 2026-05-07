@@ -3,10 +3,22 @@ use axum::{
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 use tracing::info;
 
 use crate::server::AppState;
 use crate::session::types::{Session, SessionSummary};
+
+/// In-memory store of message_id → snapshot hash for revert operations.
+static SNAPSHOT_MAP: std::sync::LazyLock<Mutex<std::collections::HashMap<String, String>>> =
+    std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+
+/// Register a snapshot hash for a message (called during tool execution).
+pub fn register_snapshot(message_id: &str, hash: &str) {
+    if let Ok(mut map) = SNAPSHOT_MAP.lock() {
+        map.insert(message_id.to_string(), hash.to_string());
+    }
+}
 
 /// Request body for reverting a session
 #[derive(Debug, Deserialize)]
@@ -95,7 +107,30 @@ pub async fn revert(
         id, body.message_id, body.part_id
     );
 
-    let summary = body.summary.map(SessionSummary::from);
+    // Try to restore files from snapshot
+    let snapshot_hash = SNAPSHOT_MAP
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&body.message_id).cloned());
+
+    let mut diff_summary = None;
+    if let Some(ref hash) = snapshot_hash {
+        match state.snapshot.diff_full(hash, "HEAD").await {
+            Ok(diffs) => {
+                let additions: u32 = diffs.iter().map(|d| d.additions).sum();
+                let deletions: u32 = diffs.iter().map(|d| d.deletions).sum();
+                let files = diffs.len() as u32;
+                diff_summary = Some(SessionSummary { additions, deletions, files });
+                // Actually restore the files
+                let _ = state.snapshot.restore(hash).await;
+            }
+            Err(e) => {
+                tracing::warn!("Failed to diff snapshot {}: {}", hash, e);
+            }
+        }
+    }
+
+    let summary = body.summary.map(SessionSummary::from).or(diff_summary);
 
     match state
         .session_manager

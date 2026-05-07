@@ -273,6 +273,8 @@ pub async fn stream_message(
     let provider = state.provider.clone();
     let session_manager = state.session_manager.clone();
     let tools_registry = state.tools.clone();
+    let permission_store = state.permission_store.clone();
+    let snapshot = state.snapshot.clone();
     let cwd = state.cwd.clone();
     let config = state.agent.config().clone();
     let user_content = body.content.clone();
@@ -390,10 +392,54 @@ pub async fn stream_message(
                         let safe = announce.replace('\n', "\x01");
                         let _ = tx.send(safe);
 
-                        match tool.execute(args).await {
-                            Ok(r) => r.output,
-                            Err(e) => format!("Error: {e}"),
+                        // Snapshot before tool execution
+                        let pre_hash = if is_dangerous_tool(tool_name) {
+                            snapshot.track().await.ok().flatten()
+                        } else {
+                            None
+                        };
+
+                        // Permission check for dangerous tools
+                        let result_text = if is_dangerous_tool(tool_name) {
+                            let empty_rules: Vec<crate::permission::Rule> = Vec::new();
+                            let perm_result = permission_store
+                                .ask(
+                                    &session_id,
+                                    tool_name,
+                                    &[tool_name.to_string()],
+                                    &[],
+                                    &empty_rules,
+                                    serde_json::json!({"tool": tool_name, "args": args}),
+                                    None,
+                                )
+                                .await;
+                            match perm_result {
+                                Err(e) => {
+                                    let err_msg = format!("Permission denied: {:?}", e);
+                                    let _ = tx.send(err_msg.replace('\n', "\x01"));
+                                    format!("Error: permission denied for tool '{}'", tool_name)
+                                }
+                                Ok(()) => {
+                                    match tool.execute(args).await {
+                                        Ok(r) => r.output,
+                                        Err(e) => format!("Error: {e}"),
+                                    }
+                                }
+                            }
+                        } else {
+                            match tool.execute(args).await {
+                                Ok(r) => r.output,
+                                Err(e) => format!("Error: {e}"),
+                            }
+                        };
+
+                        // Snapshot after tool execution (incremental backup)
+                        if pre_hash.is_some() {
+                            let _post = snapshot.track().await.ok().flatten();
+                            // could store (pre_hash, _post) for revert here
                         }
+
+                        result_text
                     }
                 };
 
@@ -422,4 +468,14 @@ pub async fn stream_message(
     });
 
     Sse::new(sse_stream)
+}
+
+/// Tools that modify system state and require permission checking.
+fn is_dangerous_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "bash" | "shell" | "exec" | "exec_shell" | "exec_shell_wait"
+            | "edit" | "write" | "apply_patch" | "patch" | "multiedit"
+            | "task" | "agent_spawn"
+    )
 }

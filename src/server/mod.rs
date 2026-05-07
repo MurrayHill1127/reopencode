@@ -16,6 +16,7 @@ use crate::mcp::McpManager;
 use crate::permission::PermissionStore;
 use crate::provider::{OpenAiProvider, Provider, ProviderConfig};
 use crate::session::SessionManager;
+use crate::snapshot::SnapshotManager;
 use crate::storage::{MessageStore, Storage};
 use crate::tool::registry::ToolRegistry;
 
@@ -53,6 +54,7 @@ pub struct AppState {
     pub bus: Arc<Bus>,
     pub mcp_manager: Arc<McpManager>,
     pub permission_store: PermissionStore,
+    pub snapshot: Arc<SnapshotManager>,
     pub tools: Arc<ToolRegistry>,
     pub cwd: String,
 }
@@ -78,6 +80,7 @@ impl AppState {
         let bus = Arc::new(Bus::new(cwd.clone()));
         let mcp_manager = Arc::new(McpManager::new());
         let tools = Arc::new(build_tool_registry());
+        let snapshot = Arc::new(SnapshotManager::for_worktree(std::path::Path::new(&cwd)));
 
         Self {
             provider,
@@ -87,6 +90,7 @@ impl AppState {
             bus,
             mcp_manager,
             permission_store: PermissionStore::new(),
+            snapshot,
             tools,
             cwd,
         }
