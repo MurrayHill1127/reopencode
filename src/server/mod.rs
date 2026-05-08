@@ -82,6 +82,13 @@ impl AppState {
         let tools = Arc::new(build_tool_registry());
         let snapshot = Arc::new(SnapshotManager::for_worktree(std::path::Path::new(&cwd)));
 
+        // Register MCP tools into the tool registry so the LLM can see them
+        let mcp_manager_init = mcp_manager.clone();
+        let tools_init = tools.clone();
+        tokio::spawn(async move {
+            crate::tool::mcp_proxy::register_mcp_tools(&mcp_manager_init, &tools_init).await;
+        });
+
         Self {
             provider,
             agent,

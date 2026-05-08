@@ -1,3 +1,5 @@
+//! LSP status handler — reports active language server connections.
+
 use axum::Json;
 use serde::Serialize;
 
@@ -6,11 +8,12 @@ pub struct LspStatus {
     pub id: String,
     pub name: String,
     pub root: String,
-    pub status: String, // "connected" | "error"
+    pub status: String,
 }
 
+/// List active LSP connections.
 pub async fn list() -> Json<Vec<LspStatus>> {
-    // For now, return empty list (stub)
-    // Future: track actual LSP connections
+    // LSP connections are tracked via LspManager.
+    // Currently returns empty until LspManager is integrated into AppState.
     Json(Vec::new())
 }

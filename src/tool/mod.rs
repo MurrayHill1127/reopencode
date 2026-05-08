@@ -10,6 +10,7 @@ pub mod glob;
 pub mod grep;
 pub mod lsp;
 pub mod ls;
+pub mod mcp_proxy;
 pub mod multiedit;
 pub mod plan;
 pub mod question;
