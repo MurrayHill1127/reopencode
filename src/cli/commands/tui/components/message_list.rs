@@ -63,6 +63,7 @@ pub struct MessageList {
     follow_bottom: AtomicBool,
     focused: bool,
     pub code_concealed: bool,
+    pub thinking_visible: bool,
 }
 
 impl MessageList {
@@ -81,6 +82,7 @@ impl MessageList {
             follow_bottom: AtomicBool::new(true),
             focused: false,
             code_concealed: false,
+            thinking_visible: true,
         }
     }
 
@@ -88,6 +90,10 @@ impl MessageList {
     pub fn is_empty(&self) -> bool { self.messages.is_empty() }
     pub fn toggle_conceal(&mut self) {
         self.code_concealed = !self.code_concealed;
+        for rev in &mut self.revisions { *rev += 1; }
+    }
+    pub fn toggle_thinking(&mut self) {
+        self.thinking_visible = !self.thinking_visible;
         for rev in &mut self.revisions { *rev += 1; }
     }
 
@@ -174,7 +180,7 @@ impl MessageList {
         }
 
         // Re-render
-        let lines = build_cell_lines(&self.messages[idx], width, self.code_concealed);
+        let lines = build_cell_lines(&self.messages[idx], width, self.code_concealed, self.thinking_visible);
         cell_mut.revision = rev;
         cell_mut.last_width = width;
         cell_mut.lines = lines;
@@ -188,7 +194,7 @@ impl Default for MessageList {
 
 // ── Cell line builder ─────────────────────────────────────────────────────────
 
-fn build_cell_lines(msg: &TranscriptMessage, width: u16, conceal: bool) -> Vec<Line<'static>> {
+fn build_cell_lines(msg: &TranscriptMessage, width: u16, conceal: bool, thinking: bool) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let w = width as usize;
 
@@ -240,10 +246,15 @@ fn build_cell_lines(msg: &TranscriptMessage, width: u16, conceal: bool) -> Vec<L
                 }
             }
             PartType::Reasoning { text } => {
-                lines.push(Line::from(vec![
-                    Span::styled("  … thinking", Style::default().fg(C_WARNING).add_modifier(Modifier::BOLD)),
-                ]));
-                if !text.trim().is_empty() {
+                if !thinking {
+                    lines.push(Line::from(vec![
+                        Span::styled("  … thinking (hidden)", Style::default().fg(C_TEXT_DIM).add_modifier(Modifier::ITALIC)),
+                    ]));
+                } else {
+                    lines.push(Line::from(vec![
+                        Span::styled("  … thinking", Style::default().fg(C_WARNING).add_modifier(Modifier::BOLD)),
+                    ]));
+                    if !text.trim().is_empty() {
                     let content_w = (w as u16).saturating_sub(6);
                     for line in markdown::render_markdown(text, content_w) {
                         let mut indented = vec![
@@ -260,6 +271,7 @@ fn build_cell_lines(msg: &TranscriptMessage, width: u16, conceal: bool) -> Vec<L
                         lines.push(Line::from(indented));
                     }
                 }
+                } // end else (thinking_visible)
                 lines.push(Line::from(""));
             }
             PartType::Tool { name, status, input, output, error } => {
@@ -705,7 +717,7 @@ mod tests {
     #[test]
     fn build_cell_lines_user() {
         let msg = user_msg("hello world");
-        let lines = build_cell_lines(&msg, 80, false);
+        let lines = build_cell_lines(&msg, 80, false, true);
         let flat: String = lines.iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
             .collect();
@@ -716,7 +728,7 @@ mod tests {
     #[test]
     fn build_cell_lines_assistant_has_model() {
         let msg = asst_msg("reply");
-        let lines = build_cell_lines(&msg, 80, false);
+        let lines = build_cell_lines(&msg, 80, false, true);
         let flat: String = lines.iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
             .collect();
@@ -779,7 +791,7 @@ mod tests {
         assert_eq!(full_text, original, "SSE round-trip must preserve text exactly");
 
         // Render
-        let lines = build_cell_lines(&ml.messages[0], 80, false);
+        let lines = build_cell_lines(&ml.messages[0], 80, false, true);
         let all_text: String = lines.iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
             .collect();

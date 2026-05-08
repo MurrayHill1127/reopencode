@@ -39,6 +39,7 @@ pub use dialog_question::{
     MultiQuestionDialog, Question, QuestionAnswer, QuestionOption, QuestionRequest,
 };
 pub use events::{ComponentAction, ComponentEvent, ToastVariant};
+pub use file_tree::FileTree;
 pub use focus::FocusManager;
 pub use footer::Footer;
 pub use header::{Header, HoverButton};

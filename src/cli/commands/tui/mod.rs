@@ -39,8 +39,8 @@ use crate::mcp::types::McpStatus;
 use components::mcp_status::McpStatusPanel;
 use components::session_list::SessionList;
 use components::{
-    AgentInfo, CommandDialog, CommandEntry, Component, ContextInfo, DialogAgent, FocusManager,
-    Header, LeftSidebar, McpServerInfo, MessageList, Sidebar, SlashAutocomplete, StatusDialog, TextArea,
+    AgentInfo, CommandDialog, CommandEntry, Component, ContextInfo, DialogAgent, FileTree,
+    FocusManager, Header, LeftSidebar, McpServerInfo, MessageList, Sidebar, SlashAutocomplete, StatusDialog, TextArea,
 };
 use keybindings::{KeybindInfo, KeybindsConfig, LeaderState};
 use slash_commands::{SlashCommand, parse_slash};
@@ -102,6 +102,8 @@ pub struct TuiApp {
     pub footer: Footer,
     pub left_sidebar: LeftSidebar,
     pub right_sidebar: Sidebar,
+    pub file_tree: FileTree,
+    pub file_tree_visible: bool,
 
     // ── Overlay / dialog components ───────────────────────────────────────
     pub status_dialog: StatusDialog,
@@ -179,6 +181,8 @@ impl Default for TuiApp {
             footer,
             left_sidebar: LeftSidebar::new(),
             right_sidebar: Sidebar::new(ThemeContext::default()),
+            file_tree: FileTree::new(std::path::PathBuf::from(&current_dir)),
+            file_tree_visible: false,
 
             status_dialog: StatusDialog::new(),
             command_dialog: CommandDialog::new(),
@@ -272,6 +276,10 @@ impl TuiApp {
             SlashCommand::Redo => { self.redo(); }
             SlashCommand::Copy => { self.copy_last(); }
             SlashCommand::Debug => { self.debug_last(); }
+            SlashCommand::Compact => {
+                self.status = "Compacting...".to_string();
+                self.footer.set_status("Compacting...".to_string());
+            }
             SlashCommand::Unknown(name) => {
                 let err = create_assistant_message(
                     &format!("Unknown command: /{}\n\nAvailable commands:\n  /exit    — quit\n  /new [title] — new session\n  /clear   — clear conversation\n  /help    — show this help\n  /sessions — toggle sidebar", name),
@@ -429,6 +437,18 @@ impl TuiApp {
         self.message_list.push(debug_msg);
     }
 
+    fn dispatch_command(&mut self, value: &str) {
+        match value {
+            "session.new" => { self.pending_new_session = true; self.pending_new_title = None; }
+            "session.list" => { self.session_list.show(); self.session_list.on_focus(); self.session_list.set_current_session_id(self.session_id.clone()); }
+            "mcp.status" => { if self.status_dialog.is_visible() { self.status_dialog.hide(); } else { self.status_dialog.set_mcp_statuses(self.mcp_statuses.clone()); self.status_dialog.show(); } }
+            "model.list" => { if self.dialog_agent.is_visible() { self.dialog_agent.hide(); } else { self.dialog_agent.show(); } }
+            "app.exit" => { self.running = false; }
+            "help.show" => { self.push_help_message(); }
+            _ => {}
+        }
+    }
+
     fn push_help_message(&mut self) {
         let text = "**Slash Commands**\n\
             \n\
@@ -483,6 +503,12 @@ impl TuiApp {
 
         if self.command_dialog.is_visible() {
             if self.command_dialog.handle_input(key) == EventPropagation::Stop {
+                // Check if a command was selected (Enter pressed)
+                if let Some(entry) = self.command_dialog.get_selected() {
+                    let value = entry.value.clone();
+                    self.command_dialog.hide();
+                    self.dispatch_command(&value);
+                }
                 return None;
             }
         }
@@ -571,6 +597,18 @@ impl TuiApp {
             return None;
         }
 
+        // Alt+E toggles file tree
+        if key.code == KeyCode::Char('e') && key.modifiers == KeyModifiers::ALT {
+            self.file_tree_visible = !self.file_tree_visible;
+            if self.file_tree_visible {
+                self.file_tree.on_focus();
+                self.input_component.on_blur();
+            } else {
+                self.input_component.on_focus();
+            }
+            return None;
+        }
+
         // Ctrl+` toggles code block concealment
         if key.code == KeyCode::BackTab || (key.code == KeyCode::Char('`') && key.modifiers == KeyModifiers::CONTROL) {
             self.message_list.toggle_conceal();
@@ -578,6 +616,17 @@ impl TuiApp {
                 "Code blocks concealed".to_string()
             } else {
                 "Code blocks expanded".to_string()
+            });
+            return None;
+        }
+
+        // Display thinking toggle
+        if self.keybinds.matches("display_thinking", &key_info, leader_active) {
+            self.message_list.toggle_thinking();
+            self.footer.set_status(if self.message_list.thinking_visible {
+                "Thinking visible".to_string()
+            } else {
+                "Thinking hidden".to_string()
             });
             return None;
         }
@@ -1108,6 +1157,11 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
     }
     if let Some(ra) = right_area {
         app.right_sidebar.render(f, ra);
+    }
+    if app.file_tree_visible {
+        let ft_w = 30u16.min(area.width / 3);
+        let ft_area = Rect::new(area.x, area.y + 1, ft_w, area.height.saturating_sub(2));
+        app.file_tree.render(f, ft_area);
     }
     render_header(f, app, header_area);
     render_messages(f, app, messages_area);

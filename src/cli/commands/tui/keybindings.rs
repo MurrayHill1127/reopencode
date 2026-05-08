@@ -518,7 +518,7 @@ fn default_model_cycle_favorite_reverse() -> String {
 }
 
 fn default_command_list() -> String {
-    "none".to_string()
+    "alt+k".to_string()
 }
 
 fn default_agent_list() -> String {
@@ -1402,7 +1402,7 @@ mod tests {
         assert_eq!(config.input_undo, "ctrl+-,super+z");
         assert_eq!(config.input_redo, "ctrl+.,super+shift+z");
 
-        assert_eq!(config.command_list, "none");
+        assert_eq!(config.command_list, "alt+k");
         assert_eq!(config.agent_list, "<leader>a");
         assert_eq!(config.agent_cycle, "tab");
         assert_eq!(config.agent_cycle_reverse, "shift+tab");

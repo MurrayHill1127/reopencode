@@ -25,6 +25,8 @@ pub enum SlashCommand {
     Copy,
     /// `/debug` — dump last assistant message text for debugging.
     Debug,
+    /// `/compact` — trigger AI conversation compaction.
+    Compact,
     /// Unrecognised command name (preserved for error messaging).
     Unknown(String),
 }
@@ -58,6 +60,7 @@ pub fn parse_slash(input: &str) -> Option<SlashCommand> {
         "redo" => SlashCommand::Redo,
         "copy" | "y" => SlashCommand::Copy,
         "debug" => SlashCommand::Debug,
+        "compact" => SlashCommand::Compact,
         other => SlashCommand::Unknown(other.to_string()),
     })
 }
