@@ -69,91 +69,91 @@ impl ProviderId {
         Ok(())
     }
 
-    /// Pre-defined provider constants
-    pub const fn openai() -> Self {
+    /// Create an empty ProviderId (used as default).
+    pub const fn empty() -> Self {
         ProviderId(String::new())
     }
 
     /// Get static provider ID for OpenAI
-    pub fn OPENAI() -> &'static ProviderId {
+    pub fn openai() -> &'static ProviderId {
         static OPENAI: Lazy<ProviderId> = Lazy::new(|| ProviderId("openai".to_string()));
         &OPENAI
     }
 
     /// Get static provider ID for Anthropic
-    pub fn ANTHROPIC() -> &'static ProviderId {
+    pub fn anthropic() -> &'static ProviderId {
         static ANTHROPIC: Lazy<ProviderId> = Lazy::new(|| ProviderId("anthropic".to_string()));
         &ANTHROPIC
     }
 
     /// Get static provider ID for Azure
-    pub fn AZURE() -> &'static ProviderId {
+    pub fn azure() -> &'static ProviderId {
         static AZURE: Lazy<ProviderId> = Lazy::new(|| ProviderId("azure".to_string()));
         &AZURE
     }
 
     /// Get static provider ID for Google
-    pub fn GOOGLE() -> &'static ProviderId {
+    pub fn google() -> &'static ProviderId {
         static GOOGLE: Lazy<ProviderId> = Lazy::new(|| ProviderId("google".to_string()));
         &GOOGLE
     }
 
     /// Get static provider ID for Vertex
-    pub fn VERTEX() -> &'static ProviderId {
+    pub fn vertex() -> &'static ProviderId {
         static VERTEX: Lazy<ProviderId> = Lazy::new(|| ProviderId("vertex".to_string()));
         &VERTEX
     }
 
     /// Get static provider ID for OpenRouter
-    pub fn OPENROUTER() -> &'static ProviderId {
+    pub fn openrouter() -> &'static ProviderId {
         static OPENROUTER: Lazy<ProviderId> = Lazy::new(|| ProviderId("openrouter".to_string()));
         &OPENROUTER
     }
 
     /// Get static provider ID for Copilot
-    pub fn COPILOT() -> &'static ProviderId {
+    pub fn copilot() -> &'static ProviderId {
         static COPILOT: Lazy<ProviderId> = Lazy::new(|| ProviderId("copilot".to_string()));
         &COPILOT
     }
 
     /// Get static provider ID for XAI
-    pub fn XAI() -> &'static ProviderId {
+    pub fn xai() -> &'static ProviderId {
         static XAI: Lazy<ProviderId> = Lazy::new(|| ProviderId("xai".to_string()));
         &XAI
     }
 
     /// Get static provider ID for Mistral
-    pub fn MISTRAL() -> &'static ProviderId {
+    pub fn mistral() -> &'static ProviderId {
         static MISTRAL: Lazy<ProviderId> = Lazy::new(|| ProviderId("mistral".to_string()));
         &MISTRAL
     }
 
     /// Get static provider ID for Groq
-    pub fn GROQ() -> &'static ProviderId {
+    pub fn groq() -> &'static ProviderId {
         static GROQ: Lazy<ProviderId> = Lazy::new(|| ProviderId("groq".to_string()));
         &GROQ
     }
 
     /// Get static provider ID for Cerebras
-    pub fn CEREBRAS() -> &'static ProviderId {
+    pub fn cerebras() -> &'static ProviderId {
         static CEREBRAS: Lazy<ProviderId> = Lazy::new(|| ProviderId("cerebras".to_string()));
         &CEREBRAS
     }
 
     /// Get static provider ID for Cohere
-    pub fn COHERE() -> &'static ProviderId {
+    pub fn cohere() -> &'static ProviderId {
         static COHERE: Lazy<ProviderId> = Lazy::new(|| ProviderId("cohere".to_string()));
         &COHERE
     }
 
     /// Get static provider ID for Bedrock
-    pub fn BEDROCK() -> &'static ProviderId {
+    pub fn bedrock() -> &'static ProviderId {
         static BEDROCK: Lazy<ProviderId> = Lazy::new(|| ProviderId("bedrock".to_string()));
         &BEDROCK
     }
 
     /// Get static provider ID for Zhipu
-    pub fn ZHIPU() -> &'static ProviderId {
+    pub fn zhipu() -> &'static ProviderId {
         static ZHIPU: Lazy<ProviderId> = Lazy::new(|| ProviderId("zhipu".to_string()));
         &ZHIPU
     }
@@ -371,10 +371,10 @@ mod tests {
 
     #[test]
     fn test_provider_id_static_accessors() {
-        assert_eq!(ProviderId::OPENAI().as_str(), "openai");
-        assert_eq!(ProviderId::ANTHROPIC().as_str(), "anthropic");
-        assert_eq!(ProviderId::AZURE().as_str(), "azure");
-        assert_eq!(ProviderId::GOOGLE().as_str(), "google");
+        assert_eq!(ProviderId::openai().as_str(), "openai");
+        assert_eq!(ProviderId::anthropic().as_str(), "anthropic");
+        assert_eq!(ProviderId::azure().as_str(), "azure");
+        assert_eq!(ProviderId::google().as_str(), "google");
     }
 
     #[test]

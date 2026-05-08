@@ -32,6 +32,7 @@ pub mod session_shell;
 pub mod session_unrevert;
 pub mod tui;
 pub mod vcs;
+pub mod worktree;
 
 use axum::Json;
 use serde_json::json;

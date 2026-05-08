@@ -153,6 +153,14 @@ pub fn create_router() -> Router<AppState> {
         .route("/mcp", get(handlers::mcp::status).post(handlers::mcp::add))
         .route("/lsp", get(handlers::lsp::list))
         .route(
+            "/worktree",
+            axum::routing::get(handlers::worktree::list).post(handlers::worktree::create),
+        )
+        .route(
+            "/worktree/{name}",
+            axum::routing::delete(handlers::worktree::remove),
+        )
+        .route(
             "/mcp/{name}/auth",
             axum::routing::post(handlers::mcp::auth_start),
         )
