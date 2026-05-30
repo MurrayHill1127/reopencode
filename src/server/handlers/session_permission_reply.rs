@@ -1,20 +1,22 @@
 use axum::{
-    extract::{Json, Path},
+    extract::{Json, Path, State},
     http::StatusCode,
 };
 use serde::Deserialize;
 use tracing::info;
 
+use crate::permission::Reply;
+use crate::server::AppState;
+
 #[derive(Debug, Deserialize)]
 pub struct PermissionReplyBody {
     pub response: String, // "once" | "always" | "reject"
+    pub message: Option<String>,
 }
 
 /// POST /session/{id}/permissions/{permissionID} - Respond to permission request
-///
-/// Approve or deny a permission request from the AI assistant.
-/// Note: This endpoint is deprecated in the TypeScript version but kept for compatibility.
 pub async fn permission_reply(
+    State(state): State<AppState>,
     Path((session_id, permission_id)): Path<(String, String)>,
     Json(body): Json<PermissionReplyBody>,
 ) -> Result<Json<bool>, StatusCode> {
@@ -23,14 +25,21 @@ pub async fn permission_reply(
         session_id, permission_id, body.response
     );
 
-    let valid_responses = ["once", "always", "reject"];
-    if !valid_responses.contains(&body.response.as_str()) {
-        info!("Invalid permission response: {}", body.response);
-        return Err(StatusCode::BAD_REQUEST);
-    }
+    let reply = match body.response.as_str() {
+        "once" => Reply::Once,
+        "always" => Reply::Always,
+        "reject" => Reply::Reject,
+        _ => {
+            info!("Invalid permission response: {}", body.response);
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    };
 
-    // TODO: actual permission handling via permission store
-    // This would call PermissionNext.reply() equivalent
-    info!("Permission request {} replied with: {}", permission_id, body.response);
-    Ok(Json(true))
+    match state.permission_store.reply(&permission_id, reply, body.message).await {
+        Some(()) => Ok(Json(true)),
+        None => {
+            info!("Permission request {} not found", permission_id);
+            Err(StatusCode::NOT_FOUND)
+        }
+    }
 }

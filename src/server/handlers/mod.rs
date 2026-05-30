@@ -30,6 +30,7 @@ pub mod session_permission_reply;
 pub mod session_prompt_async;
 pub mod session_shell;
 pub mod session_unrevert;
+pub mod session_undo;
 pub mod tui;
 pub mod vcs;
 pub mod worktree;

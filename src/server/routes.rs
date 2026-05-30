@@ -76,6 +76,14 @@ pub fn create_router() -> Router<AppState> {
             axum::routing::post(handlers::session_unrevert::unrevert),
         )
         .route(
+            "/session/{id}/undo",
+            axum::routing::post(handlers::session_undo::undo),
+        )
+        .route(
+            "/session/{id}/redo",
+            axum::routing::post(handlers::session_undo::redo),
+        )
+        .route(
             "/session/{id}/summarize",
             axum::routing::post(handlers::session_summarize::summarize),
         )

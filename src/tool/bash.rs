@@ -1,11 +1,15 @@
 use async_trait::async_trait;
 use serde_json::Value;
-use std::process::Command;
+use std::time::Duration;
+use tokio::process::Command;
+use tokio::time::timeout;
 
 use crate::tool::error::{Result, ToolError};
 use crate::tool::traits::{Tool, ToolResult};
 
-/// Bash tool - execute shell commands
+const DEFAULT_TIMEOUT_SECS: u64 = 30;
+
+/// Bash tool - execute shell commands with a 30-second timeout
 pub struct BashTool;
 
 impl BashTool {
@@ -21,7 +25,7 @@ impl Tool for BashTool {
     }
 
     fn description(&self) -> &str {
-        "Execute a shell command"
+        "Execute a shell command. Has a 30-second timeout. Use for running tests, building, searching, or any shell operation."
     }
 
     fn parameters(&self) -> Value {
@@ -34,7 +38,11 @@ impl Tool for BashTool {
                 },
                 "cwd": {
                     "type": "string",
-                    "description": "Working directory"
+                    "description": "Working directory (optional)"
+                },
+                "timeout_secs": {
+                    "type": "integer",
+                    "description": "Timeout in seconds (default 30, max 120)"
                 }
             },
             "required": ["command"]
@@ -47,29 +55,44 @@ impl Tool for BashTool {
             .ok_or_else(|| ToolError::Parse("Missing 'command' argument".to_string()))?;
 
         let cwd = args["cwd"].as_str();
+        let timeout_secs = args["timeout_secs"]
+            .as_u64()
+            .unwrap_or(DEFAULT_TIMEOUT_SECS)
+            .min(120);
 
         let mut cmd = Command::new("sh");
         cmd.arg("-c").arg(command);
+        cmd.kill_on_drop(true);
 
         if let Some(cwd) = cwd {
             cmd.current_dir(cwd);
         }
 
-        let output = cmd.output()?;
+        let run = async {
+            let output = cmd.output().await?;
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            Ok::<_, std::io::Error>((stdout, stderr, output.status.code()))
+        };
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
-        let result = format!("{}{}", stdout, stderr);
-
-        Ok(ToolResult {
-            output: result,
-            metadata: Some(serde_json::json!({
-                "exit_code": output.status.code(),
-                "stdout_len": stdout.len(),
-                "stderr_len": stderr.len(),
-            })),
-        })
+        match timeout(Duration::from_secs(timeout_secs), run).await {
+            Ok(Ok((stdout, stderr, exit_code))) => {
+                let result = format!("{}{}", stdout, stderr);
+                Ok(ToolResult {
+                    output: result,
+                    metadata: Some(serde_json::json!({
+                        "exit_code": exit_code,
+                        "stdout_len": stdout.len(),
+                        "stderr_len": stderr.len(),
+                    })),
+                })
+            }
+            Ok(Err(e)) => Err(ToolError::Execution(e.to_string())),
+            Err(_) => Err(ToolError::Execution(format!(
+                "Command timed out after {}s: {}",
+                timeout_secs, command
+            ))),
+        }
     }
 }
 

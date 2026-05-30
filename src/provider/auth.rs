@@ -107,6 +107,11 @@ impl AuthManager {
         keys.insert(provider.clone(), key.to_string());
     }
 
+    /// Get mutable access to the config_keys map (for removal).
+    pub fn config_keys_mut(&self) -> std::sync::RwLockWriteGuard<'_, HashMap<ProviderId, String>> {
+        self.config_keys.write().unwrap()
+    }
+
     /// Get an API key for a provider with priority resolution
     ///
     /// Priority: Config → Environment → Auth file

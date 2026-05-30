@@ -936,7 +936,10 @@ async fn handle_compaction(
     info!("Handling compaction for session: {}", session_id);
 
     let input = compaction::ProcessInput {
-        parent_id: String::new(), // TODO: Get from last user message
+        parent_id: messages.iter().rev()
+            .find(|m| matches!(&m.info, crate::session::message::MessageInfo::User(_)))
+            .map(|m| m.info.id().to_string())
+            .unwrap_or_default(),
         messages: messages.to_vec(),
         session_id: session_id.to_string(),
         auto: compaction.auto,

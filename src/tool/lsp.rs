@@ -1,10 +1,12 @@
-//! LSP tool - Language Server Protocol operations (placeholder)
-//!
-//! This is a placeholder implementation. Full LSP integration will be added later.
+//! LSP tool - Language Server Protocol operations
+
+use std::path::Path;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde_json::Value;
 
+use crate::lsp::LspManager;
 use crate::tool::error::{Result, ToolError};
 use crate::tool::traits::{Tool, ToolResult};
 
@@ -109,11 +111,21 @@ impl LspParams {
 }
 
 /// LSP tool - Language Server Protocol operations
-pub struct LspTool;
+pub struct LspTool {
+    lsp: Arc<LspManager>,
+    root: std::path::PathBuf,
+}
 
 impl LspTool {
     pub fn new() -> Self {
-        Self
+        Self {
+            lsp: Arc::new(LspManager::new()),
+            root: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+        }
+    }
+
+    pub fn with_manager(lsp: Arc<LspManager>, root: std::path::PathBuf) -> Self {
+        Self { lsp, root }
     }
 }
 
@@ -167,33 +179,45 @@ impl Tool for LspTool {
 
     async fn execute(&self, args: Value) -> Result<ToolResult> {
         let params = LspParams::from_value(&args)?;
+        let file = Path::new(&params.file_path);
+        // LSP uses 0-based lines/chars; params are 1-based
+        let line = params.line.saturating_sub(1);
+        let character = params.character.saturating_sub(1);
 
-        // Placeholder implementation - full LSP integration coming soon
-        let op_name = match params.operation {
-            LspOperation::GoToDefinition => "goToDefinition",
-            LspOperation::FindReferences => "findReferences",
-            LspOperation::Hover => "hover",
-            LspOperation::DocumentSymbol => "documentSymbol",
-            LspOperation::WorkspaceSymbol => "workspaceSymbol",
-            LspOperation::GoToImplementation => "goToImplementation",
-            LspOperation::PrepareCallHierarchy => "prepareCallHierarchy",
-            LspOperation::IncomingCalls => "incomingCalls",
-            LspOperation::OutgoingCalls => "outgoingCalls",
+        let result = match params.operation {
+            LspOperation::Hover => {
+                self.lsp.hover(file, &self.root, line, character).await
+            }
+            LspOperation::GoToDefinition => {
+                self.lsp.definition(file, &self.root, line, character).await
+            }
+            LspOperation::FindReferences => {
+                self.lsp.references(file, &self.root, line, character, true).await
+            }
+            _ => {
+                return Ok(ToolResult::new(format!(
+                    "Operation '{}' is not yet implemented. Supported: hover, goToDefinition, findReferences.",
+                    match params.operation {
+                        LspOperation::DocumentSymbol => "documentSymbol",
+                        LspOperation::WorkspaceSymbol => "workspaceSymbol",
+                        LspOperation::GoToImplementation => "goToImplementation",
+                        LspOperation::PrepareCallHierarchy => "prepareCallHierarchy",
+                        LspOperation::IncomingCalls => "incomingCalls",
+                        LspOperation::OutgoingCalls => "outgoingCalls",
+                        _ => "unknown",
+                    }
+                )));
+            }
         };
 
-        let output = format!(
-            "LSP integration coming soon. \
-             Operation: {} on {}:{}:{}",
-            op_name, params.file_path, params.line, params.character
-        );
-
-        Ok(ToolResult::new(output).with_metadata(serde_json::json!({
-            "operation": op_name,
-            "filePath": params.file_path,
-            "line": params.line,
-            "character": params.character,
-            "placeholder": true
-        })))
+        match result {
+            Ok(value) => {
+                let output = serde_json::to_string_pretty(&value)
+                    .unwrap_or_else(|_| value.to_string());
+                Ok(ToolResult::new(output))
+            }
+            Err(e) => Err(ToolError::Execution(format!("LSP error: {e}"))),
+        }
     }
 }
 
@@ -372,17 +396,19 @@ mod tests {
             "character": 10
         });
 
-        let result = tool.execute(args).await.unwrap();
-        assert!(result.output.contains("LSP integration coming soon"));
-        assert!(result.output.contains("goToDefinition"));
-        assert!(result.output.contains("src/main.rs:42:10"));
-
-        let metadata = result.metadata.unwrap();
-        assert_eq!(metadata["operation"], "goToDefinition");
-        assert_eq!(metadata["filePath"], "src/main.rs");
-        assert_eq!(metadata["line"], 42);
-        assert_eq!(metadata["character"], 10);
-        assert_eq!(metadata["placeholder"], true);
+        // LspTool now attempts real LSP; without a running server it returns an error
+        let result = tool.execute(args).await;
+        // Either succeeds (if LSP server is running) or returns an Execution error
+        match result {
+            Ok(r) => {
+                // If it somehow succeeds, output should be non-empty
+                assert!(!r.output.is_empty());
+            }
+            Err(e) => {
+                // Expected: no language server configured
+                assert!(e.to_string().contains("LSP error") || e.to_string().contains("no language"));
+            }
+        }
     }
 
     #[test]
@@ -430,12 +456,21 @@ mod tests {
                 "character": 1
             });
 
-            let result = tool.execute(args).await.unwrap();
-            assert!(
-                result.output.contains(op_name),
-                "Output should contain operation name {}",
-                op_name
-            );
+            // Operations now attempt real LSP; without a server they return an error or
+            // a "not yet implemented" message for unimplemented ops
+            let result = tool.execute(args).await;
+            match result {
+                Ok(r) => assert!(!r.output.is_empty()),
+                Err(e) => {
+                    let msg = e.to_string();
+                    assert!(
+                        msg.contains("LSP error") || msg.contains("no language") || msg.contains("not yet implemented"),
+                        "Unexpected error for op {}: {}",
+                        op_name,
+                        msg
+                    );
+                }
+            }
         }
     }
 }

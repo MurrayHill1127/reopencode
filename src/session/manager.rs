@@ -173,6 +173,48 @@ impl SessionManager {
         Ok(message.id)
     }
 
+    /// Add a message with rich parts (tool call history, etc.)
+    pub async fn add_message_with_parts(
+        &self,
+        session_id: &str,
+        role: &str,
+        content: &str,
+        parts: Vec<crate::session::types::MessagePart>,
+    ) -> Result<MessageId> {
+        debug!("Adding message with parts to session: {}", session_id);
+
+        let mut session = self.get_session(session_id).await?;
+        session.add_message();
+        self.store.update_session(&session).await?;
+
+        let mut message = SessionMessage::new(
+            session_id.to_string(),
+            role.to_string(),
+            content.to_string(),
+        );
+        for part in parts {
+            message.add_part(part);
+        }
+        self.store.create_message(&message).await?;
+
+        Ok(message.id)
+    }
+
+    /// Delete the last N messages from a session (for undo).
+    /// Returns the number of messages deleted.
+    pub async fn delete_last_messages(&self, session_id: &str, count: usize) -> Result<usize> {
+        let messages = self.get_messages(session_id).await?;
+        let to_delete: Vec<_> = messages.iter().rev().take(count).collect();
+        let deleted = to_delete.len();
+        for msg in &to_delete {
+            let _ = sqlx::query("DELETE FROM messages WHERE id = ?")
+                .bind(&msg.id)
+                .execute(&self.pool)
+                .await;
+        }
+        Ok(deleted)
+    }
+
     /// Get messages from a session
     pub async fn get_messages(&self, session_id: &str) -> Result<Vec<SessionMessage>> {
         self.query.get_messages(session_id, None).await

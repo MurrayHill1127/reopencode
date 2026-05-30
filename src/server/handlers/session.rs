@@ -14,6 +14,38 @@ use crate::provider::{Message as ProviderMessage, MessageRole as ProviderMessage
 use crate::server::AppState;
 use crate::session::{Session, SessionStatus};
 
+/// Load system prompt: reads AGENTS.md or CLAUDE.md from cwd, falls back to default.
+pub(crate) fn load_system_prompt(cwd: &str) -> String {
+    for filename in &["AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md"] {
+        let path = std::path::Path::new(cwd).join(filename);
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if !content.trim().is_empty() {
+                return format!(
+                    "You are an expert software engineering assistant.\n\
+                     Working directory: {cwd}\n\n\
+                     Project context from {filename}:\n{content}\n\n\
+                     Guidelines:\n\
+                     - Read files before editing them\n\
+                     - Prefer targeted edits over full rewrites\n\
+                     - Run tests after making changes when possible\n\
+                     - Explain your reasoning briefly before acting"
+                );
+            }
+        }
+    }
+    // Default prompt when no context file found
+    format!(
+        "You are an expert software engineering assistant running in the directory: {cwd}\n\n\
+         You have access to tools to read files, write code, search the codebase, and run shell commands.\n\
+         Use them to complete the user's request thoroughly.\n\
+         - Read files before editing them\n\
+         - Prefer targeted edits over full rewrites\n\
+         - Run tests after making changes when possible\n\
+         - Explain your reasoning briefly before acting\n\
+         - If uncertain about a file's contents, read it first"
+    )
+}
+
 #[derive(Debug, Serialize)]
 pub struct SessionInfo {
     id: String,
@@ -205,15 +237,7 @@ pub async fn send_message(
         .collect();
 
     // Build system prompt
-    let system_prompt = format!(
-        "You are an expert software engineering assistant running in the directory: {cwd}\n\n\
-         You have access to tools to read files, write code, search the codebase, and run shell commands.\n\
-         Use them to complete the user's request thoroughly.\n\
-         - Read files before editing them\n\
-         - Prefer targeted edits over full rewrites\n\
-         - Run tests after making changes when possible",
-        cwd = state.cwd
-    );
+    let system_prompt = load_system_prompt(&state.cwd);
 
     // Load history
     let history = state.session_manager.get_messages(&session_id).await
@@ -290,22 +314,30 @@ pub async fn stream_message(
 
     let (tx, rx) = mpsc::unbounded_channel::<String>();
 
-    // Clone what the spawned task needs.
-    let provider = state.provider.clone();
-    let session_manager = state.session_manager.clone();
-    let tools_registry = state.tools.clone();
-    let permission_store = state.permission_store.clone();
-    let snapshot = state.snapshot.clone();
-    let cwd = state.cwd.clone();
-    let config = state.agent.config().clone();
-    let user_content = body.content.clone();
+    // P2-9: Concurrency isolation — reject if session already processing
+    if state.active_sessions.contains_key(&session_id) {
+        let _ = tx.send("[ERROR] Session is already processing a request".to_string());
+    } else {
+        state.active_sessions.insert(session_id.clone(), ());
 
-    tokio::spawn(async move {
-        // --- store user message ---
-        if session_manager.add_message(&session_id, "user", &user_content).await.is_err() {
-            let _ = tx.send("[ERROR] Failed to store user message".to_string());
-            return;
-        }
+        // Clone what the spawned task needs.
+        let provider = state.provider.clone();
+        let session_manager = state.session_manager.clone();
+        let tools_registry = state.tools.clone();
+        let permission_store = state.permission_store.clone();
+        let snapshot = state.snapshot.clone();
+        let cwd = state.cwd.clone();
+        let config = state.agent.config().clone();
+        let user_content = body.content.clone();
+        let active_sessions = state.active_sessions.clone();
+
+        tokio::spawn(async move {
+            // --- store user message ---
+            if session_manager.add_message(&session_id, "user", &user_content).await.is_err() {
+                let _ = tx.send("[ERROR] Failed to store user message".to_string());
+                active_sessions.remove(&session_id);
+                return;
+            }
 
         // --- build tool definitions from registry ---
         let tool_names = tools_registry.list();
@@ -315,18 +347,7 @@ pub async fn stream_message(
             .collect();
 
         // --- build system prompt ---
-        let system_prompt = format!(
-            "You are an expert software engineering assistant running in the directory: {cwd}\n\n\
-             You have access to a set of tools to read files, write code, search the codebase, \
-             and run shell commands. Use them to complete the user's request thoroughly.\n\n\
-             Guidelines:\n\
-             - Read files before editing them\n\
-             - Prefer targeted edits over full rewrites\n\
-             - Run tests after making changes when possible\n\
-             - Explain your reasoning briefly before acting\n\
-             - If uncertain about a file's contents, read it first",
-            cwd = cwd
-        );
+        let system_prompt = load_system_prompt(&cwd);
 
         // --- load conversation history ---
         let history = match session_manager.get_messages(&session_id).await {
@@ -480,17 +501,13 @@ pub async fn stream_message(
                                     format!("Error: permission denied for tool '{}'", tool_name)
                                 }
                                 Ok(()) => {
-                                    match tool.execute(args).await {
-                                        Ok(r) => r.output,
-                                        Err(e) => format!("Error: {e}"),
-                                    }
+                                    // P2-10: retry on error (up to 2 retries)
+                                    execute_with_retry(tool.clone(), args.clone(), 2).await
                                 }
                             }
                         } else {
-                            match tool.execute(args).await {
-                                Ok(r) => r.output,
-                                Err(e) => format!("Error: {e}"),
-                            }
+                            // P2-10: retry on error (up to 2 retries)
+                            execute_with_retry(tool.clone(), args.clone(), 2).await
                         };
 
                         // Snapshot after tool execution (incremental backup)
@@ -505,20 +522,41 @@ pub async fn stream_message(
 
                 messages.push(ProviderMessage {
                     role: ProviderMessageRole::Tool,
-                    content: result_text,
+                    content: result_text.clone(),
                     tool_call_id: Some(call.id.clone()),
                     tool_calls: vec![],
                 });
+
+                // P1-4: Persist tool call to session DB as a MessagePart
+                let tool_part = crate::session::types::MessagePart::Tool {
+                    tool: tool_name.clone(),
+                    input: args.clone(),
+                    output: Some(result_text.clone()),
+                    state: crate::session::types::ToolState {
+                        status: "completed".to_string(),
+                        output: Some(result_text.clone()),
+                        error: None,
+                    },
+                };
+                let _ = session_manager.add_message_with_parts(
+                    &session_id,
+                    "tool",
+                    &result_text,
+                    vec![tool_part],
+                ).await;
             }
         }
 
-        // --- store assistant response ---
+        // --- store assistant response and tool call history ---
         if !full_response.is_empty() {
             if let Err(e) = session_manager.add_message(&session_id, "assistant", &full_response).await {
                 error!("Failed to store assistant response: {}", e);
             }
         }
-    });
+        // Release concurrency lock
+        active_sessions.remove(&session_id);
+        }); // end tokio::spawn
+    } // end else
 
     // Convert mpsc channel to SSE stream
     let sse_stream = stream::unfold(rx, |mut rx| async move {
@@ -538,4 +576,21 @@ fn is_dangerous_tool(name: &str) -> bool {
             | "edit" | "write" | "apply_patch" | "patch" | "multiedit"
             | "task" | "agent_spawn"
     )
+}
+
+/// P2-10: Execute a tool with up to `max_retries` retries on transient errors.
+async fn execute_with_retry(tool: std::sync::Arc<Box<dyn crate::tool::traits::Tool>>, args: serde_json::Value, max_retries: usize) -> String {
+    let mut last_err = String::new();
+    for attempt in 0..=max_retries {
+        match tool.execute(args.clone()).await {
+            Ok(r) => return r.output,
+            Err(e) => {
+                last_err = e.to_string();
+                if attempt < max_retries {
+                    tracing::warn!("Tool '{}' attempt {} failed: {}. Retrying...", tool.name(), attempt + 1, last_err);
+                }
+            }
+        }
+    }
+    format!("Error after {} attempts: {}", max_retries + 1, last_err)
 }

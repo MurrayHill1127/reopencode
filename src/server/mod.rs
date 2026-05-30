@@ -7,14 +7,17 @@ pub mod routes;
 use std::sync::Arc;
 
 use axum::Router;
+use dashmap::DashMap;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use crate::agent::Sisyphus;
 use crate::bus::Bus;
+use crate::lsp::LspManager;
 use crate::mcp::McpManager;
 use crate::permission::PermissionStore;
-use crate::provider::{OpenAiProvider, Provider, ProviderConfig};
+use crate::provider::{AuthManager, OpenAiProvider, Provider, ProviderConfig};
+use crate::provider::id::ProviderId;
 use crate::session::SessionManager;
 use crate::snapshot::SnapshotManager;
 use crate::storage::{MessageStore, Storage};
@@ -56,7 +59,11 @@ pub struct AppState {
     pub permission_store: PermissionStore,
     pub snapshot: Arc<SnapshotManager>,
     pub tools: Arc<ToolRegistry>,
+    pub lsp: Arc<LspManager>,
+    pub auth: Arc<AuthManager>,
     pub cwd: String,
+    /// Tracks which sessions are currently processing a request (for concurrency isolation)
+    pub active_sessions: Arc<DashMap<String, ()>>,
 }
 
 impl AppState {
@@ -99,7 +106,10 @@ impl AppState {
             permission_store: PermissionStore::new(),
             snapshot,
             tools,
+            lsp: Arc::new(LspManager::new()),
+            auth: Arc::new(AuthManager::new()),
             cwd,
+            active_sessions: Arc::new(DashMap::new()),
         }
     }
 }
@@ -144,8 +154,28 @@ pub fn build_app(state: AppState) -> Router {
 }
 
 pub async fn start(config: ServerConfig) -> anyhow::Result<()> {
-    let api_key = std::env::var("KIMI_API_KEY")
-        .map_err(|_| anyhow::anyhow!("KIMI_API_KEY environment variable not set"))?;
+    // Load config: project dir → global (~/.config/roc/roc.toml) → env vars
+    let directory = std::env::current_dir()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "/".to_string());
+
+    let app_config = crate::config::loader::ConfigLoader::new()
+        .with_global_config()
+        .with_project_config(std::path::Path::new(&directory))
+        .with_env_prefix("ROC")
+        .load()
+        .unwrap_or_default();
+
+    // Resolve API key: config file → env var (KIMI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY)
+    let api_key = app_config
+        .provider
+        .get("kimi")
+        .and_then(|p| p.api_key.clone())
+        .or_else(|| std::env::var("KIMI_API_KEY").ok())
+        .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+        .ok_or_else(|| anyhow::anyhow!(
+            "No API key found. Set KIMI_API_KEY or OPENAI_API_KEY, or add [provider.kimi] api-key = \"...\" to ~/.config/roc/roc.toml"
+        ))?;
 
     let storage = Storage::new(crate::storage::BackendType::Json).await?;
     let message_store = storage.messages();
@@ -159,13 +189,13 @@ pub async fn start(config: ServerConfig) -> anyhow::Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize session manager: {}", e))?;
 
-    let directory = std::env::current_dir()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| "/".to_string());
-
     let state = AppState::new_kimi(api_key, session_manager, message_store, directory);
     let app = build_app(state);
-    let addr = format!("{}:{}", config.host, config.port);
+
+    // Port/host from config file, then ServerConfig arg, then default
+    let port = app_config.server.port;
+    let host = app_config.server.host.clone();
+    let addr = format!("{}:{}", host, port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
     tracing::info!("HTTP server listening on {}", addr);

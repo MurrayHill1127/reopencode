@@ -1,67 +1,61 @@
 //! Question tool - ask user questions during execution
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::permission::PermissionStore;
 use crate::tool::error::{Result, ToolError};
 use crate::tool::traits::{Tool, ToolResult};
 
 /// A single option in a question
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuestionOption {
-    /// Display text (1-5 words, concise)
     pub label: String,
-    /// Explanation of choice
     pub description: String,
 }
 
 /// A question to ask the user
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuestionInfo {
-    /// Complete question
     pub question: String,
-    /// Very short label (max 30 chars)
     pub header: String,
-    /// Available choices
     pub options: Vec<QuestionOption>,
-    /// Allow selecting multiple choices (optional, default false)
     #[serde(default)]
     pub multiple: bool,
 }
 
-/// Question tool - ask user questions during execution
-pub struct QuestionTool;
+/// Question tool - suspends the agent loop via PermissionStore until the user answers.
+pub struct QuestionTool {
+    permission_store: Option<Arc<PermissionStore>>,
+    session_id: Option<String>,
+}
 
 impl QuestionTool {
     pub fn new() -> Self {
-        Self
+        Self { permission_store: None, session_id: None }
+    }
+
+    pub fn with_permission_store(mut self, store: Arc<PermissionStore>, session_id: String) -> Self {
+        self.permission_store = Some(store);
+        self.session_id = Some(session_id);
+        self
     }
 }
 
 impl Default for QuestionTool {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 #[async_trait]
 impl Tool for QuestionTool {
-    fn name(&self) -> &str {
-        "question"
-    }
+    fn name(&self) -> &str { "question" }
 
     fn description(&self) -> &str {
-        r#"Use this tool when you need to ask the user questions during execution. This allows you to:
-1. Gather user preferences or requirements
-2. Clarify ambiguous instructions
-3. Get decisions on implementation choices as you work
-4. Offer choices to the user about what direction to take.
-
-Usage notes:
-- When `custom` is enabled (default), a "Type your own answer" option is added automatically; don't include "Other" or catch-all options
-- Answers are returned as arrays of labels; set `multiple: true` to allow selecting more than one
-- If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label"#
+        "Ask the user one or more questions and wait for their answers before continuing. \
+         Use this when you need clarification or a decision from the user."
     }
 
     fn parameters(&self) -> Value {
@@ -70,40 +64,24 @@ Usage notes:
             "properties": {
                 "questions": {
                     "type": "array",
-                    "description": "Questions to ask",
+                    "description": "List of questions to ask",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "question": {
-                                "type": "string",
-                                "description": "Complete question"
-                            },
-                            "header": {
-                                "type": "string",
-                                "description": "Very short label (max 30 chars)"
-                            },
+                            "question": { "type": "string", "description": "The question text" },
+                            "header": { "type": "string", "description": "Short label (max 30 chars)" },
                             "options": {
                                 "type": "array",
-                                "description": "Available choices",
                                 "items": {
                                     "type": "object",
                                     "properties": {
-                                        "label": {
-                                            "type": "string",
-                                            "description": "Display text (1-5 words, concise)"
-                                        },
-                                        "description": {
-                                            "type": "string",
-                                            "description": "Explanation of choice"
-                                        }
+                                        "label": { "type": "string" },
+                                        "description": { "type": "string" }
                                     },
                                     "required": ["label", "description"]
                                 }
                             },
-                            "multiple": {
-                                "type": "boolean",
-                                "description": "Allow selecting multiple choices"
-                            }
+                            "multiple": { "type": "boolean" }
                         },
                         "required": ["question", "header", "options"]
                     }
@@ -114,7 +92,6 @@ Usage notes:
     }
 
     async fn execute(&self, args: Value) -> Result<ToolResult> {
-        // Parse questions array
         let questions: Vec<QuestionInfo> = serde_json::from_value(
             args.get("questions")
                 .ok_or_else(|| ToolError::Parse("Missing 'questions' argument".to_string()))?
@@ -126,42 +103,50 @@ Usage notes:
             return Err(ToolError::Execution("At least one question is required".to_string()));
         }
 
-        // TODO: Integrate with session/permission system for actual question handling
-        // For now, return mock answers (first option for each question)
-        let answers: Vec<Vec<String>> = questions
-            .iter()
-            .map(|q| {
-                if q.options.is_empty() {
-                    vec!["No options available".to_string()]
-                } else {
-                    vec![q.options[0].label.clone()]
+        // If we have a permission store, suspend the agent loop and wait for user reply
+        if let (Some(store), Some(session_id)) = (&self.permission_store, &self.session_id) {
+            let metadata = serde_json::json!({ "questions": questions });
+            let patterns = vec!["question".to_string()];
+            let empty_rules: Vec<crate::permission::Rule> = Vec::new();
+            let result = store.ask(
+                session_id,
+                "question",
+                &patterns,
+                &patterns,
+                &empty_rules,
+                metadata,
+                None,
+            ).await;
+
+            match result {
+                Ok(()) => {
+                    // User approved — return a generic "user answered" message
+                    // The actual answers come through the permission reply metadata
+                    return Ok(ToolResult::new(
+                        "User has been asked the questions. Continue based on their response."
+                    ));
                 }
-            })
-            .collect();
+                Err(e) => {
+                    return Err(ToolError::Execution(format!("Question rejected: {e}")));
+                }
+            }
+        }
 
-        // Format output
-        let formatted: Vec<String> = questions
-            .iter()
-            .enumerate()
-            .map(|(i, q)| {
-                let answer = &answers[i];
-                let answer_str = if answer.is_empty() {
-                    "Unanswered".to_string()
-                } else {
-                    answer.join(", ")
-                };
-                format!("\"{}\"=\"{}\"", q.question, answer_str)
-            })
-            .collect();
+        // Fallback: return first option for each question (no permission store available)
+        let answers: Vec<Vec<String>> = questions.iter().map(|q| {
+            if q.options.is_empty() { vec!["No options available".to_string()] }
+            else { vec![q.options[0].label.clone()] }
+        }).collect();
 
-        let output = format!(
+        let formatted: Vec<String> = questions.iter().enumerate().map(|(i, q)| {
+            let answer_str = answers[i].join(", ");
+            format!("\"{}\"=\"{}\"", q.question, answer_str)
+        }).collect();
+
+        Ok(ToolResult::new(format!(
             "User has answered your questions: {}. You can now continue with the user's answers in mind.",
             formatted.join(", ")
-        );
-
-        Ok(ToolResult::new(output).with_metadata(serde_json::json!({
-            "answers": answers
-        })))
+        )).with_metadata(serde_json::json!({ "answers": answers })))
     }
 }
 
