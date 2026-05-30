@@ -1,83 +1,101 @@
 # ReOpenCode
 
-[opencode](https://github.com/anomalyco/opencode) 的 Rust 重写版本——相同的功能集，单一二进制，无运行时依赖。
+一个用 Rust 编写的 AI 编程助手，提供完整的 agent 工具执行能力、终端 TUI 界面和 HTTP API。
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)](https://www.rust-lang.org)
 
 ---
 
-## 为什么要重写
+## 功能特性
 
-原版 opencode 基于 TypeScript，意味着需要 Node.js、臃肿的 `node_modules` 以及不可忽视的启动开销。本项目将其直接移植到 Rust：一个可以随处运行的独立二进制文件。
+### Agent 能力
+- **完整工具循环**：LLM 可调用 17+ 个工具，结果自动回传，最多 20 轮迭代
+- **文件操作**：read / write / edit / apply_patch / multiedit
+- **代码搜索**：glob / grep / ls / codesearch
+- **Shell 执行**：bash（30 秒超时，自动重试）
+- **网络访问**：webfetch / websearch
+- **任务管理**：todo / task / question（支持挂起等待用户回答）
+- **LSP 集成**：hover / definition / references（需本地 language server）
+- **MCP 工具代理**：连接外部 MCP 服务器，工具自动注册到 LLM 可见列表
 
-目标：
-- 在关键路径上与 opencode 行为对齐
-- 快速启动，低内存占用
-- 除复制二进制文件外无需任何安装步骤
+### 安全与可靠性
+- **权限系统**：危险工具（bash/edit/write）执行前通过 PermissionStore 检查
+- **快照/还原**：工具执行前后自动打 shadow git 快照，支持文件级回滚
+- **并发隔离**：同一 session 同时只允许一个请求处理
+- **工具错误重试**：失败自动重试最多 2 次
 
-这不是 fork——TypeScript 源码仅作为参考规范，而非依赖。
+### TUI 界面
+- **实时流式输出**：SSE 流式渲染，3 字符微块动画
+- **Markdown 渲染**：代码块盒子边框、标题分色、引用块、任务列表、链接
+- **工具调用可视化**：◆ edit / ▶ bash / ▷ read / ⌕ grep 各有专属样式，diff 着色
+- **Reasoning 块**：暖琥珀色背景 + `╎` 虚线左边框，可折叠
+- **双侧边栏**：左侧会话列表（Ctrl+B），右侧信息面板（Ctrl+R）
+- **文件树**：Alt+E 切换，j/k 导航
+- **命令面板**：Alt+K，6 个命令可执行
+- **斜杠命令**：/exit /new /clear /help /sessions /undo /redo /copy /compact /debug
+- **提示历史**：↑/↓ 回显历史消息
+- **Shell 模式**：`!cmd` 直接执行本地命令
+- **代码折叠**：Ctrl+\` 折叠/展开代码块
+- **Tokyo Night 配色**：深蓝灰背景，Ghostty 终端适配
+
+### HTTP API
+- **会话管理**：CRUD + fork / revert / unrevert / summarize / undo / redo
+- **流式消息**：`POST /session/{id}/stream`（SSE）
+- **同步消息**：`POST /session/{id}/message`（含完整 agent loop）
+- **后台执行**：`POST /session/{id}/prompt_async`（立即返回 204）
+- **权限回复**：`POST /session/{id}/permissions/{id}`
+- **Worktree**：GET/POST/DELETE `/worktree`
+- **MCP 管理**：连接/断开/状态查询
+- **认证管理**：PUT/DELETE `/global/auth/{provider}`
+
+### Provider 支持
+| Provider | 文本 | 工具调用 |
+|----------|------|----------|
+| OpenAI / Kimi（OpenAI 兼容） | ✅ | ✅ |
+| Anthropic | ✅ | ✅ |
+| Azure / Google / Vertex / xAI / OpenRouter / 智谱 | ✅ | 取决于兼容性 |
 
 ---
 
-## 当前状态
+## 快速开始
 
-核心功能已可用。服务器、会话管理、Provider 集成和大部分工具均已实现并通过测试，TUI 正在持续完善中。
+### 依赖
 
-**已完成：**
-- HTTP 服务器，29 个接口（会话 CRUD、流式输出、工具执行、Provider 鉴权）
-- SQLite 持久化的会话管理
-- SSE 流式 LLM 响应
-- Provider 支持：Anthropic、OpenAI、Azure、Google、OpenRouter、xAI、Vertex、智谱 GLM
-- 工具实现：edit、bash、read、write、glob、grep、web fetch、web search、apply\_patch 等 17+ 个
-- TUI（ratatui）：对话界面、会话列表、可折叠侧边栏、文件树、命令面板、主题系统
-- 斜杠命令：`/exit`、`/new`、`/clear`、`/help`、`/sessions`
-- MCP 客户端（stdio + HTTP 传输）
-- 多层级配置合并与环境变量替换
-- Category、Command、Hook、Skill 子系统
+- Rust 1.75+
+- SQLite（通过 sqlx 内嵌）
 
----
+### 构建
 
-## 技术栈
-
-| 领域 | Crate |
-|------|-------|
-| 异步运行时 | tokio |
-| HTTP 服务器 | axum + tower |
-| HTTP 客户端 | reqwest |
-| TUI | ratatui + crossterm |
-| 数据库 | sqlx (SQLite) |
-| CLI | clap |
-| MCP 协议 | rmcp |
-| 序列化 | serde + serde\_json |
-| 流式处理 | async-stream + futures |
-
----
-
-## 构建
-
-需要 Rust 1.75+。
-
-```sh
-# 调试构建
-cargo build
-
-# 发布构建
+```bash
+git clone https://github.com/MurrayHill1127/reopencode.git
+cd reopencode
 cargo build --release
-
-# 运行
-./target/release/reopencode
 ```
 
-启动服务器：
+### 配置
 
-```sh
-./target/release/reopencode serve
+在 `~/.config/roc/roc.toml` 中配置 API key（或直接设置环境变量）：
+
+```toml
+[provider.kimi]
+api-key = "your-api-key"
 ```
 
-启动 TUI（会自动连接 `http://127.0.0.1:4096`）：
+或者：
 
-```sh
+```bash
+export KIMI_API_KEY="your-api-key"
+# 也支持 OPENAI_API_KEY / ANTHROPIC_API_KEY
+```
+
+### 启动
+
+```bash
+# 启动服务器（后台）
+./target/release/reopencode serve &
+
+# 启动 TUI
 ./target/release/reopencode run
 ```
 
@@ -89,40 +107,63 @@ cargo build --release
 |------|------|
 | `Enter` | 发送消息 |
 | `Ctrl+J` / `Shift+Enter` | 输入框内换行 |
-| `Ctrl+B` | 展开 / 折叠左侧会话侧边栏 |
-| `Ctrl+R` | 展开 / 折叠右侧信息侧边栏（上下文、MCP、LSP、Diffs） |
-| `Ctrl+\`` | 折叠 / 展开代码块 |
-| `Ctrl+P` | 打开会话列表浮层 |
-| `Ctrl+M` | 查看 MCP 状态 |
-| `Ctrl+C` | 取消流式输出 / 退出 |
-| `Tab` | 切换焦点 / 补全斜杠命令 |
-| `↑` / `↓` (空输入) | 提示历史导航 |
-| `Esc` | 第 1 次：取消流式；第 2 次：清空输入框 |
-| `j` / `k` / `↑` / `↓` | 滚动消息（消息列表聚焦时） |
-| `g` / `G` | 跳到顶部 / 底部 |
+| `Ctrl+B` | 左侧会话侧边栏 |
+| `Ctrl+R` | 右侧信息侧边栏（Token、MCP、LSP） |
+| `Alt+E` | 文件树 |
+| `Alt+K` | 命令面板 |
+| `Ctrl+\`` | 代码块折叠/展开 |
+| `Ctrl+P` | 会话列表浮层 |
+| `Ctrl+M` | MCP 状态 |
+| `Ctrl+C` | 取消流式 / 退出 |
+| `Esc` | 第 1 次取消流式，第 2 次清空输入框 |
+| `↑` / `↓`（空输入） | 提示历史导航 |
+| `Ctrl+Left/Right` | 按单词跳转 |
+| `Ctrl+W` | 删除前一个单词 |
+| `Tab` | 焦点切换 / 斜杠命令补全 |
 
-**斜杠命令**（在输入框中输入）：
+**斜杠命令**（输入框中输入）：
 
 | 命令 | 功能 |
 |------|------|
-| `/exit` 或 `/quit` | 退出 |
+| `/exit` | 退出 |
 | `/new [标题]` | 新建会话 |
-| `/clear` | 清空当前对话 |
+| `/clear` | 清空对话 |
 | `/sessions` | 切换侧边栏 |
-| `/help` | 显示帮助信息 |
-| `/` (输入中) | 自动弹出命令补全下拉框，Tab 补全 |
+| `/undo` / `/redo` | 撤销/恢复消息 |
+| `/copy` | 复制最后一条回复到剪贴板 |
+| `/compact` | 触发 AI 会话压缩 |
+| `/debug` | 显示最后一条消息的调试信息 |
+| `/help` | 显示帮助 |
 
-**Shell 模式**：输入 `!` 开头的消息会直接作为 shell 命令在本机执行，结果显示在对话中。
+**Shell 模式**：输入 `!cmd` 直接在本地执行 shell 命令，结果显示在对话中。
 
-**Prompt 历史**：空白输入框按 `↑` / `↓` 可以回显之前提交过的消息。
+---
 
-**工具渲染**：不同工具用独特图标区分（◆ 编辑、▶ 执行、▷ 读取、⌕ 搜索），编辑操作显示 diff 差异。
+## 项目结构
+
+```
+src/
+├── agent/          Agent 循环与注册
+├── provider/       LLM Provider 适配器（OpenAI/Anthropic/Azure/Google 等）
+├── session/        会话生命周期、消息存储、流式处理
+├── server/         axum HTTP 服务器及路由处理器（29 个端点）
+├── tool/           工具实现（17+ 个）
+├── mcp/            MCP 客户端（stdio + HTTP）
+├── lsp/            LSP 客户端（JSON-RPC）
+├── snapshot/       Shadow git 快照/还原
+├── permission/     权限规则评估与 ask/reply
+├── worktree/       Git worktree 管理
+├── config/         多层级配置加载（TOML + 环境变量）
+├── storage/        SQLite 持久化
+└── cli/
+    └── commands/tui/   ratatui TUI 界面与组件
+```
 
 ---
 
 ## 开发
 
-```sh
+```bash
 # 运行测试
 cargo test --lib
 
@@ -131,57 +172,10 @@ cargo clippy -- -D warnings
 
 # 格式化
 cargo fmt
-
-# 保存时自动重新编译
-cargo watch -x run
-```
-
-运行单个测试：
-
-```sh
-cargo test <测试名称>
-```
-
----
-
-## 目录结构
-
-```
-src/
-├── main.rs          入口
-├── lib.rs           库根
-├── agent/           Agent 循环与注册
-├── provider/        LLM Provider 适配器
-├── session/         会话生命周期、消息存储、流式处理
-├── server/          axum HTTP 服务器及路由处理器
-├── tool/            工具实现（17+ 个）
-├── mcp/             MCP 客户端
-├── pty/             伪终端会话
-├── config/          配置加载与合并
-├── storage/         存储后端（SQLite）
-├── bus/             内部事件总线
-├── category/        分类系统
-├── command/         命令处理
-├── hook/            生命周期钩子
-├── skill/           Skill 加载器
-└── cli/             CLI 命令与 TUI
-    └── commands/tui/    ratatui 界面与组件
-```
-
----
-
-## 提交规范
-
-```
-feat: 新增 X
-fix: 修复 Y 边界情况
-refactor: 简化 Z
-test: 覆盖 W
-docs: 更新文档
 ```
 
 ---
 
 ## License
 
-MIT — 详见 [LICENSE](LICENSE)。
+MIT
