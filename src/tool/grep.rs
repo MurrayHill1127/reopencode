@@ -238,14 +238,18 @@ mod tests {
             eprintln!("Skipping test: ripgrep not available");
             return;
         }
+        // Use a temp dir with known content so the pattern is guaranteed absent
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("test.txt"), "hello world\n").unwrap();
+
         let tool = GrepTool::new();
         let args = serde_json::json!({
-            "pattern": "NONEXISTENT_PATTERN_XYZ123",
-            "path": "."
+            "pattern": "PATTERN_THAT_DOES_NOT_EXIST",
+            "path": dir.path().to_str().unwrap()
         });
 
         let result = tool.execute(args).await.unwrap();
-        assert!(result.output.contains("No files found"));
+        assert!(result.output.contains("No files found"), "output was: {}", result.output);
     }
 
     #[tokio::test]

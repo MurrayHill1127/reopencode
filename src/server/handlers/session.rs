@@ -185,79 +185,100 @@ pub async fn send_message(
     Path(session_id): Path<String>,
     Json(body): Json<SendMessageRequest>,
 ) -> Result<Json<SendMessageResponse>, StatusCode> {
-    info!(
-        "Processing message for session {}: {}",
-        session_id, body.content
-    );
+    info!("Processing message for session {}: {}", session_id, body.content);
 
-    if state
-        .session_manager
-        .get_session(&session_id)
-        .await
-        .is_err()
-    {
+    if state.session_manager.get_session(&session_id).await.is_err() {
         return Err(StatusCode::NOT_FOUND);
     }
 
-    let user_msg_id = match state
+    let user_msg_id = state
         .session_manager
         .add_message(&session_id, "user", &body.content)
         .await
-    {
-        Ok(id) => id,
-        Err(e) => {
-            error!("Failed to store user message: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let messages = match state.session_manager.get_messages(&session_id).await {
-        Ok(msgs) => msgs,
-        Err(e) => {
-            error!("Failed to get session messages: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-
-    let agent_messages: Vec<Message> = messages
-        .iter()
-        .map(|m| Message {
-            role: if m.role == "user" {
-                Role::User
-            } else {
-                Role::Assistant
-            },
-            content: m.content.clone(),
-        })
+    // Build tool definitions
+    let tool_names = state.tools.list();
+    let tool_defs: Vec<ToolDefinition> = tool_names.iter()
+        .filter_map(|name| state.tools.get(name))
+        .map(|t| ToolDefinition::from(&t.to_agent_definition()))
         .collect();
 
-    match state.agent.execute(agent_messages, vec![]).await {
-        Ok(response) => {
-            info!(
-                "Agent response: {} tokens used",
-                response.usage.total_tokens
-            );
+    // Build system prompt
+    let system_prompt = format!(
+        "You are an expert software engineering assistant running in the directory: {cwd}\n\n\
+         You have access to tools to read files, write code, search the codebase, and run shell commands.\n\
+         Use them to complete the user's request thoroughly.\n\
+         - Read files before editing them\n\
+         - Prefer targeted edits over full rewrites\n\
+         - Run tests after making changes when possible",
+        cwd = state.cwd
+    );
 
-            match state
-                .session_manager
-                .add_message(&session_id, "assistant", &response.content)
-                .await
-            {
-                Ok(_) => Ok(Json(SendMessageResponse {
-                    message_id: user_msg_id,
-                    response: response.content,
-                })),
-                Err(e) => {
-                    error!("Failed to store assistant response: {}", e);
-                    Err(StatusCode::INTERNAL_SERVER_ERROR)
-                }
-            }
+    // Load history
+    let history = state.session_manager.get_messages(&session_id).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut messages: Vec<ProviderMessage> = Vec::new();
+    messages.push(ProviderMessage::new(ProviderMessageRole::System, &system_prompt));
+    for msg in &history {
+        let role = if msg.role == "user" { ProviderMessageRole::User } else { ProviderMessageRole::Assistant };
+        messages.push(ProviderMessage::new(role, &msg.content));
+    }
+
+    // Full agent loop (same as stream_message)
+    const MAX_STEPS: usize = 20;
+    let mut full_response = String::new();
+    let config = state.agent.config().clone();
+
+    for _step in 0..MAX_STEPS {
+        let response = state.provider.chat(
+            messages.clone(),
+            &config.model,
+            config.temperature,
+            config.max_tokens,
+            &tool_defs,
+        ).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        if !response.content.is_empty() {
+            full_response.push_str(&response.content);
         }
-        Err(e) => {
-            error!("Agent execution failed: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+
+        if response.tool_calls.is_empty() {
+            break;
+        }
+
+        // Append assistant message with tool calls
+        let mut asst_msg = ProviderMessage::new(ProviderMessageRole::Assistant, &response.content);
+        asst_msg.tool_calls = response.tool_calls.clone();
+        messages.push(asst_msg);
+
+        // Execute each tool and append results
+        for call in &response.tool_calls {
+            let tool_name = &call.function.name;
+            let args: serde_json::Value = serde_json::from_str(&call.function.arguments)
+                .unwrap_or(serde_json::Value::Object(Default::default()));
+
+            let result = match state.tools.get(tool_name) {
+                None => format!("Error: tool '{}' not found", tool_name),
+                Some(tool) => match tool.execute(args).await {
+                    Ok(r) => r.output,
+                    Err(e) => format!("Error: {e}"),
+                },
+            };
+
+            messages.push(ProviderMessage::tool(result, call.id.clone()));
         }
     }
+
+    // Store final response
+    state.session_manager.add_message(&session_id, "assistant", &full_response).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(SendMessageResponse {
+        message_id: user_msg_id,
+        response: full_response,
+    }))
 }
 
 pub async fn stream_message(

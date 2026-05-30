@@ -107,18 +107,27 @@ impl AppState {
 fn build_tool_registry() -> ToolRegistry {
     use crate::tool::*;
     let registry = ToolRegistry::new();
+    // Core file operations
     registry.register(Box::new(bash::BashTool::new()));
     registry.register(Box::new(read::ReadTool::new()));
     registry.register(Box::new(write::WriteTool::new()));
     registry.register(Box::new(edit::EditTool::new()));
+    registry.register(Box::new(apply_patch::ApplyPatch::new()));
+    registry.register(Box::new(multiedit::MultiEditTool));
+    // Search
     registry.register(Box::new(glob::GlobTool::new()));
     registry.register(Box::new(grep::GrepTool::new()));
     registry.register(Box::new(ls::ListTool::new()));
+    registry.register(Box::new(codesearch::CodeSearchTool::new()));
+    // Web
+    registry.register(Box::new(webfetch::WebFetchTool::new()));
+    registry.register(Box::new(websearch::WebSearchTool::new()));
+    // Task management
     registry.register(Box::new(todo::TodoWriteTool::new()));
     registry.register(Box::new(todo::TodoReadTool::new()));
     registry.register(Box::new(task::TaskTool::new()));
+    // Interaction
     registry.register(Box::new(question::QuestionTool::new()));
-    registry.register(Box::new(webfetch::WebFetchTool::new()));
     registry
 }
 

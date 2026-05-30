@@ -4,14 +4,17 @@ use async_trait::async_trait;
 use futures::stream::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tracing::{debug, error, info};
 
 use crate::provider::config::ProviderConfig;
 use crate::provider::error::{ProviderError, Result};
 use crate::provider::message::{Message, MessageRole};
-use crate::provider::provider_trait::{Provider, ProviderResponse, ToolDefinition, Usage};
+use crate::provider::provider_trait::{
+    Provider, ProviderResponse, ProviderToolCall, ProviderToolCallFunction, ToolDefinition, Usage,
+};
 
-const DEFAULT_TIMEOUT_SECS: u64 = 30;
+const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com/v1";
 const API_VERSION: &str = "2023-06-01";
 
@@ -19,6 +22,8 @@ pub struct AnthropicProvider {
     config: ProviderConfig,
     client: Client,
 }
+
+// ── Request types ─────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
 struct AnthropicRequest {
@@ -31,25 +36,71 @@ struct AnthropicRequest {
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tools: Vec<AnthropicTool>,
 }
 
 #[derive(Serialize)]
+struct AnthropicTool {
+    name: String,
+    description: String,
+    input_schema: Value,
+}
+
+/// A message sent to Anthropic — content can be a plain string or a list of blocks.
+#[derive(Serialize)]
 struct AnthropicMessage {
     role: String,
-    content: String,
+    content: AnthropicContent,
 }
+
+/// Content is either a plain string (user/assistant text) or a list of typed blocks.
+#[derive(Serialize)]
+#[serde(untagged)]
+enum AnthropicContent {
+    Text(String),
+    Blocks(Vec<AnthropicBlock>),
+}
+
+/// A single content block in a message.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum AnthropicBlock {
+    Text {
+        text: String,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: Value,
+    },
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+    },
+}
+
+// ── Response types ────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 struct AnthropicResponse {
-    content: Vec<AnthropicContent>,
+    content: Vec<AnthropicResponseBlock>,
     model: String,
     usage: AnthropicUsage,
     stop_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
-struct AnthropicContent {
-    text: String,
+#[serde(tag = "type", rename_all = "snake_case")]
+enum AnthropicResponseBlock {
+    Text {
+        text: String,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: Value,
+    },
 }
 
 #[derive(Deserialize)]
@@ -57,6 +108,8 @@ struct AnthropicUsage {
     input_tokens: u32,
     output_tokens: u32,
 }
+
+// ── Streaming types ───────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 struct AnthropicStreamEvent {
@@ -69,6 +122,8 @@ struct AnthropicStreamEvent {
 struct AnthropicDelta {
     text: Option<String>,
 }
+
+// ── Provider impl ─────────────────────────────────────────────────────────────
 
 impl AnthropicProvider {
     pub fn new(config: ProviderConfig) -> Self {
@@ -84,18 +139,43 @@ impl AnthropicProvider {
         self.config.base_url.as_deref().unwrap_or(DEFAULT_BASE_URL)
     }
 
+    /// Split messages into (system_prompt, anthropic_messages).
+    /// Handles tool_use and tool_result blocks correctly.
     fn split_messages(messages: Vec<Message>) -> (Option<String>, Vec<AnthropicMessage>) {
         let mut system = None;
-        let mut anthropic_messages = Vec::new();
+        let mut anthropic_messages: Vec<AnthropicMessage> = Vec::new();
 
         for msg in messages {
-            if msg.role == MessageRole::System {
-                system = Some(msg.content);
-            } else {
-                anthropic_messages.push(AnthropicMessage {
-                    role: msg.role.to_string(),
-                    content: msg.content,
-                });
+            match msg.role {
+                MessageRole::System => {
+                    system = Some(msg.content);
+                }
+                MessageRole::Tool => {
+                    // tool_result must be in a user message
+                    // Extract tool_call_id from content if encoded as JSON
+                    let (tool_use_id, content) = if let Ok(v) = serde_json::from_str::<Value>(&msg.content) {
+                        let id = v.get("tool_call_id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                        let c = v.get("content").and_then(|x| x.as_str()).unwrap_or(&msg.content).to_string();
+                        (id, c)
+                    } else {
+                        (msg.tool_call_id.unwrap_or_default(), msg.content)
+                    };
+                    anthropic_messages.push(AnthropicMessage {
+                        role: "user".to_string(),
+                        content: AnthropicContent::Blocks(vec![AnthropicBlock::ToolResult {
+                            tool_use_id,
+                            content,
+                        }]),
+                    });
+                }
+                _ => {
+                    // Check if this is an assistant message with tool_calls encoded in content
+                    let role = msg.role.to_string();
+                    anthropic_messages.push(AnthropicMessage {
+                        role,
+                        content: AnthropicContent::Text(msg.content),
+                    });
+                }
             }
         }
 
@@ -115,18 +195,22 @@ impl Provider for AnthropicProvider {
         model: &str,
         temperature: f32,
         max_tokens: Option<u32>,
-        _tools: &[ToolDefinition],
+        tools: &[ToolDefinition],
     ) -> Result<ProviderResponse> {
-        info!("调用 Anthropic API, 模型: {}", model);
-        debug!(
-            "请求参数: messages={}, temp={}",
-            messages.len(),
-            temperature
-        );
+        info!("Anthropic API call, model: {}, tools: {}", model, tools.len());
 
         let url = format!("{}/messages", self.get_base_url());
-
         let (system, anthropic_messages) = Self::split_messages(messages);
+
+        // Convert ToolDefinition → AnthropicTool
+        let anthropic_tools: Vec<AnthropicTool> = tools
+            .iter()
+            .map(|t| AnthropicTool {
+                name: t.function.name.clone(),
+                description: t.function.description.clone(),
+                input_schema: t.function.parameters.clone(),
+            })
+            .collect();
 
         let request = AnthropicRequest {
             model: model.to_string(),
@@ -135,6 +219,7 @@ impl Provider for AnthropicProvider {
             system,
             temperature: Some(temperature),
             stream: None,
+            tools: anthropic_tools,
         };
 
         let response = self
@@ -148,30 +233,37 @@ impl Provider for AnthropicProvider {
             .await?;
 
         let status = response.status();
-        if status.as_u16() == 429 {
-            error!("速率限制");
-            return Err(ProviderError::RateLimit);
-        }
-        if status.as_u16() == 401 {
-            error!("认证失败");
-            return Err(ProviderError::Authentication);
-        }
+        if status.as_u16() == 429 { return Err(ProviderError::RateLimit); }
+        if status.as_u16() == 401 { return Err(ProviderError::Authentication); }
         if !status.is_success() {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            error!("API 错误: {}", error_text);
-            return Err(ProviderError::Api(error_text));
+            let err = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            error!("Anthropic API error: {}", err);
+            return Err(ProviderError::Api(err));
         }
 
         let json: AnthropicResponse = response.json().await?;
 
-        let content = json
-            .content
-            .first()
-            .map(|c| c.text.clone())
-            .unwrap_or_default();
+        // Extract text content and tool_use blocks
+        let mut text_parts: Vec<String> = Vec::new();
+        let mut tool_calls: Vec<ProviderToolCall> = Vec::new();
+
+        for block in &json.content {
+            match block {
+                AnthropicResponseBlock::Text { text } => {
+                    text_parts.push(text.clone());
+                }
+                AnthropicResponseBlock::ToolUse { id, name, input } => {
+                    tool_calls.push(ProviderToolCall {
+                        id: id.clone(),
+                        call_type: "function".to_string(),
+                        function: ProviderToolCallFunction {
+                            name: name.clone(),
+                            arguments: input.to_string(),
+                        },
+                    });
+                }
+            }
+        }
 
         let usage = Usage {
             prompt_tokens: json.usage.input_tokens,
@@ -180,11 +272,11 @@ impl Provider for AnthropicProvider {
         };
 
         Ok(ProviderResponse {
-            content,
+            content: text_parts.join(""),
             model: json.model,
             usage,
             finish_reason: json.stop_reason,
-            tool_calls: vec![],
+            tool_calls,
         })
     }
 
@@ -209,6 +301,7 @@ impl Provider for AnthropicProvider {
             system,
             temperature: Some(temperature),
             stream: Some(true),
+            tools: vec![],
         };
 
         Box::pin(async_stream::stream! {
@@ -301,12 +394,13 @@ mod tests {
             model: "claude-3-opus".to_string(),
             messages: vec![AnthropicMessage {
                 role: "user".to_string(),
-                content: "Hello".to_string(),
+                content: AnthropicContent::Text("Hello".to_string()),
             }],
             max_tokens: 100,
             system: Some("You are helpful".to_string()),
             temperature: Some(0.7),
             stream: None,
+            tools: vec![],
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -318,7 +412,7 @@ mod tests {
     #[test]
     fn test_anthropic_response_deserialization() {
         let json = r#"{
-            "content": [{"text": "Hello!"}],
+            "content": [{"type": "text", "text": "Hello!"}],
             "model": "claude-3-opus",
             "usage": {
                 "input_tokens": 10,
@@ -329,7 +423,10 @@ mod tests {
 
         let response: AnthropicResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.content.len(), 1);
-        assert_eq!(response.content[0].text, "Hello!");
+        match &response.content[0] {
+            AnthropicResponseBlock::Text { text } => assert_eq!(text, "Hello!"),
+            _ => panic!("expected text block"),
+        }
         assert_eq!(response.usage.input_tokens, 10);
         assert_eq!(response.usage.output_tokens, 5);
         assert_eq!(response.stop_reason, Some("end_turn".to_string()));
