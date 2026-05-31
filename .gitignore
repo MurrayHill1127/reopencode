@@ -1,77 +1,27 @@
 # Rust 构建产物
 /target/
-**/target/
 
-# 二进制文件（release 和 debug）
+# 二进制文件
 **/*.rs.bk
 *.pdb
 
-# Cargo 锁定文件（可选，根据项目决定）
-# Cargo.lock
+# macOS
+.DS_Store
 
-# 编译产物
-*.o
-*.a
-*.so
-*.dylib
-
-# 测试产物
-*.gcno
-*.gcda
-
-# 临时文件
-*.tmp
+# IDE
+.idea/
+.vscode/
 *.swp
 *.swo
 *~
 
-# IDE 和编辑器
-.idea/
-.vscode/
-*.iml
-*.ipr
-*.iws
-.project
-.classpath
-.settings/
-*.sublime-project
-*.sublime-workspace
-
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# 日志文件
-*.log
-
 # 环境配置（敏感信息）
 .env
 .env.local
-.env.*.local
 
-# 密钥和证书
-*.pem
-*.key
-*.crt
-*.p12
-*.pfx
+# 日志
+*.log
 
-# 备份文件
-*.bak
-*.backup
-
-# Node modules（如果使用 npm/yarn）
-node_modules/
-
-# 文档构建产物
-docs/_build/
-docs/build/
-
-# 本地启动脚本（不推送远程）
-start.sh
+# AI 辅助工具文件
+.claude/
+CLAUDE.md
