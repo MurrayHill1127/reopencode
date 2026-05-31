@@ -104,6 +104,8 @@ impl OpenAiProvider {
     pub fn new(config: ProviderConfig) -> Self {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+            .http1_only()
+            .no_proxy()
             .build()
             .expect("Failed to create HTTP client");
 
