@@ -34,7 +34,6 @@ impl MergeStrategy {
             storage: override_.storage.clone(),
             hook: override_.hook.clone(),
             category: override_.category.clone(),
-            extra: Self::merge_extra(&base.extra, &override_.extra),
         }
     }
 

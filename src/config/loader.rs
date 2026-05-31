@@ -202,4 +202,40 @@ mod tests {
         assert_eq!(config.server.port, 4096);
         assert_eq!(config.server.host, "127.0.0.1");
     }
+
+    #[test]
+    fn test_parse_provider_from_toml() {
+        let toml = r#"
+[provider.kimi]
+api-key = "sk-test-key"
+"#;
+        let config: crate::config::types::Config = toml::from_str(toml).unwrap();
+        assert!(!config.provider.is_empty(), "provider should not be empty");
+        assert!(config.provider.contains_key("kimi"), "should have kimi provider");
+        assert_eq!(
+            config.provider["kimi"].api_key.as_deref(),
+            Some("sk-test-key")
+        );
+    }
+
+    #[test]
+    fn test_global_config_full_flow() {
+        // Simulate exactly what with_global_config().load() does
+        let toml = r#"
+[provider.kimi]
+api-key = "sk-test-key"
+"#;
+        // Step 1: substitute_env
+        let substituted = crate::config::substitution::Substitutor::substitute_env(toml).unwrap();
+
+        // Step 2: parse_config
+        let layer_config = ConfigLoader::parse_config(&substituted).unwrap();
+        assert!(!layer_config.provider.is_empty(), "layer_config should have provider after parse");
+
+        // Step 3: merge with default
+        let base = Config::default();
+        let merged = crate::config::merge::MergeStrategy::merge(&base, &layer_config);
+        assert!(!merged.provider.is_empty(), "merged config should have provider");
+        assert_eq!(merged.provider["kimi"].api_key.as_deref(), Some("sk-test-key"));
+    }
 }

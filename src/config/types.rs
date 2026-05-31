@@ -3,7 +3,7 @@
 //! Defines all config types with serde support for TOML parsing.
 
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 // Import CategoryConfig from category module
 use crate::category::CategoryConfig;
@@ -53,10 +53,6 @@ pub struct Config {
 
     #[serde(default)]
     pub category: CategoryConfig,
-
-    /// 其他未定义字段 (保留扩展性)
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, toml::Value>,
 }
 
 // ==================== Server Config ====================
@@ -108,7 +104,7 @@ impl Default for ServerConfig {
 pub struct AgentConfigs {
     /// 命名 Agent 配置
     #[serde(flatten)]
-    pub agents: BTreeMap<String, AgentConfig>,
+    pub agents: HashMap<String, AgentConfig>,
 }
 
 /// 单个 Agent 配置

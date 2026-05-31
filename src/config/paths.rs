@@ -11,6 +11,12 @@ pub struct ConfigPaths;
 
 impl ConfigPaths {
     pub fn global_config_dir() -> PathBuf {
+        // On macOS, dirs::config_dir() returns ~/Library/Application Support,
+        // but we prefer the XDG-style ~/.config/roc if it exists.
+        let xdg = PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config").join("roc");
+        if xdg.exists() {
+            return xdg;
+        }
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("roc")
