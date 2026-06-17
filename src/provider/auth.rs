@@ -76,6 +76,7 @@ impl AuthManager {
         env_mapping.insert(ProviderId::new("cohere"), "COHERE_API_KEY");
         env_mapping.insert(ProviderId::new("bedrock"), "AWS_ACCESS_KEY_ID");
         env_mapping.insert(ProviderId::new("zhipu"), "ZHIPU_API_KEY");
+        env_mapping.insert(ProviderId::new("atlascloud"), "ATLASCLOUD_API_KEY");
 
         AuthManager {
             config_keys: Arc::new(RwLock::new(HashMap::new())),
@@ -221,6 +222,7 @@ impl AuthManager {
             "cohere" => Some("COHERE_API_KEY"),
             "bedrock" => Some("AWS_ACCESS_KEY_ID"),
             "zhipu" => Some("ZHIPU_API_KEY"),
+            "atlascloud" => Some("ATLASCLOUD_API_KEY"),
             _ => None,
         }
     }

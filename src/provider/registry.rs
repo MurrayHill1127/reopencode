@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 use tracing::{debug, info, warn};
 
 use crate::provider::anthropic::AnthropicProvider;
+use crate::provider::atlascloud::AtlasCloudProvider;
 use crate::provider::azure::AzureProvider;
 use crate::provider::config::ProvidersConfig;
 use crate::provider::error::{ProviderError, Result};
@@ -162,6 +163,10 @@ impl ProviderRegistry {
                 }
                 "xai" => {
                     let provider = XaiProvider::new(provider_config.clone());
+                    registry.register(Arc::new(provider));
+                }
+                "atlascloud" => {
+                    let provider = AtlasCloudProvider::new(provider_config.clone());
                     registry.register(Arc::new(provider));
                 }
                 "vertex" => {
@@ -355,6 +360,22 @@ models = ["grok-beta"]
         let registry = ProviderRegistry::from_config(&config);
 
         assert!(registry.get("xai").is_some());
+        assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn test_registry_atlascloud() {
+        let toml = r#"
+[providers.atlascloud]
+name = "atlascloud"
+api_key = "apikey-test"
+base_url = "https://api.atlascloud.ai/v1"
+models = ["deepseek-ai/deepseek-v4-pro"]
+"#;
+        let config = ProvidersConfig::from_toml(toml).unwrap();
+        let registry = ProviderRegistry::from_config(&config);
+
+        assert!(registry.get("atlascloud").is_some());
         assert_eq!(registry.len(), 1);
     }
 

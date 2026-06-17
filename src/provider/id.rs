@@ -157,6 +157,12 @@ impl ProviderId {
         static ZHIPU: Lazy<ProviderId> = Lazy::new(|| ProviderId("zhipu".to_string()));
         &ZHIPU
     }
+
+    /// Get static provider ID for Atlas Cloud
+    pub fn atlascloud() -> &'static ProviderId {
+        static ATLASCLOUD: Lazy<ProviderId> = Lazy::new(|| ProviderId("atlascloud".to_string()));
+        &ATLASCLOUD
+    }
 }
 
 impl fmt::Display for ProviderId {
