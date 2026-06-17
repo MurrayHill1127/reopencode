@@ -4,6 +4,7 @@
 //! 提供统一的 API 接口。
 
 pub mod anthropic;
+pub mod atlascloud;
 pub mod auth;
 pub mod azure;
 pub mod capability;
@@ -23,6 +24,7 @@ pub mod xai;
 pub mod zhipu;
 
 // Re-export public API
+pub use atlascloud::AtlasCloudProvider;
 pub use auth::{AuthManager, CredentialSource};
 pub use azure::AzureProvider;
 pub use capability::{Cost, ModelCapabilities, ModelDefinition, ModelLimits};
