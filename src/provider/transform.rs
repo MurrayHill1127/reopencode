@@ -186,7 +186,7 @@ impl MessageNormalizer for OpenAiNormalizer {
     fn supports(&self, provider: &ProviderId) -> bool {
         matches!(
             provider.as_str(),
-            "openai" | "azure" | "openrouter" | "groq" | "cerebras"
+            "openai" | "azure" | "openrouter" | "requesty" | "groq" | "cerebras"
         )
     }
 
@@ -349,6 +349,7 @@ mod tests {
         assert!(normalizer.supports(&ProviderId::new("openai")));
         assert!(normalizer.supports(&ProviderId::new("azure")));
         assert!(normalizer.supports(&ProviderId::new("openrouter")));
+        assert!(normalizer.supports(&ProviderId::new("requesty")));
         assert!(!normalizer.supports(&ProviderId::new("anthropic")));
     }
 
