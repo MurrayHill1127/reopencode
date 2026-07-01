@@ -16,6 +16,7 @@ pub mod message;
 pub mod openai;
 pub mod openrouter;
 pub mod provider_trait;
+pub mod requesty;
 pub mod registry;
 pub mod stream;
 pub mod transform;
@@ -36,6 +37,7 @@ pub use message::{Message, MessageRole};
 pub use openai::OpenAiProvider;
 pub use openrouter::OpenRouterProvider;
 pub use provider_trait::{Provider, ProviderResponse, ToolDefinition, Usage};
+pub use requesty::RequestyProvider;
 pub use stream::{SseStream, StreamTimeout, wrap_sse_timeout};
 pub use transform::{
     MessageNormalizer, ProviderMessage, TransformPipeline, extract_system_messages,

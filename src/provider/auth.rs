@@ -68,6 +68,7 @@ impl AuthManager {
         env_mapping.insert(ProviderId::new("google"), "GOOGLE_API_KEY");
         env_mapping.insert(ProviderId::new("vertex"), "GOOGLE_APPLICATION_CREDENTIALS");
         env_mapping.insert(ProviderId::new("openrouter"), "OPENROUTER_API_KEY");
+        env_mapping.insert(ProviderId::new("requesty"), "REQUESTY_API_KEY");
         env_mapping.insert(ProviderId::new("copilot"), "GITHUB_TOKEN");
         env_mapping.insert(ProviderId::new("xai"), "XAI_API_KEY");
         env_mapping.insert(ProviderId::new("mistral"), "MISTRAL_API_KEY");
@@ -214,6 +215,7 @@ impl AuthManager {
             "google" => Some("GOOGLE_API_KEY"),
             "vertex" => Some("GOOGLE_APPLICATION_CREDENTIALS"),
             "openrouter" => Some("OPENROUTER_API_KEY"),
+            "requesty" => Some("REQUESTY_API_KEY"),
             "copilot" => Some("GITHUB_TOKEN"),
             "xai" => Some("XAI_API_KEY"),
             "mistral" => Some("MISTRAL_API_KEY"),

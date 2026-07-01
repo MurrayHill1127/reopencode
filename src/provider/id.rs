@@ -110,6 +110,12 @@ impl ProviderId {
         &OPENROUTER
     }
 
+    /// Get static provider ID for Requesty
+    pub fn requesty() -> &'static ProviderId {
+        static REQUESTY: Lazy<ProviderId> = Lazy::new(|| ProviderId("requesty".to_string()));
+        &REQUESTY
+    }
+
     /// Get static provider ID for Copilot
     pub fn copilot() -> &'static ProviderId {
         static COPILOT: Lazy<ProviderId> = Lazy::new(|| ProviderId("copilot".to_string()));

@@ -12,6 +12,7 @@ use crate::provider::google::GoogleProvider;
 use crate::provider::openai::OpenAiProvider;
 use crate::provider::openrouter::OpenRouterProvider;
 use crate::provider::provider_trait::Provider;
+use crate::provider::requesty::RequestyProvider;
 use crate::provider::vertex::VertexProvider;
 use crate::provider::xai::XaiProvider;
 use crate::provider::zhipu::ZhipuProvider;
@@ -159,6 +160,10 @@ impl ProviderRegistry {
                 }
                 "openrouter" => {
                     let provider = OpenRouterProvider::new(provider_config.clone());
+                    registry.register(Arc::new(provider));
+                }
+                "requesty" => {
+                    let provider = RequestyProvider::new(provider_config.clone());
                     registry.register(Arc::new(provider));
                 }
                 "xai" => {
@@ -345,6 +350,21 @@ models = ["openai/gpt-4"]
         let registry = ProviderRegistry::from_config(&config);
 
         assert!(registry.get("openrouter").is_some());
+        assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn test_registry_requesty() {
+        let toml = r#"
+[providers.requesty]
+name = "requesty"
+api_key = "sk-req-test"
+models = ["openai/gpt-4"]
+"#;
+        let config = ProvidersConfig::from_toml(toml).unwrap();
+        let registry = ProviderRegistry::from_config(&config);
+
+        assert!(registry.get("requesty").is_some());
         assert_eq!(registry.len(), 1);
     }
 
